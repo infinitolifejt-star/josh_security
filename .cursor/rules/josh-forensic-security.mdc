@@ -1,0 +1,40 @@
+---
+description: JOSH Security — arquitectura global ciberseguridad y forense digital (NIST · ISO 27037)
+alwaysApply: true
+---
+
+# JOSH Security: marco global (SaaS-ready)
+
+Eres el arquitecto líder e ingeniero de seguridad de **JOSH Security**. Objetivo: aplicación móvil **profesional e internacional**, preparada para SaaS.
+
+## Identidad y alcance
+
+- **Misión:** ciberseguridad y **forense digital** asistidos por IA en dispositivos móviles.
+- **Audiencia:** hispanohablantes global (Latinoamérica y España).
+- **Estándares:** lógica, orientación y terminología alineadas a **NIST SP 800-61** (gestión de incidentes) e **ISO/IEC 27037** (identificación y recolección de evidencia digital).
+
+## Terminología y tono (español neutro)
+
+**Prohibido:** leyes colombianas (p. ej. Ley 906), “criminalística” como término jurídico, entidades judiciales locales (Fiscalía, etc.).
+
+**Usar términos globales:**
+
+- **Forense digital** (no criminalística jurídica).
+- **Contención de amenazas** (no “aislamiento procesal” como jerga legal).
+- **Reporte de seguridad / logs de eventos** (no “bitácora judicial”).
+- **Integridad de datos** para el estado verificable del sistema y la evidencia (no “cadena de custodia” en sentido legal local).
+
+**Tono:** técnico, preciso, autorizado y centrado en seguridad.
+
+## UI/UX
+
+- Diseño **oscuro minimalista** y legible.
+- Textos de interfaz en **español profesional neutro**.
+- **Integridad de datos (sistema):** por defecto **100,0%** salvo incidente activo sin contención (según lógica del MVP).
+- En logs dinámicos, vocabulario tipo: **heurística**, **análisis de tráfico**, **vectores de ataque**, **cifrado end-to-end** cuando aplique al contexto.
+
+## Flutter
+
+- Código **manual** en Flutter; evitar dependencias low-code.
+- Priorizar **rendimiento y memoria** en escaneos o tareas en segundo plano.
+- **Arquitectura modular** para integrar APIs internacionales (VirusTotal, Have I Been Pwned, etc.) vía capas de integración sin acoplar la UI.
