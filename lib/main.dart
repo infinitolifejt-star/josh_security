@@ -1,197 +1,127 @@
 import 'package:flutter/material.dart';
 import 'package:josh_security/services/security_service.dart';
 
-void main() => runApp(const MaterialApp(
-      home: CentinelaV3(),
-      debugShowCheckedModeBanner: false,
-    ));
+void main() => runApp(const JoshSecurityApp());
 
-class CentinelaV3 extends StatefulWidget {
-  const CentinelaV3({super.key});
+class JoshSecurityApp extends StatelessWidget {
+  const JoshSecurityApp({super.key});
+
   @override
-  State<CentinelaV3> createState() => _CentinelaV3State();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'JOSH Security',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primaryColor: Colors.blue,
+        useMaterial3: true,
+      ),
+      home: const MainScannerScreen(),
+    );
+  }
 }
 
-class _CentinelaV3State extends State<CentinelaV3> {
-  final TextEditingController _input = TextEditingController();
-  final SecurityService _servicio = SecurityService();
+class MainScannerScreen extends StatefulWidget {
+  const MainScannerScreen({super.key});
+
+  @override
+  State<MainScannerScreen> createState() => _MainScannerScreenState();
+}
+
+class _MainScannerScreenState extends State<MainScannerScreen> {
+  final SecurityService _security = SecurityService();
+  final TextEditingController _urlController = TextEditingController();
   
-  String _label = "SISTEMA LISTO";
-  String _desc = "Escriba la URL y toque el botón para iniciar.";
-  bool _buscando = false;
-  
-  // Colores de la identidad visual JOSH
-  Color _colorEscudo = const Color(0xFF1E3C72); 
-  Color _colorCheck = Colors.greenAccent; 
-  Color _colorTextoPrincipal = const Color(0xFF5AB2FF); 
+  String _resultLabel = 'SISTEMA CENTINELA ACTIVO';
+  String _resultDetails = 'Ingrese un link para iniciar el análisis.';
+  bool _isLoading = false;
 
-  void _analizar() async {
-    if (_input.text.isEmpty) return;
-    
-    setState(() { 
-      _buscando = true; 
-      _label = "ESCANEANDO..."; 
-      _desc = "Analizando integridad digital...";
-      _colorCheck = Colors.orangeAccent;
-    });
-
-    // Proceso de 3 segundos
-    await Future.delayed(const Duration(seconds: 3));
-
-    String limpio = _input.text.replaceAll(RegExp(r'\[|\]|\(.*\)| '), '');
-    final res = await _servicio.analyzeUrl(limpio);
-    
+  void _startScan() async {
+    if (_urlController.text.isEmpty) return;
+    setState(() => _isLoading = true);
+    final results = await _security.analyzeUrl(_urlController.text);
     setState(() {
-      _buscando = false;
-      _label = res['label'];
-      _desc = res['details'];
-
-      if (_label.contains('PELIGROSA') || _label.contains('PHISHING')) {
-        _colorCheck = Colors.redAccent;
-        _colorEscudo = Colors.red.shade900;
-      } else if (_label.contains('PRECAUCIÓN')) {
-        _colorCheck = Colors.yellowAccent;
-        _colorEscudo = Colors.orange.shade900;
-      } else {
-        _colorCheck = Colors.greenAccent;
-        _colorEscudo = const Color(0xFF1E3C72);
-      }
+      _resultLabel = results['label']!;
+      _resultDetails = results['details']!;
+      _isLoading = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF020A1E), 
-      body: Center(
+      backgroundColor: const Color(0xFF0D1117),
+      body: SafeArea(
         child: SingleChildScrollView(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            padding: const EdgeInsets.all(30),
-            child: Column(
-              children: [
-                // --- LOGO JOSH RECONSTRUIDO CON ICONOS ---
-                Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Brillo de fondo
-                    Container(
-                      width: 150,
-                      height: 150,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _colorCheck.withOpacity(0.2),
-                            blurRadius: 40,
-                            spreadRadius: 5,
-                          )
-                        ],
-                      ),
-                    ),
-                    // El Escudo Azul
-                    Icon(Icons.shield_rounded, size: 140, color: _colorEscudo),
-                    // El Check o el Icono de Carga
-                    _buscando 
-                      ? const SizedBox(
-                          width: 80,
-                          height: 80,
-                          child: CircularProgressIndicator(
-                            color: Colors.orangeAccent,
-                            strokeWidth: 6,
-                          ),
-                        )
-                      : Icon(
-                          Icons.check_circle_outline_rounded,
-                          size: 85,
-                          color: _colorCheck,
-                        ),
-                  ],
-                ),
-                const SizedBox(height: 15),
-                Text(
-                  "JOSH",
-                  style: TextStyle(
-                    color: _colorTextoPrincipal,
-                    fontSize: 65,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -1,
-                  ),
-                ),
-                const Text(
-                  "Tu asistente personal de seguridad digital",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
-                ),
-                
-                const SizedBox(height: 40),
-
-                // --- CAMPO DE TEXTO ---
-                TextField(
-                  controller: _input,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: "Pegue la URL sospechosa",
-                    labelStyle: TextStyle(color: _colorTextoPrincipal),
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.05),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(15),
-                      borderSide: BorderSide(color: _colorTextoPrincipal.withOpacity(0.3)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(15),
-                      borderSide: BorderSide(color: _colorTextoPrincipal, width: 2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 25),
-
-                // --- BOTÓN AMARILLO (Como en la versión inicial) ---
-                ElevatedButton(
-                  onPressed: _buscando ? null : _analizar,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.yellowAccent,
-                    foregroundColor: Colors.black,
-                    minimumSize: const Size(double.infinity, 65),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                    elevation: 5,
-                  ),
-                  child: Text(
-                    _buscando ? "ESCANEANDO..." : "INICIAR ESCANEO MÉTRICO",
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                ),
-                
-                const SizedBox(height: 35),
-
-                // --- CUADRO DE RESULTADO ---
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(25),
+          padding: const EdgeInsets.symmetric(horizontal: 30.0),
+          child: Column(
+            children: [
+              const SizedBox(height: 60),
+              Center(
+                child: Container(
+                  height: 160, width: 160,
                   decoration: BoxDecoration(
-                    color: Colors.black38,
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: _colorCheck.withOpacity(0.5), width: 2),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        _label,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: _colorCheck, fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _desc,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white, fontSize: 16),
-                      ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.blue.withValues(alpha: 0.2), // Sintaxis moderna corregida
+                        blurRadius: 40,
+                      )
                     ],
                   ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/logo.png', 
+                      fit: BoxFit.cover,
+                      errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 80, color: Colors.blue),
+                    ),
+                  ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 25),
+              const Text('JOSH Security', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+              const Text('Protección Digital Inteligente', style: TextStyle(color: Colors.blueAccent)),
+              const SizedBox(height: 45),
+              TextField(
+                controller: _urlController,
+                decoration: InputDecoration(
+                  filled: true, fillColor: const Color(0xFF161B22),
+                  hintText: 'Pegue el enlace aquí...',
+                  prefixIcon: const Icon(Icons.link, color: Colors.blue),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity, height: 55,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _startScan,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF238636),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  ),
+                  child: _isLoading 
+                    ? const CircularProgressIndicator(color: Colors.white) 
+                    : const Text('ANALIZAR ENLACE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(height: 40),
+              Container(
+                width: double.infinity, padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF161B22),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  children: [
+                    Text(_resultLabel, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 18)),
+                    const SizedBox(height: 10),
+                    Text(_resultDetails, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
