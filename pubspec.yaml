@@ -1,17 +1,17 @@
 name: josh_security
-description: "Proyecto Centinela - Aplicación de Ciberseguridad Global"
+description: "Proyecto Centinela - Tu Seguridad Importa"
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.2.3 <4.0.0'
+  sdk: '>=3.11.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  http: ^1.6.0
-  crypto: ^3.0.3
+  http: ^1.1.0
+  flutter_dotenv: ^5.1.0
 
 dev_dependencies:
   flutter_test:
@@ -21,7 +21,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Inventario de Activos de JOSH Security
+  # Registro de activos (Logo y Variables de Entorno)
   assets:
-    - assets/certificates/api_cert.pem
-    - assets/logo.png
+    - .env
+    - assets/images/logo_escudo.png
