@@ -1,5 +1,5 @@
 name: josh_security
-description: "Proyecto Centinela - Tu Seguridad Importa"
+description: 'JOSH Security - Sistema Inmunologico Digital'
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -20,8 +20,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
-  # Registro de activos (Logo y Variables de Entorno)
   assets:
     - .env
     - assets/images/logo_escudo.png
