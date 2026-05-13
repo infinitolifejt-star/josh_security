@@ -20,6 +20,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Configuración de recursos visuales
   assets:
     - .env
     - assets/images/logo_escudo.png

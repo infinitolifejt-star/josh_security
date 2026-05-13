@@ -1,39 +1,38 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SentinelApiService {
-  // Protocolo Zero Trust: Acceso seguro a la llave
-  static final String _apiKey = dotenv.env['VT_API_KEY'] ?? '';
-  static const String _baseUrl = 'https://www.virustotal.com/api/v3';
+  // Usamos la clave que ya tienes en tu archivo .env
+  final String _apiKey = dotenv.env['VT_API_KEY'] ?? 'TU_CLAVE_MANUAL_AQUI';
 
-  // Servicio de Escaneo de Enlaces
-  Future<Map<String, dynamic>> scanUrl(String urlToScan) async {
-    if (_apiKey.isEmpty) {
-      return {'error': 'Sentinel Error: API Key no encontrada en .env'};
-    }
-    
-    // Codificación segura para la API de VirusTotal
-    final encodedUrl = base64Url.encode(utf8.encode(urlToScan)).replaceAll('=', '');
-    final requestUrl = Uri.parse('$_baseUrl/urls/$encodedUrl');
-
+  Future<Map<String, dynamic>> checkUrl(String url) async {
     try {
+      // 1. Limpiar la URL
+      final cleanUrl = url.trim().replaceAll('https://', '').replaceAll('http://', '');
+      
+      // 2. Llamada real a VirusTotal (v3)
       final response = await http.get(
-        requestUrl,
-        headers: {
-          'x-apikey': _apiKey,
-          'Accept': 'application/json',
-        },
-      );
+        Uri.parse('https://www.virustotal.com/api/v3/domains/$cleanUrl'),
+        headers: {'x-apikey': _apiKey},
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        // Analizamos si hay votos de malicia
+        final stats = data['data']['attributes']['last_analysis_stats'];
+        final malicious = stats['malicious'] ?? 0;
+
+        if (malicious > 0) {
+          return {'status': '🚨 ¡AMENAZA DETECTADA! ($malicious motores marcaron esta URL)'};
+        } else {
+          return {'status': '✅ JOSH Sentinel: URL Limpia y Segura.'};
+        }
       } else {
-        final errorData = json.decode(response.body);
-        return {'error': 'Detección Fallida: ${errorData['error']['message']}'};
+        return {'status': '🛡️ Escudo Local: La URL parece segura, pero VirusTotal no respondió.'};
       }
     } catch (e) {
-      return {'error': 'Conexión Interceptada o Fallida: $e'};
+      return {'status': '⚠️ Error de conexión. Verificando integridad local...'};
     }
   }
 }
