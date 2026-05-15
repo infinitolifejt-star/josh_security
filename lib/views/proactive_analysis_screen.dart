@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
 
 class ProactiveAnalysisScreen extends StatefulWidget {
   const ProactiveAnalysisScreen({super.key});
@@ -8,95 +7,138 @@ class ProactiveAnalysisScreen extends StatefulWidget {
   State<ProactiveAnalysisScreen> createState() => _ProactiveAnalysisScreenState();
 }
 
-class _ProactiveAnalysisScreenState extends State<ProactiveAnalysisScreen> {
-  final TextEditingController _urlController = TextEditingController();
-  final SentinelApiService _apiService = SentinelApiService();
-  String _resultado = "Esperando análisis...";
-  bool _isLoading = false;
+class _ProactiveAnalysisScreenState extends State<ProactiveAnalysisScreen> with TickerProviderStateMixin {
+  late AnimationController _shieldController;
+  Color _statusColor = Colors.blueAccent.withOpacity(0.2);
+  String _statusText = "ESPERANDO URL...";
+  
+  // Lista para el Historial
+  final List<Map<String, String>> _history = [];
 
-  void _iniciarAnalisis() async {
-    if (_urlController.text.isEmpty) return;
-    setState(() { _isLoading = true; _resultado = "Escaneando con JOSH Sentinel..."; });
-    final res = await _apiService.checkUrl(_urlController.text);
-    setState(() { _resultado = res['status']; _isLoading = false; });
+  @override
+  void initState() {
+    super.initState();
+    _shieldController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _shieldController.dispose();
+    super.dispose();
+  }
+
+  void _updateStatus(bool isDanger) {
+    setState(() {
+      _statusColor = isDanger ? Colors.red.withOpacity(0.8) : Colors.green.withOpacity(0.8);
+      _statusText = isDanger ? "¡AMENAZA DETECTADA!" : "URL SEGURA";
+      
+      // Añadir al historial al inicio de la lista
+      _history.insert(0, {
+        "url": "analisis_${DateTime.now().millisecondsSinceEpoch}.com",
+        "result": isDanger ? "PELIGRO" : "LIMPIO",
+        "color": isDanger ? "red" : "green"
+      });
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // --- 1. EL "RESPIRO" SUPERIOR ---
-            const SizedBox(height: 60), // Bajamos el logo para que no choque con la cámara del celular
-
-            Image.asset(
-              'assets/images/logo_escudo.png',
-              height: 180,
-              errorBuilder: (context, error, stackTrace) => 
-                const Icon(Icons.shield_rounded, size: 120, color: Colors.blueAccent),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Column(
+        children: [
+          const SizedBox(height: 60),
+          // ESCUDO ANIMADO
+          ScaleTransition(
+            scale: Tween(begin: 0.9, end: 1.1).animate(
+              CurvedAnimation(parent: _shieldController, curve: Curves.easeInOut),
             ),
-            const SizedBox(height: 20),
-            const Text(
-              "JOSH SECURITY",
-              style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 2),
-            ),
-            const SizedBox(height: 40),
-            
-            TextField(
-              controller: _urlController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: "URL SOSPECHOSA",
-                labelStyle: const TextStyle(color: Colors.blueAccent),
-                filled: true,
-                fillColor: Colors.blueAccent.withOpacity(0.05),
-                enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent, width: 0.5)),
-                focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white, width: 1)),
+            child: Image.asset(
+              'assets/images/logo_escudo.png', 
+              height: 150,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Icons.shield, size: 120, color: Colors.blueAccent
               ),
             ),
-            const SizedBox(height: 20),
-            
-            ElevatedButton(
-              onPressed: (!_isLoading) ? _iniciarAnalisis : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueAccent,
-                minimumSize: const Size(double.infinity, 60),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: _isLoading 
-                ? const CircularProgressIndicator(color: Colors.white) 
-                : const Text("ACTIVAR ESCUDO DUAL", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 20),
+          
+          // CUADRO DE RESULTADO
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: _statusColor,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: _statusColor, blurRadius: 15)],
             ),
-            const SizedBox(height: 40),
-            
-            // --- 2. EL CUADRO CON EFECTO NEÓN (GLOW) ---
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(10),
-                // Aquí creamos el brillo azul alrededor del cuadro
-                border: Border.all(color: Colors.blueAccent.withOpacity(0.5), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.blueAccent.withOpacity(0.2),
-                    blurRadius: 15,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
+            child: Center(
               child: Text(
-                _resultado,
-                style: const TextStyle(color: Colors.greenAccent, fontFamily: 'monospace', fontSize: 14),
-                textAlign: TextAlign.center,
+                _statusText,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
-            const SizedBox(height: 40), // Espacio final para que no quede pegado abajo
-          ],
-        ),
+          ),
+
+          const SizedBox(height: 20),
+          
+          // BOTONES DE ACCIÓN
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: () => _updateStatus(false),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade900),
+                child: const Text("Test Limpio"),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                onPressed: () => _updateStatus(true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade900),
+                child: const Text("Test Virus"),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 30),
+          const Text("HISTORIAL DE VIGILANCIA", 
+            style: TextStyle(color: Colors.blueAccent, fontSize: 12, letterSpacing: 2)),
+          
+          // LISTA DE HISTORIAL (OCUPA EL RESTO DE LA PANTALLA)
+          Expanded(
+            child: ListView.builder(
+              itemCount: _history.length,
+              padding: const EdgeInsets.all(20),
+              itemBuilder: (context, index) {
+                final item = _history[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: item["color"] == "red" ? Colors.red : Colors.green),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(item["url"]!, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      Text(item["result"]!, 
+                        style: TextStyle(
+                          color: item["color"] == "red" ? Colors.red : Colors.green,
+                          fontWeight: FontWeight.bold
+                        )),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
