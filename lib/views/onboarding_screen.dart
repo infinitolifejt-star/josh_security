@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:josh_security/views/home_screen.dart';
+import 'home_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -8,93 +8,142 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late Animation<double> _scaleAnimation;
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
+  final List<Map<String, String>> _onboardingData = [
+    {
+      'title': 'ANÁLISIS PROACTIVO',
+      'description': 'Escáner híbrido avanzado con tecnología de VirusTotal y Google Safe Browsing Engine para detectar amenazas en tiempo real.',
+      'icon': 'shield',
+    },
+    {
+      'title': 'CONCIENTIZACIÓN TÁCTICA',
+      'description': 'Módulos educativos avanzados y simuladores de ingeniería social para entrenar tu capacidad de detección ante ataques de phishing.',
+      'icon': 'psychology',
+    },
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(color: Color(0xFF020202)),
+      backgroundColor: const Color(0xff0d1117),
+      body: SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Spacer(),
-            // Icono 3D con resplandor dinámico (Ref: PDF pág. 3)
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.greenAccent.withOpacity(0.2),
-                    blurRadius: 40,
-                    spreadRadius: 10,
-                  ),
-                ],
+            Expanded(
+              child: PageView.builder(
+                controller: _pageController,
+                onPageChanged: (int page) {
+                  setState(() {
+                    _currentPage = page;
+                  });
+                },
+                itemCount: _onboardingData.length,
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.all(40.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(30),
+                          decoration: BoxDecoration(
+                            color: const Color(0xff1f2937),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xff2563eb).withOpacity(0.2),
+                                blurRadius: 25,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            _onboardingData[index]['icon'] == 'shield' 
+                                ? Icons.verified_user_outlined 
+                                : Icons.psychology_outlined,
+                            size: 100,
+                            color: const Color(0xff3b82f6),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                        Text(
+                          _onboardingData[index]['title']!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          _onboardingData[index]['description']!,
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 16,
+                            height: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
-              child: const Icon(Icons.verified_user, size: 120, color: Colors.greenAccent),
             ),
-            const SizedBox(height: 40),
-            const Text(
-              "JOSH SECURITY",
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 10, color: Colors.white),
-            ),
-            const SizedBox(height: 15),
-            const Text("PROTECCIÓN ACTIVA 24/7", style: TextStyle(color: Colors.grey, letterSpacing: 3)),
-            const Spacer(),
-            // Botón con animación de pulso
-            ScaleTransition(
-              scale: _scaleAnimation,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.greenAccent.withOpacity(0.3),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    )
-                  ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _onboardingData.length,
+                (index) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 6),
+                  height: 10,
+                  width: _currentPage == index ? 30 : 10,
+                  decoration: BoxDecoration(
+                    color: _currentPage == index ? const Color(0xff3b82f6) : const Color(0xff1f2937),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
                 ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(40.0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 55,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pushReplacement(
-                    context, 
-                    MaterialPageRoute(builder: (context) => const CentinelaDashboard())
-                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.greenAccent,
-                    padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 25),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    backgroundColor: const Color(0xff2563eb),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 5,
                   ),
-                  child: const Text(
-                    "EMPEZAR VIGILANCIA",
-                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
+                  onPressed: () {
+                    if (_currentPage < _onboardingData.length - 1) {
+                      _pageController.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeIn,
+                      );
+                    } else {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(builder: (context) => const HomeScreen()),
+                      );
+                    }
+                  },
+                  child: Text(
+                    _currentPage == _onboardingData.length - 1 ? 'INGRESAR A CENTRAL' : 'SIGUIENTE',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 80),
           ],
         ),
       ),
