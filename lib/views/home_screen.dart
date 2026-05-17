@@ -1,172 +1,232 @@
 import 'package:flutter/material.dart';
-import 'package:josh_security/services/security_service.dart';
-import 'dart:math' as math;
 
-class CentinelaDashboard extends StatefulWidget {
-  const CentinelaDashboard({super.key});
-
-  @override
-  State<CentinelaDashboard> createState() => _CentinelaDashboardState();
-}
-
-class _CentinelaDashboardState extends State<CentinelaDashboard> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  final TextEditingController _urlController = TextEditingController();
-  Offset _mousePos = Offset.zero;
-  String _statusMessage = "PROTOCOLO DE VIGILANCIA ACTIVO";
-  Color _accentColor = Colors.greenAccent;
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _urlController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _ejecutarProtocolo() async {
-    if (_urlController.text.isEmpty) return;
-    setState(() {
-      _isLoading = true;
-      _statusMessage = "ESCANEO MULTI-CAPA EN CURSO...";
-      _accentColor = Colors.cyanAccent;
-    });
-
-    final resultado = await SecurityService.analizarDominio(_urlController.text);
-
-    setState(() {
-      _isLoading = false;
-      if (resultado['status'] == 'success') {
-        int maliciosos = resultado['malicious'];
-        if (maliciosos > 0) {
-          _statusMessage = "AMENAZA DETECTADA: $maliciosos MOTORES";
-          _accentColor = Colors.redAccent;
-        } else {
-          _statusMessage = "SITIO SEGURO - PROTOCOLO LIMPIO";
-          _accentColor = Colors.greenAccent;
-        }
-      } else {
-        _statusMessage = "ERROR DE CONEXIÓN CON LA MATRIZ";
-        _accentColor = Colors.orangeAccent;
-      }
-    });
-  }
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
-      backgroundColor: const Color(0xFF010508),
-      body: MouseRegion(
-        onHover: (event) {
-          setState(() {
-            _mousePos = Offset(
-              (event.localPosition.dx - size.width / 2) / (size.width / 2),
-              (event.localPosition.dy - size.height / 2) / (size.height / 2),
-            );
-          });
-        },
-        child: Stack(
-          children: [
-            Positioned.fill(child: CustomPaint(painter: PerspectiveGridPainter(color: _accentColor))),
-            Center(
-              child: SingleChildScrollView(
+      backgroundColor: const Color(0xFF020617),
+      appBar: AppBar(
+        title: const Text(
+          'JOSH SECURITY - CENTRAL DE OPERACIONES', 
+          style: TextStyle(fontSize: 13, letterSpacing: 2, fontWeight: FontWeight.bold, color: Colors.blueAccent)
+        ),
+        backgroundColor: const Color(0xFF0F172A),
+        elevation: 0,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.gpp_good, color: Colors.greenAccent, size: 20),
+            onPressed: () {},
+          )
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
                 padding: const EdgeInsets.all(20),
-                child: Column(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF1E293B)),
+                ),
+                child: Row(
                   children: [
-                    // --- LOGO ESCUDO INTERACTIVO VIVO ---
-                    AnimatedBuilder(
-                      animation: _controller,
-                      builder: (context, child) {
-                        return Transform(
-                          alignment: Alignment.center,
-                          transform: Matrix4.identity()
-                            ..setEntry(3, 2, 0.001)
-                            ..rotateX(_mousePos.dy * -0.3)
-                            ..rotateY((_controller.value * 2 * math.pi) + (_mousePos.dx * 0.3)),
-                          child: Container(
-                            width: 250,
-                            height: 250,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(color: _accentColor.withOpacity(0.15), blurRadius: 80, spreadRadius: 10)
-                              ],
-                            ),
-                            child: Image.asset('assets/images/logo_escudo.png'),
+                    const Icon(Icons.admin_panel_settings, size: 60, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "CENTINELA DIGITAL SECURITY",
+                            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1),
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 40),
-                    const Text("JOSH SECURITY", style: TextStyle(fontSize: 38, fontWeight: FontWeight.w900, letterSpacing: 10, color: Colors.white)),
-                    const Text("TU SEGURIDAD IMPORTA", style: TextStyle(color: Colors.greenAccent, fontSize: 16, letterSpacing: 4, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 15),
-                    Text(_statusMessage, style: TextStyle(color: _accentColor.withOpacity(0.8), letterSpacing: 2, fontSize: 12)),
-                    const SizedBox(height: 50),
-                    // Input Glassmorphism
-                    Container(
-                      constraints: const BoxConstraints(maxWidth: 500),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.02),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: _accentColor.withOpacity(0.3)),
-                      ),
-                      child: TextField(
-                        controller: _urlController,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white, fontSize: 18),
-                        decoration: InputDecoration(
-                          hintText: "URL PARA ANÁLISIS TÁCTICO",
-                          hintStyle: TextStyle(color: _accentColor.withOpacity(0.2)),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 20),
-                        ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Ecosistema Modular de Defensa • Licencia Activa",
+                            style: TextStyle(color: Colors.blueAccent.withOpacity(0.8), fontSize: 11, fontWeight: FontWeight.w500),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 30),
-                    if (!_isLoading)
-                      ElevatedButton(
-                        onPressed: _ejecutarProtocolo,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _accentColor,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 20),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
-                        child: const Text("ANALIZAR MATRIZ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      )
-                    else
-                      CircularProgressIndicator(color: _accentColor),
                   ],
                 ),
               ),
+              const SizedBox(height: 32),
+              const Text(
+                "MÓDULOS DEL SISTEMA CENTINELA",
+                style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
+              ),
+              const SizedBox(height: 16),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: MediaQuery.of(context).size.width > 600 ? 2 : 1,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                childAspectRatio: 2.2,
+                children: [
+                  _buildMenuCard(
+                    context: context,
+                    title: "ANÁLISIS PROACTIVO",
+                    subtitle: "Escáner híbrido con VirusTotal & Google Safe Browsing Engine",
+                    icon: Icons.radar,
+                    color: const Color(0xFF2563EB),
+                    route: '/analysis',
+                    isActive: true,
+                  ),
+                  _buildMenuCard(
+                    context: context,
+                    title: "CONCIENTIZACIÓN / PILAR 2",
+                    subtitle: "Simulador táctico de Ingeniería Social y Phishing Educativo",
+                    icon: Icons.model_training,
+                    color: Colors.purpleAccent,
+                    route: '/simulation', // Ruta activada con éxito
+                    isActive: true, // ¡Módulo desbloqueado!
+                  ),
+                  _buildMenuCard(
+                    context: context,
+                    title: "REGISTRO DE INCIDENTES",
+                    subtitle: "Historial centralizado de firmas bloqueadas y logs locales",
+                    icon: Icons.assignment,
+                    color: Colors.tealAccent,
+                    route: '#',
+                    isActive: false,
+                  ),
+                  _buildMenuCard(
+                    context: context,
+                    title: "ESTADO DE LAS APIS",
+                    subtitle: "Verificación de credenciales en la nube y latencia del backend",
+                    icon: Icons.hub,
+                    color: Colors.amberAccent,
+                    route: '#',
+                    isActive: false,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          "PYTHON CORE: ONLINE (PORT 5000)",
+                          style: TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'monospace'),
+                        ),
+                      ],
+                    ),
+                    const Text(
+                      "V1.0.0-STABLE",
+                      style: TextStyle(color: Colors.white24, fontSize: 10, fontFamily: 'monospace'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required String route,
+    required bool isActive,
+  }) {
+    return InkWell(
+      onTap: () {
+        if (isActive && route != '#') {
+          Navigator.pushNamed(context, route);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Módulo $title en desarrollo para la siguiente fase táctica.",
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+              ),
+              backgroundColor: const Color(0xFF0F172A),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: isActive ? color.withOpacity(0.3) : const Color(0xFF1E293B)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: isActive ? color : Colors.white24, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isActive ? Colors.white : Colors.white38, 
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 13,
+                      letterSpacing: 0.5
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white38, fontSize: 10, height: 1.3),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              isActive ? Icons.arrow_forward_ios : Icons.lock_outline, 
+              color: isActive ? Colors.white38 : Colors.white10, 
+              size: 14
             ),
           ],
         ),
       ),
     );
   }
-}
-
-class PerspectiveGridPainter extends CustomPainter {
-  final Color color;
-  PerspectiveGridPainter({required this.color});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = color.withOpacity(0.05)..strokeWidth = 1;
-    for (double i = 0; i <= size.width; i += 50) canvas.drawLine(Offset(i, 0), Offset(i, size.height), p);
-    for (double i = 0; i <= size.height; i += 50) canvas.drawLine(Offset(0, i), Offset(size.width, i), p);
-  }
-  @override bool shouldRepaint(CustomPainter oldDelegate) => false;
 }

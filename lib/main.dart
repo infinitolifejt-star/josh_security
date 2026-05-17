@@ -1,18 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // Importante para las llaves
+import 'views/home_screen.dart';
 import 'views/proactive_analysis_screen.dart';
+import 'views/simulation_screen.dart'; // La nueva vista que crearemos
 
-Future<void> main() async {
-  // Aseguramos que Flutter esté listo antes de cargar el .env
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  try {
-    await dotenv.load(fileName: ".env");
-    print("✅ Archivo .env cargado correctamente");
-  } catch (e) {
-    print("⚠️ No se pudo cargar el archivo .env: $e");
-  }
-
+void main() {
   runApp(const JoshSecurityApp());
 }
 
@@ -22,19 +13,20 @@ class JoshSecurityApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'JOSH Security',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
+        primaryColor: const Color(0xFF2563EB),
         scaffoldBackgroundColor: const Color(0xFF020617),
-        primaryColor: Colors.blueAccent,
+        useMaterial3: true,
       ),
-      home: const Scaffold(
-        body: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 30),
-          child: ProactiveAnalysisScreen(),
-        ),
-      ),
+      home: const HomeScreen(),
+      routes: {
+        '/home': (context) => const HomeScreen(),
+        '/analysis': (context) => const ProactiveAnalysisScreen(),
+        '/simulation': (context) => const SimulationScreen(), // Enlace directo al Pilar 2
+      },
     );
   }
 }

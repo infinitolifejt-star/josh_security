@@ -88,7 +88,7 @@ class _ProactiveAnalysisScreenState extends State<ProactiveAnalysisScreen> with 
         _handleError("Error de Servidor: ${response.statusCode}");
       }
     } catch (e) {
-      _handleError("Error de Conexión de Red");
+      _handleError("Error de Conexión de Red: Encienda security_backend.py");
     }
   }
 
@@ -106,10 +106,18 @@ class _ProactiveAnalysisScreenState extends State<ProactiveAnalysisScreen> with 
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF020617),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white70),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SizedBox(height: 60),
+            const SizedBox(height: 10),
             AnimatedBuilder(
               animation: _rotationController,
               builder: (context, child) {
