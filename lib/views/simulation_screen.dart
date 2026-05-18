@@ -174,7 +174,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
             ),
             const SizedBox(height: 32),
 
-            // Consola de Feedback y Lecciones de Defensa
+            // Consola de Feedback (Corregido con los dos puntos ":")
             const Text("SISTEMA DE RETROALIMENTACIÓN FORENSE:", style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 1)),
             const SizedBox(height: 12),
             AnimatedContainer(
