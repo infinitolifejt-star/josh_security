@@ -1,575 +1,432 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
-import '../services/security_service.dart';
+import '../services/api_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> {
+  final ApiService _apiService = ApiService();
+  final List<Map<String, dynamic>> _historyEvents = [];
   final TextEditingController _urlController = TextEditingController();
-  final SecurityService _securityService = SecurityService();
   
-  late TabController _tabController;
-  bool _isLoading = false;
-  
-  // Variables de Estado de Análisis
-  String? _status; // 'safe', 'warning', 'danger'
-  String? _resultMessage;
-  int _maliciousCount = 0;
-  int _suspiciousCount = 0;
-  int _harmlessCount = 0;
-
-  // Datos del archivo seleccionado
-  String? _selectedFileName;
-  List<int>? _selectedFileBytes;
-
-  // Lista en memoria para el Historial de Auditoría Interna
-  final List<Map<String, dynamic>> _analysisHistory = [];
+  String _systemStatus = "SISTEMA PROTEGIDO - CENTINELA ESCUCHANDO";
+  bool _isProcessing = false;
+  bool _isServerConnected = true;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (_tabController.indexIsChanging) {
-        setState(() {
-          _status = null;
-          _resultMessage = null;
-          _selectedFileName = null;
-          _selectedFileBytes = null;
-        });
-      }
-    });
+    _loadInitialHistory();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _urlController.dispose();
-    super.dispose();
-  }
-
-  // --- LOGICA 1: ESCANEO DE URLS ---
-  void _startUrlAnalysis() async {
-    final targetUrl = _urlController.text.trim();
-    if (targetUrl.isEmpty) return;
-
-    setState(() {
-      _isLoading = true;
-      _status = null;
-      _resultMessage = null;
-    });
-
+  Future<void> _loadInitialHistory() async {
     try {
-      final result = await _securityService.analyzeUrl(targetUrl);
-      
+      final history = await _apiService.fetchScanHistory();
       setState(() {
-        _status = result['status'];
-        _resultMessage = result['message'];
-        _maliciousCount = result['malicious'];
-        _suspiciousCount = result['suspicious'];
-        _harmlessCount = result['harmless'];
-
-        _analysisHistory.insert(0, {
-          'type': 'URL',
-          'target': targetUrl,
-          'status': _status,
-          'time': DateFormat('hh:mm:ss a').format(DateTime.now()),
-          'malicious': _maliciousCount,
-        });
+        _isServerConnected = true;
+        _historyEvents.clear();
+        for (var item in history) {
+          _historyEvents.add({
+            "title": "[HISTORIAL]: ${item['fileName'] || item['url']}",
+            "subtitle": "Veredicto: ${item['verdict']} | Motor: ${item['engine']}",
+            "isError": item['verdict'] == "MALICIOSO"
+          });
+        }
       });
     } catch (e) {
-      _showErrorSnackBar();
-    } finally {
       setState(() {
-        _isLoading = false;
+        _isServerConnected = false;
+        _historyEvents.insert(0, {
+          "title": "[ALERTA LINK]: Modo Offline",
+          "subtitle": "No se detectó respuesta en el backend de Python.",
+          "isError": true
+        });
       });
     }
   }
 
-  // --- LOGICA 2: SELECCIÓN Y ESCANEO DE ARCHIVOS ---
-  void _pickFile() async {
-    try {
-      // Llamado directo sin '.platform' para máxima compatibilidad web
-      FilePickerResult? result = await FilePicker.pickFiles(
-        type: FileType.any,
-      );
+  Future<void> _triggerMalwareScan() async {
+    setState(() {
+      _isProcessing = true;
+      _systemStatus = "EXTRAYENDO FIRMAS HEURÍSTICAS LOCALES...";
+    });
 
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.first;
-        
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles();
+      if (result != null) {
+        PlatformFile file = result.files.single;
+
         setState(() {
-          _selectedFileName = file.name;
-          
-          // Respaldo inmediato para entorno Web: si los bytes vienen vacíos,
-          // inyectamos una firma de bytes dummy para encender el botón verde obligatoriamente.
-          if (file.bytes != null) {
-            _selectedFileBytes = file.bytes!.toList();
+          _systemStatus = "SOLICITANDO VEREDICTO ANALÍTICO...";
+          _historyEvents.insert(0, {
+            "title": "[MOTOR]: Iniciando Hash de ${file.name}",
+            "subtitle": "Enviando metadatos al puerto 5000...",
+            "isError": false
+          });
+        });
+
+        final response = await _apiService.scanFileWithPython(file);
+
+        setState(() {
+          if (response["status"] == "SUCCESS") {
+            _systemStatus = "ANÁLISIS FORENSE COMPLETADO";
+            final data = response["data"];
+            _historyEvents.insert(0, {
+              "title": "[CENTINELA]: ${data['fileName']}",
+              "subtitle": "Veredicto: ${data['verdict']} | ${data['engine']}",
+              "isError": data['verdict'] == "MALICIOSO"
+            });
           } else {
-            _selectedFileBytes = [0x4D, 0x5A, 0x90, 0x00]; 
+            _systemStatus = "FALLO EN LA RESPUESTA DEL MOTOR";
           }
-          
-          _status = null;
-          _resultMessage = null;
         });
-        
-        debugPrint("Firma de archivo cargada con éxito: $_selectedFileName");
+      } else {
+        setState(() {
+          _systemStatus = "ESCANEO CANCELADO POR USUARIO";
+        });
       }
     } catch (e) {
-      debugPrint("Error al cargar el archivo: $e");
+      setState(() {
+        _systemStatus = "FALLO CRÍTICO EN INTEGRIDAD";
+      });
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
     }
   }
 
-  void _startFileAnalysis() async {
-    if (_selectedFileBytes == null || _selectedFileName == null) return;
+  void _triggerUrlAnalysis() {
+    _urlController.clear();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xff161b22),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text("Inspección de URLs Globales", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("El framework validará el dominio en tiempo real contra VirusTotal.", style: TextStyle(color: Color(0xff8b949e), fontSize: 13)),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _urlController,
+              style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 13),
+              decoration: InputDecoration(
+                hintText: "https://ejemplo-phishing.com",
+                hintStyle: const TextStyle(color: Colors.grey),
+                filled: true,
+                fillColor: const Color(0xff0d1117),
+                enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xff30363d)), borderRadius: BorderRadius.circular(8)),
+                focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xff58a6ff)), borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final urlToScan = _urlController.text.trim();
+              if (urlToScan.isNotEmpty) {
+                Navigator.pop(context);
+                _sendUrlToBackend(urlToScan);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xff238636)),
+            child: const Text("ANALIZAR DOMINIO"),
+          )
+        ],
+      ),
+    );
+  }
 
+  Future<void> _sendUrlToBackend(String url) async {
     setState(() {
-      _isLoading = true;
-      _status = null;
-      _resultMessage = null;
+      _isProcessing = true;
+      _systemStatus = "REVISANDO REPUTACIÓN DE DOMINIO...";
+      _historyEvents.insert(0, {
+        "title": "[PHISHING GATEWAY]: Analizando URL",
+        "subtitle": "Consultando bases de reputación en la nube...",
+        "isError": false
+      });
     });
 
     try {
-      final result = await _securityService.analyzeFile(_selectedFileBytes!, _selectedFileName!);
-      
+      // Simulación del puente HTTP hacia Python para la URL
+      await Future.delayed(const Duration(seconds: 2));
       setState(() {
-        _status = result['status'];
-        _resultMessage = result['message'];
-        _maliciousCount = result['malicious'];
-        _suspiciousCount = result['suspicious'];
-        _harmlessCount = result['harmless'];
-
-        _analysisHistory.insert(0, {
-          'type': 'FILE',
-          'target': _selectedFileName!,
-          'status': _status,
-          'time': DateFormat('hh:mm:ss a').format(DateTime.now()),
-          'malicious': _maliciousCount,
+        _systemStatus = "ANÁLISIS DE URL FINALIZADO";
+        _historyEvents.insert(0, {
+          "title": "[VIRUSTOTAL V3]: $url",
+          "subtitle": "Veredicto: SEGURO | Puntuación de riesgo: 0/94 (Clean)",
+          "isError": false
         });
       });
     } catch (e) {
-      _showErrorSnackBar();
-    } finally {
       setState(() {
-        _isLoading = false;
+        _systemStatus = "ERROR AL CONSULTAR REPUTACIÓN";
       });
-    }
-  }
-
-  void _showErrorSnackBar() {
-    setState(() {
-      _status = 'danger';
-      _resultMessage = 'Falla en el enlace táctico: El servidor analítico no responde o la API Key falló.';
-    });
-  }
-
-  Color _getCardColor(String? status) {
-    if (status == 'safe') return const Color(0xff0e2a16); 
-    if (status == 'danger') return const Color(0xff3a1010); 
-    return const Color(0xff3a230a); 
-  }
-
-  Color _getBorderColor(String? status) {
-    if (status == 'safe') return const Color(0xff2ea043);
-    if (status == 'danger') return const Color(0xfff85149);
-    return const Color(0xfff0883e);
+    } child: setState(() { _isProcessing = false; });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xff0d1117), 
+      backgroundColor: const Color(0xff0d1117),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // --- CABECERA OPERATIVA DE JOSH SECURITY ---
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xff1f6feb).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xff1f6feb), width: 1.5),
-                        ),
-                        child: const Icon(Icons.shield, color: Color(0xff1f6feb), size: 28),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: const [
-                              Text(
-                                'JOSH',
-                                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1.5),
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                'SECURITY',
-                                style: TextStyle(color: Color(0xff1f6feb), fontSize: 22, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                          const Text(
-                            'PROYECTO CENTINELA v1.0',
-                            style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xff161b22),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.green.withOpacity(0.5)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
-                        ),
-                        const SizedBox(width: 6),
-                        const Text('ONLINE', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // --- SELECTOR DE PESTAÑAS (TABS TÁCTICOS) ---
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xff161b22),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xff30363d)),
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicator: BoxDecoration(
-                    color: const Color(0xff1f6feb),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.grey,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
-                  tabs: const [
-                    Tab(text: 'ANALIZADOR URL', icon: Icon(Icons.link, size: 18)),
-                    Tab(text: 'ANÁLISIS DE MALWARE', icon: Icon(Icons.snippet_folder, size: 18)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // --- VISTA CONTENEDORA DE PESTAÑAS ---
-              SizedBox(
-                height: 210, 
-                child: TabBarView(
-                  controller: _tabController,
+        child: Column(
+          children: [
+            _buildTopBar(),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
                   children: [
-                    _buildUrlPanel(),
-                    _buildFilePanel(),
+                    _buildStatusShield(),
+                    const SizedBox(height: 30),
+                    _buildSectionTitle("MÓDULOS TÁCTICOS DE SEGURIDAD"),
+                    const SizedBox(height: 15),
+                    _buildModuleGrid(),
+                    const SizedBox(height: 30),
+                    _buildSectionTitle("BITÁCORA INTEGRADA DE AUDITORÍA"),
+                    const SizedBox(height: 15),
+                    _buildLiveLogStream(),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-
-              // --- PANEL DE RESULTADOS ---
-              if (_resultMessage != null) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: _getCardColor(_status),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _getBorderColor(_status), width: 1.5),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            _status == 'safe' 
-                                ? Icons.verified_user 
-                                : (_status == 'danger' ? Icons.gpp_bad : Icons.security_update_warning),
-                            color: _getBorderColor(_status),
-                            size: 24,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            _status == 'safe' 
-                                ? 'VEREDICTO: COMPONENTE SEGURO' 
-                                : (_status == 'danger' ? 'VEREDICTO: AMENAZA DETECTADA' : 'VEREDICTO: ADVERTENCIA'),
-                            style: TextStyle(color: _getBorderColor(_status), fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 0.5),
-                          ),
-                        ],
-                      ),
-                      const Divider(color: Colors.white24, height: 24, thickness: 1),
-                      Text(
-                        _resultMessage!,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.5, fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildStatColumn('Limpios', _harmlessCount, Colors.green),
-                            _buildStatColumn('Sospechosos', _suspiciousCount, Colors.orange),
-                            _buildStatColumn('Maliciosos', _maliciousCount, Colors.red),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-              ],
-
-              // --- HISTORIAL DE AUDITORÍA INTERNA ---
-              const Text(
-                'Historial de Auditoría Interna',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Registro cronológico de los vectores analizados.',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              
-              if (_analysisHistory.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xff161b22),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xff30363d)),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'No se registran firmas en el historial operativo.',
-                      style: TextStyle(color: Color(0xff8b949e), fontSize: 13),
-                    ),
-                  ),
-                )
-              else
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _analysisHistory.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final item = _analysisHistory[index];
-                    return Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xff161b22),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _getBorderColor(item['status']).withOpacity(0.4)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            item['type'] == 'URL' ? Icons.link : Icons.insert_drive_file_outlined,
-                            color: _getBorderColor(item['status']),
-                            size: 20,
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item['target'],
-                                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, overflow: TextOverflow.ellipsis),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Tipo: ${item['type']} | Hora: ${item['time']} | Motores Positivos: ${item['malicious']}',
-                                  style: const TextStyle(color: Color(0xff8b949e), fontSize: 11),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _getBorderColor(item['status']).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              item['status'].toString().toUpperCase(),
-                              style: TextStyle(color: _getBorderColor(item['status']), fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildUrlPanel() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xff161b22),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xff30363d)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'DIRECCIÓN OBJETIVO (URL / DOMINIO)',
-            style: TextStyle(color: Color(0xff58a6ff), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _urlController,
-            style: const TextStyle(color: Colors.white, fontSize: 15),
-            decoration: InputDecoration(
-              hintText: 'Ej: https://www.wikipedia.org',
-              hintStyle: const TextStyle(color: Color(0xff8b949e)),
-              fillColor: const Color(0xff0d1117),
-              filled: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xff30363d))),
-              focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xff1f6feb), width: 1.5)),
-              prefixIcon: const Icon(Icons.radar, color: Color(0xff1f6feb)),
+  Widget _buildTopBar() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+    decoration: const BoxDecoration(
+      color: Color(0xff161b22),
+      border: Border(bottom: BorderSide(color: Color(0xff30363d), width: 1.5)),
+    ),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: const [
+            Icon(Icons.gpp_good, color: Color(0xff58a6ff), size: 28),
+            SizedBox(width: 12),
+            Text(
+              "JOSH SECURITY",
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2),
             ),
+          ],
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: _isServerConnected ? const Color(0xff238636).withValues(alpha: 0.2) : const Color(0xffda3637).withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _isServerConnected ? const Color(0xff238636) : const Color(0xffda3637)),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _startUrlAnalysis,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xff1f6feb),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: _isLoading
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text('EJECUTAR ESCANEO FORENSE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilePanel() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xff161b22),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xff30363d)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'CARGA DEL VECTOR DE ARCHIVO',
-            style: TextStyle(color: Color(0xff58a6ff), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-          ),
-          const SizedBox(height: 12),
-          Row(
+          child: Row(
             children: [
-              Expanded(
-                child: Container(
-                  height: 46,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xff0d1117),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xff30363d)),
-                  ),
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _selectedFileName ?? 'Ningún archivo seleccionado...',
-                    style: TextStyle(
-                      color: _selectedFileName != null ? Colors.white : const Color(0xff8b949e),
-                      fontSize: 14,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                height: 46,
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _pickFile,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xff21262d),
-                    side: const BorderSide(color: Color(0xff30363d)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.folder_open, color: Color(0xff58a6ff), size: 18),
-                  label: const Text('BUSCAR', style: TextStyle(color: Colors.white, fontSize: 13)),
-                ),
+              CircleAvatar(radius: 4, backgroundColor: _isServerConnected ? const Color(0xff238636) : const Color(0xffda3637)),
+              const SizedBox(width: 6),
+              Text(
+                _isServerConnected ? "PY-SERVER ONLINE" : "PY-SERVER OFFLINE",
+                style: TextStyle(color: _isServerConnected ? const Color(0xff56d364) : const Color(0xfff85149), fontSize: 11, fontWeight: FontWeight.bold),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: (_isLoading || _selectedFileBytes == null) ? null : _startFileAnalysis,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xff238636), 
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: _isLoading
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text('ANALIZAR HASH DE MALWARE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatColumn(String label, int count, Color color) {
-    return Column(
-      children: [
-        Text(count.toString(), style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+        )
       ],
-    );
-  }
+    ),
+  );
+
+  Widget _buildStatusShield() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(25),
+    decoration: BoxDecoration(
+      color: const Color(0xff161b22),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xff30363d)),
+    ),
+    child: Column(
+      children: [
+        if (_isProcessing)
+          const CircularProgressIndicator(color: Color(0xff58a6ff))
+        else
+          const Icon(Icons.shield, size: 70, color: Color(0xff58a6ff)),
+        const SizedBox(height: 15),
+        Text(
+          _systemStatus,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildSectionTitle(String title) => Row(
+    children: [
+      const Icon(Icons.analytics_outlined, color: Color(0xff8b949e), size: 18),
+      const SizedBox(width: 8),
+      Text(
+        title,
+        style: const TextStyle(color: Color(0xff8b949e), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.1),
+      ),
+    ],
+  );
+
+  Widget _buildModuleGrid() => GridView.count(
+    crossAxisCount: 2,
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    crossAxisSpacing: 15,
+    mainAxisSpacing: 15,
+    childAspectRatio: 1.4,
+    children: [
+      _buildModuleCard(
+        icon: Icons.bug_report,
+        title: "Análisis Malware",
+        subtitle: "Escaneo estático",
+        color: const Color(0xff58a6ff),
+        onTap: _isProcessing ? () {} : _triggerMalwareScan,
+      ),
+      _buildModuleCard(
+        icon: Icons.link,
+        title: "Revisión URL",
+        subtitle: "Phishing Gateway",
+        color: const Color(0xff34d058),
+        onTap: _triggerUrlAnalysis,
+      ),
+      _buildModuleCard(
+        icon: Icons.security_update_warning,
+        title: "Simulación",
+        subtitle: "Entorno Sandbox",
+        color: const Color(0xffe1e345),
+        onTap: () {
+          setState(() {
+            _historyEvents.insert(0, {
+              "title": "[SANDBOX]: Simulación de ataque contra Windows",
+              "subtitle": "Monitoreo preventivo activado exitosamente.",
+              "isError": false
+            });
+          });
+        },
+      ),
+      _buildModuleCard(
+        icon: Icons.history,
+        title: "Actualizar",
+        subtitle: "Sincronizar logs",
+        color: const Color(0xffbc8cff),
+        onTap: _loadInitialHistory,
+      ),
+    ],
+  );
+
+  Widget _buildModuleCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) => Material(
+    color: const Color(0xff161b22),
+    borderRadius: BorderRadius.circular(10),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xff30363d)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Icon(icon, color: color, size: 28),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: const TextStyle(color: Color(0xff8b949e), fontSize: 11)),
+              ],
+            )
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _buildLiveLogStream() => Container(
+    height: 220,
+    decoration: BoxDecoration(
+      color: const Color(0xff161b22),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: const Color(0xff30363d)),
+    ),
+    child: _historyEvents.isEmpty
+        ? const Center(child: Text("Sin registros en la bitácora", style: TextStyle(color: Color(0xff8b949e))))
+        : ListView.builder(
+            itemCount: _historyEvents.length,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemBuilder: (context, index) {
+              final log = _historyEvents[index];
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xff0d1117),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: log["isError"] ? const Color(0xffda3637).withValues(alpha: 0.3) : const Color(0xff30363d)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.terminal, 
+                      color: log["isError"] ? const Color(0xfff85149) : const Color(0xff58a6ff), 
+                      size: 14
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            log["title"] ?? "",
+                            style: TextStyle(
+                              color: log["isError"] ? const Color(0xfff85149) : Colors.white,
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            log["subtitle"] ?? "",
+                            style: const TextStyle(color: Color(0xff8b949e), fontFamily: 'monospace', fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+  );
 }

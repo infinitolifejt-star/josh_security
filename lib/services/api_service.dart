@@ -1,38 +1,49 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:file_picker/file_picker.dart';
 
-class SentinelApiService {
-  // Usamos la clave que ya tienes en tu archivo .env
-  final String _apiKey = dotenv.env['VT_API_KEY'] ?? 'TU_CLAVE_MANUAL_AQUI';
+class ApiService {
+  final String baseUrl;
 
-  Future<Map<String, dynamic>> checkUrl(String url) async {
+  ApiService({this.baseUrl = "http://localhost:5000"});
+
+  // Método para enviar archivos a analizar en el backend de Python
+  Future<Map<String, dynamic>> scanFileWithPython(PlatformFile file) async {
     try {
-      // 1. Limpiar la URL
-      final cleanUrl = url.trim().replaceAll('https://', '').replaceAll('http://', '');
-      
-      // 2. Llamada real a VirusTotal (v3)
-      final response = await http.get(
-        Uri.parse('https://www.virustotal.com/api/v3/domains/$cleanUrl'),
-        headers: {'x-apikey': _apiKey},
+      final url = Uri.parse('$baseUrl/api/v1/scan');
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"fileName": file.name, "size": file.size}),
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        // Analizamos si hay votos de malicia
-        final stats = data['data']['attributes']['last_analysis_stats'];
-        final malicious = stats['malicious'] ?? 0;
-
-        if (malicious > 0) {
-          return {'status': '🚨 ¡AMENAZA DETECTADA! ($malicious motores marcaron esta URL)'};
-        } else {
-          return {'status': '✅ JOSH Sentinel: URL Limpia y Segura.'};
-        }
+        return jsonDecode(response.body);
       } else {
-        return {'status': '🛡️ Escudo Local: La URL parece segura, pero VirusTotal no respondió.'};
+        return {
+          "status": "ERROR",
+          "message": "Servidor Python respondió con estado: ${response.statusCode}"
+        };
       }
     } catch (e) {
-      return {'status': '⚠️ Error de conexión. Verificando integridad local...'};
+      return {
+        "status": "ERROR",
+        "message": "No se pudo conectar al backend de Python: ${e.toString()}"
+      };
+    }
+  }
+
+  // Método para recuperar el historial forense guardado en Flask
+  Future<List<dynamic>> fetchScanHistory() async {
+    try {
+      final url = Uri.parse('$baseUrl/api/history');
+      final response = await http.get(url).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return [];
+    } catch (e) {
+      return [];
     }
   }
 }
