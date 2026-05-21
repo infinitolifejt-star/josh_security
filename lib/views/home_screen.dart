@@ -14,46 +14,59 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Map<String, dynamic>> _historyEvents = [];
   final TextEditingController _urlController = TextEditingController();
   
-  String _systemStatus = "SISTEMA PROTEGIDO - CENTINELA ESCUCHANDO";
+  String _systemStatus = "SISTEMA PROTEGIDO - ESCUCHANDO PETICIONES";
   bool _isProcessing = false;
-  bool _isServerConnected = true;
+  bool _isServerConnected = false;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialHistory();
+    _syncWithBackend();
   }
 
-  Future<void> _loadInitialHistory() async {
+  // Sincronización en vivo con mapeo de cadenas dinámicas
+  Future<void> _syncWithBackend() async {
     try {
       final history = await _apiService.fetchScanHistory();
       setState(() {
         _isServerConnected = true;
+        _systemStatus = "SISTEMA PROTEGIDO - ESCUCHANDO PETICIONES";
         _historyEvents.clear();
+        
         for (var item in history) {
+          if (item == null || item is! Map) continue;
+          
+          final Map<String, dynamic> safeItem = Map<String, dynamic>.from(item);
+          
+          // Extracción dinámica de metadatos reales del servidor
+          final String targetName = safeItem['fileName'] != null 
+              ? safeItem['fileName'].toString() 
+              : "Objeto Indefinido";
+              
+          final bool isUrl = targetName.startsWith("URL:");
+          final String verdict = safeItem['verdict'] != null ? safeItem['verdict'].toString() : "SEGURO";
+          final String engine = safeItem['engine'] != null ? safeItem['engine'].toString() : "Centinela Core";
+
           _historyEvents.add({
-            "title": "[HISTORIAL]: ${item['fileName'] || item['url']}",
-            "subtitle": "Veredicto: ${item['verdict']} | Motor: ${item['engine']}",
-            "isError": item['verdict'] == "MALICIOSO"
+            "title": isUrl ? "[HISTORIAL URL]" : "[HISTORIAL FILE]",
+            "subtitle": "$targetName | Veredicto: $verdict | $engine",
+            "isError": verdict == "MALICIOSO"
           });
         }
       });
     } catch (e) {
       setState(() {
         _isServerConnected = false;
-        _historyEvents.insert(0, {
-          "title": "[ALERTA LINK]: Modo Offline",
-          "subtitle": "No se detectó respuesta en el backend de Python.",
-          "isError": true
-        });
+        _systemStatus = "MODO DE FALLO: CONTROLADOR PYTHON DESCONECTADO";
       });
     }
   }
 
+  // Módulo de análisis estático
   Future<void> _triggerMalwareScan() async {
     setState(() {
       _isProcessing = true;
-      _systemStatus = "EXTRAYENDO FIRMAS HEURÍSTICAS LOCALES...";
+      _systemStatus = "CAPTURED: EXAMINANDO ESTRUCTURA DE ARCHIVO...";
     });
 
     try {
@@ -62,45 +75,31 @@ class _HomeScreenState extends State<HomeScreen> {
         PlatformFile file = result.files.single;
 
         setState(() {
-          _systemStatus = "SOLICITANDO VEREDICTO ANALÍTICO...";
-          _historyEvents.insert(0, {
-            "title": "[MOTOR]: Iniciando Hash de ${file.name}",
-            "subtitle": "Enviando metadatos al puerto 5000...",
-            "isError": false
-          });
+          _systemStatus = "TRANSMITIENDO PAYLOAD A PUERTO 5000...";
         });
 
-        final response = await _apiService.scanFileWithPython(file);
-
+        await _apiService.scanFileWithPython(file);
         setState(() {
-          if (response["status"] == "SUCCESS") {
-            _systemStatus = "ANÁLISIS FORENSE COMPLETADO";
-            final data = response["data"];
-            _historyEvents.insert(0, {
-              "title": "[CENTINELA]: ${data['fileName']}",
-              "subtitle": "Veredicto: ${data['verdict']} | ${data['engine']}",
-              "isError": data['verdict'] == "MALICIOSO"
-            });
-          } else {
-            _systemStatus = "FALLO EN LA RESPUESTA DEL MOTOR";
-          }
+          _systemStatus = "ANÁLISIS DE MALWARE CONCLUIDO";
         });
       } else {
         setState(() {
-          _systemStatus = "ESCANEO CANCELADO POR USUARIO";
+          _systemStatus = "OPERACIÓN ABORTADA POR EL OPERADOR";
         });
       }
     } catch (e) {
       setState(() {
-        _systemStatus = "FALLO CRÍTICO EN INTEGRIDAD";
+        _systemStatus = "EXCEPCIÓN EN EL MOTOR ANALÍTICO";
       });
     } finally {
       setState(() {
         _isProcessing = false;
       });
+      _syncWithBackend();
     }
   }
 
+  // Módulo de URLs Globales
   void _triggerUrlAnalysis() {
     _urlController.clear();
     showDialog(
@@ -108,18 +107,24 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xff161b22),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text("Inspección de URLs Globales", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        title: const Row(
+          children: [
+            Icon(Icons.link, color: Color(0xff34d058)),
+            SizedBox(width: 10),
+            Text("Gateway Antiphishing", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("El framework validará el dominio en tiempo real contra VirusTotal.", style: TextStyle(color: Color(0xff8b949e), fontSize: 13)),
+            const Text("Ingrese el dominio sospechoso para someterlo a auditoría externa:", style: TextStyle(color: Color(0xff8b949e), fontSize: 13)),
             const SizedBox(height: 15),
             TextField(
               controller: _urlController,
               style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 13),
               decoration: InputDecoration(
-                hintText: "https://ejemplo-phishing.com",
+                hintText: "https://secure-login-bank.com",
                 hintStyle: const TextStyle(color: Colors.grey),
                 filled: true,
                 fillColor: const Color(0xff0d1117),
@@ -132,51 +137,45 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
+            child: const Text("ABORTAR", style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             onPressed: () {
-              final urlToScan = _urlController.text.trim();
-              if (urlToScan.isNotEmpty) {
+              final targetUrl = _urlController.text.trim();
+              if (targetUrl.isNotEmpty) {
                 Navigator.pop(context);
-                _sendUrlToBackend(urlToScan);
+                _sendUrlToBackend(targetUrl);
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xff238636)),
-            child: const Text("ANALIZAR DOMINIO"),
+            child: const Text("INSPECCIONAR"),
           )
         ],
       ),
     );
   }
 
-  Future<void> _sendUrlToBackend(String url) async {
+  Future<void> _sendUrlToBackend(String targetUrl) async {
     setState(() {
       _isProcessing = true;
-      _systemStatus = "REVISANDO REPUTACIÓN DE DOMINIO...";
-      _historyEvents.insert(0, {
-        "title": "[PHISHING GATEWAY]: Analizando URL",
-        "subtitle": "Consultando bases de reputación en la nube...",
-        "isError": false
-      });
+      _systemStatus = "REQUIRIENDO INTELIGENCIA DE AMENAZAS...";
     });
 
     try {
-      // Simulación del puente HTTP hacia Python para la URL
-      await Future.delayed(const Duration(seconds: 2));
+      await _apiService.scanUrlWithPython(targetUrl);
       setState(() {
-        _systemStatus = "ANÁLISIS DE URL FINALIZADO";
-        _historyEvents.insert(0, {
-          "title": "[VIRUSTOTAL V3]: $url",
-          "subtitle": "Veredicto: SEGURO | Puntuación de riesgo: 0/94 (Clean)",
-          "isError": false
-        });
+        _systemStatus = "ANÁLISIS DE ENLACE COMPLETADO";
       });
     } catch (e) {
       setState(() {
-        _systemStatus = "ERROR AL CONSULTAR REPUTACIÓN";
+        _systemStatus = "EXCEPCIÓN EN EL ENLACE CLOUD";
       });
-    } child: setState(() { _isProcessing = false; });
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+      _syncWithBackend();
+    }
   }
 
   @override
@@ -194,11 +193,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     _buildStatusShield(),
                     const SizedBox(height: 30),
-                    _buildSectionTitle("MÓDULOS TÁCTICOS DE SEGURIDAD"),
+                    _buildSectionTitle("MÓDULOS ACTIVOS DE PROTECCIÓN"),
                     const SizedBox(height: 15),
                     _buildModuleGrid(),
                     const SizedBox(height: 30),
-                    _buildSectionTitle("BITÁCORA INTEGRADA DE AUDITORÍA"),
+                    _buildSectionTitle("AUDITORÍA DE EVENTOS FORENSES (PYTHON LOGS)"),
                     const SizedBox(height: 15),
                     _buildLiveLogStream(),
                   ],
@@ -220,9 +219,9 @@ class _HomeScreenState extends State<HomeScreen> {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: const [
-            Icon(Icons.gpp_good, color: Color(0xff58a6ff), size: 28),
+        const Row(
+          children: [
+            Icon(Icons.security, color: Color(0xff58a6ff), size: 28),
             SizedBox(width: 12),
             Text(
               "JOSH SECURITY",
@@ -233,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            color: _isServerConnected ? const Color(0xff238636).withValues(alpha: 0.2) : const Color(0xffda3637).withValues(alpha: 0.2),
+            color: _isServerConnected ? const Color(0xff238636).withOpacity(0.1) : const Color(0xffda3637).withOpacity(0.1),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: _isServerConnected ? const Color(0xff238636) : const Color(0xffda3637)),
           ),
@@ -242,7 +241,7 @@ class _HomeScreenState extends State<HomeScreen> {
               CircleAvatar(radius: 4, backgroundColor: _isServerConnected ? const Color(0xff238636) : const Color(0xffda3637)),
               const SizedBox(width: 6),
               Text(
-                _isServerConnected ? "PY-SERVER ONLINE" : "PY-SERVER OFFLINE",
+                _isServerConnected ? "PY-SERVER: CONECTADO" : "PY-SERVER: DESCONECTADO",
                 style: TextStyle(color: _isServerConnected ? const Color(0xff56d364) : const Color(0xfff85149), fontSize: 11, fontWeight: FontWeight.bold),
               ),
             ],
@@ -265,12 +264,12 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_isProcessing)
           const CircularProgressIndicator(color: Color(0xff58a6ff))
         else
-          const Icon(Icons.shield, size: 70, color: Color(0xff58a6ff)),
+          Icon(Icons.gpp_good, size: 70, color: _isServerConnected ? const Color(0xff56d364) : const Color(0xfff85149)),
         const SizedBox(height: 15),
         Text(
           _systemStatus,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
         ),
       ],
     ),
@@ -278,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSectionTitle(String title) => Row(
     children: [
-      const Icon(Icons.analytics_outlined, color: Color(0xff8b949e), size: 18),
+      const Icon(Icons.terminal, color: Color(0xff8b949e), size: 16),
       const SizedBox(width: 8),
       Text(
         title,
@@ -298,38 +297,38 @@ class _HomeScreenState extends State<HomeScreen> {
       _buildModuleCard(
         icon: Icons.bug_report,
         title: "Análisis Malware",
-        subtitle: "Escaneo estático",
+        subtitle: "Estructura Estática",
         color: const Color(0xff58a6ff),
-        onTap: _isProcessing ? () {} : _triggerMalwareScan,
+        onTap: _isProcessing || !_isServerConnected ? () {} : _triggerMalwareScan,
       ),
       _buildModuleCard(
-        icon: Icons.link,
+        icon: Icons.public,
         title: "Revisión URL",
-        subtitle: "Phishing Gateway",
+        subtitle: "Filtro Reputación",
         color: const Color(0xff34d058),
-        onTap: _triggerUrlAnalysis,
+        onTap: _isProcessing || !_isServerConnected ? () {} : _triggerUrlAnalysis,
       ),
       _buildModuleCard(
-        icon: Icons.security_update_warning,
-        title: "Simulación",
-        subtitle: "Entorno Sandbox",
+        icon: Icons.biotech,
+        title: "Sandbox Mode",
+        subtitle: "Aislamiento Local",
         color: const Color(0xffe1e345),
         onTap: () {
           setState(() {
             _historyEvents.insert(0, {
-              "title": "[SANDBOX]: Simulación de ataque contra Windows",
-              "subtitle": "Monitoreo preventivo activado exitosamente.",
+              "title": "[SANDBOX INTERN] Activo",
+              "subtitle": "Ambiente virtual de contención desplegado.",
               "isError": false
             });
           });
         },
       ),
       _buildModuleCard(
-        icon: Icons.history,
-        title: "Actualizar",
-        subtitle: "Sincronizar logs",
+        icon: Icons.sync,
+        title: "Sincronizar",
+        subtitle: "Forzar Handshake",
         color: const Color(0xffbc8cff),
-        onTap: _loadInitialHistory,
+        onTap: _syncWithBackend,
       ),
     ],
   );
@@ -360,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 2),
                 Text(subtitle, style: const TextStyle(color: Color(0xff8b949e), fontSize: 11)),
               ],
@@ -379,7 +378,7 @@ class _HomeScreenState extends State<HomeScreen> {
       border: Border.all(color: const Color(0xff30363d)),
     ),
     child: _historyEvents.isEmpty
-        ? const Center(child: Text("Sin registros en la bitácora", style: TextStyle(color: Color(0xff8b949e))))
+        ? const Center(child: Text("Esperando telemetría del servidor...", style: TextStyle(color: Color(0xff8b949e), fontFamily: 'monospace', fontSize: 12)))
         : ListView.builder(
             itemCount: _historyEvents.length,
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -391,16 +390,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xff0d1117),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: log["isError"] ? const Color(0xffda3637).withValues(alpha: 0.3) : const Color(0xff30363d)),
+                  border: Border.all(color: log["isError"] ? const Color(0xffda3637).withOpacity(0.3) : const Color(0xff30363d)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.terminal, 
-                      color: log["isError"] ? const Color(0xfff85149) : const Color(0xff58a6ff), 
-                      size: 14
-                    ),
+                    Icon(Icons.output, color: log["isError"] ? const Color(0xfff85149) : const Color(0xff58a6ff), size: 13),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -408,12 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Text(
                             log["title"] ?? "",
-                            style: TextStyle(
-                              color: log["isError"] ? const Color(0xfff85149) : Colors.white,
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold
-                            ),
+                            style: TextStyle(color: log["isError"] ? const Color(0xfff85149) : Colors.white, fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 3),
                           Text(

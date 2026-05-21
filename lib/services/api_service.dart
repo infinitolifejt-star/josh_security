@@ -7,39 +7,68 @@ class ApiService {
 
   ApiService({this.baseUrl = "http://localhost:5000"});
 
-  // Método para enviar archivos a analizar en el backend de Python
+  // Procesador dinámico profundo para extraer payloads válidos del backend
+  Map<String, dynamic> _cleanResponse(http.Response response) {
+    try {
+      if (response.body.isEmpty) {
+        return {"status": "ERROR", "message": "Cuerpo vacío"};
+      }
+      
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) {
+        // Si el servidor devolvió la estructura estándar con la clave 'data' anidada
+        if (decoded.containsKey('data') && decoded['data'] is Map) {
+          final Map<String, dynamic> dataMap = Map<String, dynamic>.from(decoded['data']);
+          return {
+            "status": decoded['status'] ?? "SUCCESS",
+            "fileName": dataMap['fileName'] ?? "Objeto Desconocido",
+            "verdict": dataMap['verdict'] ?? "SEGURO",
+            "engine": dataMap['engine'] ?? "Centinela Core"
+          };
+        }
+        return Map<String, dynamic>.from(decoded);
+      }
+      return {"status": "ERROR", "message": "Formato JSON no compatible"};
+    } catch (e) {
+      return {"status": "ERROR", "message": "Fallo de parseo: ${e.toString()}"};
+    }
+  }
+
   Future<Map<String, dynamic>> scanFileWithPython(PlatformFile file) async {
     try {
       final url = Uri.parse('$baseUrl/api/v1/scan');
       final response = await http.post(
         url,
-        headers: {"Content-Type": "application/json"},
+        headers: {"Content-Type": "application/json", "Accept": "application/json"},
         body: jsonEncode({"fileName": file.name, "size": file.size}),
-      ).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        return {
-          "status": "ERROR",
-          "message": "Servidor Python respondió con estado: ${response.statusCode}"
-        };
-      }
+      );
+      return _cleanResponse(response);
     } catch (e) {
-      return {
-        "status": "ERROR",
-        "message": "No se pudo conectar al backend de Python: ${e.toString()}"
-      };
+      return {"status": "ERROR", "message": e.toString()};
     }
   }
 
-  // Método para recuperar el historial forense guardado en Flask
+  Future<Map<String, dynamic>> scanUrlWithPython(String targetUrl) async {
+    try {
+      final url = Uri.parse('$baseUrl/api/v1/scan-url');
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json", "Accept": "application/json"},
+        body: jsonEncode({"url": targetUrl}),
+      );
+      return _cleanResponse(response);
+    } catch (e) {
+      return {"status": "ERROR", "message": e.toString()};
+    }
+  }
+
   Future<List<dynamic>> fetchScanHistory() async {
     try {
       final url = Uri.parse('$baseUrl/api/history');
-      final response = await http.get(url).timeout(const Duration(seconds: 5));
+      final response = await http.get(url, headers: {"Accept": "application/json"});
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
+        if (decoded is List) return decoded;
       }
       return [];
     } catch (e) {
