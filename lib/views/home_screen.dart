@@ -25,9 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _isLoading = true;
     });
-    
     final data = await _apiService.fetchHistory();
-    
     setState(() {
       _history = data;
       _isLoading = false;
@@ -102,25 +100,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
                   onPressed: _isSending ? null : () async {
                     if (_inputController.text.trim().isEmpty) return;
-                    
-                    setModalState(() {
-                      _isSending = true;
-                    });
-
-                    final response = await _apiService.sendScan(
-                      type: type,
-                      target: _inputController.text.trim(),
-                    );
-
+                    setModalState(() { _isSending = true; });
+                    final response = await _apiService.sendScan(type: type, target: _inputController.text.trim());
                     Navigator.pop(context);
-                    
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Veredicto: ${response['verdict'] ?? 'Procesado'} - ${response['detail'] ?? ''}'),
-                        backgroundColor: Colors.blueAccent,
-                      ),
+                      SnackBar(content: Text('Veredicto: ${response['verdict'] ?? 'Procesado'}'), backgroundColor: Colors.blueAccent),
                     );
-
                     _loadHistoryData();
                   },
                   child: _isSending 
@@ -175,8 +160,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 24),
             const Text('🎛️ MÓDULOS DE PROTECCIÓN DISPONIBLES', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            
-            // FILA DE MÓDULOS ACTIVOS
             Row(
               children: [
                 Expanded(
@@ -238,7 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
                       child: Column(
                         children: const [
-                          Icon(Icons.sync, color: Colors.magentaAccent),
+                          Icon(Icons.sync, color: Colors.purpleAccent),
                           SizedBox(height: 6),
                           Text('Sincronizar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                         ],
@@ -249,7 +232,29 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 24),
-            const Text('📋 AUDITORÍA DE EVENTOS FORENSES (GLOBAL LOGS)', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            
+            // FILA CON TITULO DE LOGS Y BOTÓN FLOTANTE DE REPORTE PDF
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('📋 AUDITORÍA DE EVENTOS FORENSES', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent.withOpacity(0.2),
+                    side: const BorderSide(color: Colors.redAccent, width: 1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Generando Reporte Forense PDF Oficial...'), backgroundColor: Colors.redAccent),
+                    );
+                    await _apiService.downloadPdfReport();
+                  },
+                  icon: const Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 16),
+                  label: const Text('Exportar PDF', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                )
+              ],
+            ),
             const SizedBox(height: 12),
 
             _isLoading 
@@ -264,26 +269,34 @@ class _HomeScreenState extends State<HomeScreen> {
                           final item = _history[index];
                           final isFile = item['type'] == 'file';
                           final isPhone = item['type'] == 'phone';
+                          final veredicto = (item['result'] ?? 'PROCESADO').toString().toUpperCase();
                           
+                          bool tieneRiesgo = veredicto.contains('MALWARE') || veredicto.contains('PHISHING') || veredicto.contains('FRAUDE') || veredicto.contains('SOSPECHOSO');
+
                           IconData iconItem = Icons.link;
                           Color colorItem = Colors.amberAccent;
+                          
                           if (isFile) {
-                            iconItem = Icons.file_present;
-                            colorItem = Colors.cyanAccent;
+                            iconItem = tieneRiesgo ? Icons.gavel : Icons.file_present;
+                            colorItem = tieneRiesgo ? Colors.redAccent : Colors.cyanAccent;
                           } else if (isPhone) {
-                            iconItem = Icons.phone_android;
-                            colorItem = Colors.lightGreenAccent;
+                            iconItem = tieneRiesgo ? Icons.phone_locked : Icons.phone_android;
+                            colorItem = tieneRiesgo ? Colors.redAccent : Colors.lightGreenAccent;
                           }
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(8)),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E293B), 
+                              borderRadius: BorderRadius.circular(8),
+                              border: tieneRiesgo ? Border.all(color: Colors.redAccent.withOpacity(0.5), width: 1.5) : null,
+                            ),
                             child: ListTile(
-                              leading: Icon(iconItem, color: colorItem),
+                              leading: Icon(iconItem, color: colorItem, size: 28),
                               title: Text(
                                 '[HISTORIAL ${item['type'].toString().toUpperCase()}]',
-                                style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                style: TextStyle(color: tieneRiesgo ? Colors.redAccent : Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12),
                               ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,17 +306,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Text(item['vt_detail'] ?? item['result'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
                                 ],
                               ),
-                              trailing: Text(
-                                item['result'] ?? 'PROCESADO',
-                                style: TextStyle(
-                                  color: item['result'].toString().contains('MALWARE') || 
-                                         item['result'].toString().contains('PHISHING') ||
-                                         item['result'].toString().contains('FRAUDE') ||
-                                         item['result'].toString().contains('SOSPECHOSO')
-                                      ? Colors.red
-                                      : Colors.greenAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12
+                              trailing: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: tieneRiesgo ? Colors.red.withOpacity(0.15) : Colors.greenAccent.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  veredicto,
+                                  style: TextStyle(color: tieneRiesgo ? Colors.redAccent : Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11),
                                 ),
                               ),
                             ),
