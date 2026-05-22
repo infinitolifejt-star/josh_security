@@ -17,8 +17,15 @@ CORS(app)
 DATABASE_FILE = "database.db"
 VT_API_KEY = "003fa969b0ddef2e33b9cb5cb7a00747ce1c2d2b1e52197a6e0a87649a4548e8"
 
+def conectar_db():
+    """Crea una conexión con timeout extendido y optimizada para concurrencia."""
+    conn = sqlite3.connect(DATABASE_FILE, timeout=20.0)
+    # Habilitar el modo WAL para permitir lecturas y escrituras simultáneas sin bloqueos
+    conn.execute("PRAGMA journal_mode=WAL;")
+    return conn
+
 def init_db():
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = conectar_db()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS escaneos (
@@ -34,7 +41,7 @@ def init_db():
     conn.close()
 
 def buscar_en_cache_local(target, tipo):
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = conectar_db()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT resultado, vt_result FROM escaneos WHERE tipo = ? AND objetivo = ? ORDER BY fecha DESC LIMIT 1",
@@ -114,14 +121,17 @@ def scan_endpoint():
             resultado_veredicto = "SITIO SEGURO"
             vt_summary = "No se detectaron patrones de suplantación de identidad."
 
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO escaneos (tipo, objetivo, resultado, vt_result) VALUES (?, ?, ?, ?)",
-        (tipo, target, resultado_veredicto, vt_summary)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO escaneos (tipo, objetivo, resultado, vt_result) VALUES (?, ?, ?, ?)",
+            (tipo, target, resultado_veredicto, vt_summary)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ Error de concurrencia al escribir en base de datos: {e}")
 
     return jsonify({
         "status": "success",
@@ -132,7 +142,7 @@ def scan_endpoint():
 
 @app.route('/api/history', methods=['GET'])
 def get_history():
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = conectar_db()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM escaneos ORDER BY fecha DESC")
@@ -159,7 +169,7 @@ def generate_pdf_report():
     """Genera un reporte PDF formal con los eventos forenses registrados en el Core."""
     pdf_filename = "Reporte_Forense_JoshSecurity.pdf"
     
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = conectar_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, tipo, objetivo, resultado, fecha FROM escaneos ORDER BY fecha DESC")
     records = cursor.fetchall()
@@ -191,7 +201,6 @@ def generate_pdf_report():
     table_data = [["ID", "MÓDULO", "OBJETIVO DE ANÁLISIS", "VEREDICTO DE SEGURIDAD", "FECHA REGISTRO"]]
     
     for r in records:
-        # 🌟 CORREGIDO: .toUpperCase() cambiado a .upper() nativo de Python
         table_data.append([str(r[0]), str(r[1]).upper(), str(r[2]), str(r[3]), str(r[4])])
 
     t = Table(table_data, colWidths=[30, 60, 200, 130, 120])
