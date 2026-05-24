@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 import 'services/api_service.dart';
+import 'components/logo_animado.dart';
+import 'components/banner_alerta.dart';
+import 'components/modulo_escaneo.dart';
 
 void main() {
   runApp(const JoshSecurityApp());
@@ -40,11 +42,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   Map<String, dynamic>? _lastVerdict;
   List<dynamic> _history = [];
 
-  // Variables del Sistema de Alertas Tempranas Avanzado
   Map<String, dynamic>? _activeCriticalAlert;
   String? _lastDismissedTarget; 
 
-  // Controlador de Animación para el Giro Continuo Realista del Escudo
   late AnimationController _rotationController;
 
   @override
@@ -52,7 +52,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     super.initState();
     _loadHistory();
     
-    // Configuración del motor de rotación constante y suave
     _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 7),
@@ -91,10 +90,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     
     if (threat != null) {
       final threatTarget = threat['target'] ?? '';
-      
-      if (_lastDismissedTarget == threatTarget) {
-        return;
-      }
+      if (_lastDismissedTarget == threatTarget) return;
 
       setState(() {
         _activeCriticalAlert = {
@@ -132,7 +128,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       final verdict = response['verdict']?.toString() ?? '';
       if (verdict.contains('CRÍTICO') || verdict.contains('DETECTADO') || verdict.contains('SOSPECHOSO')) {
         _lastDismissedTarget = null; 
-        
         setState(() {
           _activeCriticalAlert = {
             'type': _scanType.toUpperCase(),
@@ -157,9 +152,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 
   Future<void> _clearAuditHistory() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() { _isLoading = true; });
     try {
       setState(() {
         _history.clear();
@@ -171,9 +164,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     } catch (e) {
       _showSnackBar('❌ Error al limpiar registros: $e', Colors.redAccent);
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() { _isLoading = false; });
     }
   }
 
@@ -219,27 +210,19 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 child: Image.asset(
                   'assets/images/logo_escudo.png',
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(Icons.shield, color: Color(0xFF818CF8), size: 18);
-                  },
+                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.shield, color: Color(0xFF818CF8), size: 18),
                 ),
               ),
             ),
             const SizedBox(width: 12),
-            const Text(
-              'GLOBAL-CENTINELA',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
-            ),
+            const Text('GLOBAL-CENTINELA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5)),
           ],
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF818CF8)),
-            tooltip: 'Sincronizar Historial',
             onPressed: () {
-              setState(() {
-                _lastDismissedTarget = null;
-              });
+              setState(() { _lastDismissedTarget = null; });
               _loadHistory();
             },
           ),
@@ -250,264 +233,34 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            
-            // 🔥 NUEVA PRESENTACIÓN CENTRAL ULTRA-ESTÉTICA CON LOGO GIGANTE Y GIRO ANTI-ESPEJO
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 24),
-              padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1E293B), Color(0xFF111827)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.25), width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 15,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Motor de Renderizado 3D con Corrección de Matriz Espejo
-                  AnimatedBuilder(
-                    animation: _rotationController,
-                    builder: (context, child) {
-                      // Calculamos el ángulo actual en radianes
-                      final double angle = _rotationController.value * 2 * math.pi;
-                      
-                      // Evaluamos si el widget está de espaldas (entre 90 y 270 grados)
-                      final bool isBackside = angle % (2 * math.pi) > math.pi / 2 && angle % (2 * math.pi) < 3 * math.pi / 2;
+            // 📡 1. Componente de Logo 3D Modularizado
+            LogoAnimado(rotationController: _rotationController),
 
-                      return Transform(
-                        transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.0015) // Perspectiva de profundidad 3D
-                          ..rotateY(angle), // Rotación sobre el eje Y
-                        alignment: Alignment.center,
-                        child: Container(
-                          height: 180, // Subimos el tamaño para darle total protagonismo
-                          width: 180,
-                          decoration: BoxDecoration(
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF6366F1).withValues(alpha: 0.2),
-                                blurRadius: 25,
-                                spreadRadius: 5,
-                              )
-                            ]
-                          ),
-                          // Si está de espaldas, aplicamos una contra-rotación interna para enderezar las letras
-                          child: Transform(
-                            transform: isBackside ? Matrix4.rotationY(math.pi) : Matrix4.identity(),
-                            alignment: Alignment.center,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Image.asset(
-                                'assets/images/logo_escudo.png',
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Icon(Icons.security, size: 100, color: Color(0xFF818CF8));
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    "JOSH SECURITY SYSTEM",
-                    style: TextStyle(
-                      color: Colors.white, 
-                      fontSize: 22, // Más grande e imponente
-                      fontWeight: FontWeight.w900, 
-                      letterSpacing: 1.8,
-                      shadows: [
-                        Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 4),
-                      ]
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
-                    ),
-                    child: const Text(
-                      "🛡️ Core Security Suite v2.5",
-                      style: TextStyle(color: Color(0xFF818CF8), fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                    ),
-                  ),
-                ],
+            // 🚨 2. Componente de Banner de Alerta Crítica Modularizado
+            if (_activeCriticalAlert != null)
+              BannerAlerta(
+                activeCriticalAlert: _activeCriticalAlert!,
+                onExportPdf: _exportPdfReport,
+                onClose: () {
+                  setState(() {
+                    _lastDismissedTarget = _activeCriticalAlert!['target'];
+                    _activeCriticalAlert = null;
+                  });
+                },
               ),
-            ),
 
-            // 🚨 REAL-TIME PUSH NOTIFICATION BANNER UI
-            if (_activeCriticalAlert != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF991B1B), Color(0xFF7F1D1D)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.redAccent, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.red.withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: Colors.red.shade900,
-                      child: const Icon(Icons.gpp_bad, color: Colors.white, size: 28),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '⚠️ ADVERTENCIA CRÍTICA EN TIEMPO REAL',
-                            style: TextStyle(color: Colors.red.shade100, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${_activeCriticalAlert!['verdict']}',
-                            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Módulo: ${_activeCriticalAlert!['type']} | Objetivo: ${_activeCriticalAlert!['target']}',
-                            style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: _exportPdfReport,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E293B),
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.redAccent),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      icon: const Icon(Icons.picture_as_pdf, size: 16, color: Colors.redAccent),
-                      label: const Text('Auditar'),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white70),
-                      onPressed: () {
-                        setState(() {
-                          _lastDismissedTarget = _activeCriticalAlert!['target'];
-                          _activeCriticalAlert = null;
-                        });
-                      },
-                    )
-                  ],
-                ),
-              ),
-            ],
-
-            // PANEL CONTROL: SELECCIÓN DE VECTORES Y ENTRADA
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Módulo Analítico Preventivo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                    const SizedBox(height: 12),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: [
-                          _buildTypeRadio('url', '🌐 Anti-Phishing'),
-                          const SizedBox(width: 16),
-                          _buildTypeRadio('file', '📁 Anti-Malware'),
-                          const SizedBox(width: 16),
-                          _buildTypeRadio('phone', '📞 Anti-Fraud'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _targetController,
-                      decoration: InputDecoration(
-                        hintText: _scanType == 'url' 
-                            ? 'Ingresa la URL sospechosa...' 
-                            : _scanType == 'file' 
-                                ? 'Nombre del archivo con extensión...' 
-                                : 'Número telefónico (ej: +573...)',
-                        filled: true,
-                        fillColor: const Color(0xFF0F172A),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                        prefixIcon: Icon(
-                          _scanType == 'url' ? Icons.link : _scanType == 'file' ? Icons.insert_drive_file : Icons.phone,
-                          color: const Color(0xFF818CF8),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _executeScan,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF6366F1),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: _isLoading 
-                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                : const Text('Lanzar Escaneo Forense', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton.icon(
-                          onPressed: _exportPdfReport,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0F172A),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                            side: const BorderSide(color: Color(0xFF334155)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          icon: const Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 18),
-                          label: const Text('Exportar PDF'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+            // 🎛️ 3. Componente de Entrada de Datos Modularizado
+            ModuloEscaneo(
+              scanType: _scanType,
+              targetController: _targetController,
+              isLoading: _isLoading,
+              onTypeChanged: (newType) => setState(() => _scanType = newType),
+              onExecuteScan: _executeScan,
+              onExportPdf: _exportPdfReport,
             ),
             const SizedBox(height: 24),
 
-            // VISTA RESUMIDA DE LA ÚLTIMA OPERACIÓN
+            // Vista del Veredicto Directo
             if (_lastVerdict != null) ...[
               const Text('Resultado del Análisis Directo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
@@ -538,7 +291,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               const SizedBox(height: 24),
             ],
 
-            // SECCIÓN DE AUDITORÍA HISTÓRICA DE LOGS
+            // Panel de Historial de Auditoría Forense
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -549,13 +302,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     const SizedBox(width: 8),
                     TextButton.icon(
                       onPressed: _history.isEmpty ? null : _clearAuditHistory,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.amberAccent,
-                        disabledForegroundColor: Colors.white24,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      ),
                       icon: const Icon(Icons.delete_sweep, size: 16),
                       label: const Text('Limpiar', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(foregroundColor: Colors.amberAccent, disabledForegroundColor: Colors.white24),
                     ),
                   ],
                 ),
@@ -626,32 +375,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildTypeRadio(String value, String label) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _scanType = value;
-        });
-      },
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Radio<String>(
-            value: value,
-            groupValue: _scanType,
-            activeColor: const Color(0xFF818CF8),
-            onChanged: (String? newValue) {
-              setState(() {
-                _scanType = newValue!;
-              });
-            },
-          ),
-          Text(label, style: const TextStyle(fontSize: 13)),
-        ],
       ),
     );
   }
