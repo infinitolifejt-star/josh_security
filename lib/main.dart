@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import 'services/api_service.dart';
 
 void main() {
@@ -30,7 +31,7 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final TextEditingController _targetController = TextEditingController();
   
@@ -43,10 +44,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _activeCriticalAlert;
   String? _lastDismissedTarget; 
 
+  // Controlador de Animación para el Giro Continuo Realista del Escudo
+  late AnimationController _rotationController;
+
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    
+    // Configuración del motor de rotación constante y suave
+    _rotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 7),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _rotationController.dispose();
+    _targetController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHistory() async {
@@ -139,14 +156,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  // 🔥 NUEVA FUNCIÓN: Limpieza completa del panel de auditoría local
   Future<void> _clearAuditHistory() async {
     setState(() {
       _isLoading = true;
     });
     try {
-      // Nota: En próximas sesiones asociaremos esto a un endpoint '/api/history/clear' en Python si deseas borrar la DB física.
-      // Por ahora limpia el estado visual de forma inmediata y segura.
       setState(() {
         _history.clear();
         _activeCriticalAlert = null;
@@ -187,10 +201,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: const Text('🛡️ GLOBAL-CENTINELA: Core Security Suite', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         backgroundColor: const Color(0xFF1E293B),
         elevation: 4,
+        title: Row(
+          children: [
+            Container(
+              height: 32,
+              width: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF818CF8).withValues(alpha: 0.4), width: 1.5),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/images/logo_escudo.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(Icons.shield, color: Color(0xFF818CF8), size: 18);
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'GLOBAL-CENTINELA',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF818CF8)),
@@ -209,6 +250,106 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            
+            // 🔥 NUEVA PRESENTACIÓN CENTRAL ULTRA-ESTÉTICA CON LOGO GIGANTE Y GIRO ANTI-ESPEJO
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 24),
+              padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1E293B), Color(0xFF111827)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.25), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 15,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Motor de Renderizado 3D con Corrección de Matriz Espejo
+                  AnimatedBuilder(
+                    animation: _rotationController,
+                    builder: (context, child) {
+                      // Calculamos el ángulo actual en radianes
+                      final double angle = _rotationController.value * 2 * math.pi;
+                      
+                      // Evaluamos si el widget está de espaldas (entre 90 y 270 grados)
+                      final bool isBackside = angle % (2 * math.pi) > math.pi / 2 && angle % (2 * math.pi) < 3 * math.pi / 2;
+
+                      return Transform(
+                        transform: Matrix4.identity()
+                          ..setEntry(3, 2, 0.0015) // Perspectiva de profundidad 3D
+                          ..rotateY(angle), // Rotación sobre el eje Y
+                        alignment: Alignment.center,
+                        child: Container(
+                          height: 180, // Subimos el tamaño para darle total protagonismo
+                          width: 180,
+                          decoration: BoxDecoration(
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                                blurRadius: 25,
+                                spreadRadius: 5,
+                              )
+                            ]
+                          ),
+                          // Si está de espaldas, aplicamos una contra-rotación interna para enderezar las letras
+                          child: Transform(
+                            transform: isBackside ? Matrix4.rotationY(math.pi) : Matrix4.identity(),
+                            alignment: Alignment.center,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.asset(
+                                'assets/images/logo_escudo.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(Icons.security, size: 100, color: Color(0xFF818CF8));
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    "JOSH SECURITY SYSTEM",
+                    style: TextStyle(
+                      color: Colors.white, 
+                      fontSize: 22, // Más grande e imponente
+                      fontWeight: FontWeight.w900, 
+                      letterSpacing: 1.8,
+                      shadows: [
+                        Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 4),
+                      ]
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
+                    ),
+                    child: const Text(
+                      "🛡️ Core Security Suite v2.5",
+                      style: TextStyle(color: Color(0xFF818CF8), fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             // 🚨 REAL-TIME PUSH NOTIFICATION BANNER UI
             if (_activeCriticalAlert != null) ...[
               Container(
@@ -225,7 +366,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   border: Border.all(color: Colors.redAccent, width: 2),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.red.withOpacity(0.3),
+                      color: Colors.red.withValues(alpha: 0.3),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -297,15 +438,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     const Text('Módulo Analítico Preventivo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                        _buildTypeRadio('url', '🌐 Anti-Phishing'),
-                        const SizedBox(width: 16),
-                        _buildTypeRadio('file', '📁 Anti-Malware'),
-                        const SizedBox(width: 16),
-                        _buildTypeRadio('phone', '📞 Anti-Fraud'),
-                      ],
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          _buildTypeRadio('url', '🌐 Anti-Phishing'),
+                          const SizedBox(width: 16),
+                          _buildTypeRadio('file', '📁 Anti-Malware'),
+                          const SizedBox(width: 16),
+                          _buildTypeRadio('phone', '📞 Anti-Fraud'),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -340,7 +484,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: _isLoading 
                                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                 : const Text('Lanzar Escaneo Forense', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                            ),
+                          ),
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton.icon(
@@ -372,8 +516,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: _lastVerdict!['verdict'].toString().contains('LIMPIO') || _lastVerdict!['verdict'].toString().contains('SEGURO')
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.red.withOpacity(0.1),
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: _lastVerdict!['verdict'].toString().contains('LIMPIO') || _lastVerdict!['verdict'].toString().contains('SEGURO')
@@ -394,7 +538,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 24),
             ],
 
-            // SECCIÓN DE AUDITORÍA HISTÓRICA DE LOGS (MODIFICADA CON BOTÓN LIMPIAR)
+            // SECCIÓN DE AUDITORÍA HISTÓRICA DE LOGS
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -403,7 +547,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     Text('${_history.length} Eventos', style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
                     const SizedBox(width: 8),
-                    // 🔥 BOTÓN INCORPORADO: Acción de Limpieza Visual rápida
                     TextButton.icon(
                       onPressed: _history.isEmpty ? null : _clearAuditHistory,
                       style: TextButton.styleFrom(
@@ -451,11 +594,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         margin: const EdgeInsets.only(bottom: 10),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(color: alertColor.withOpacity(0.5), width: 1),
+                          side: BorderSide(color: alertColor.withValues(alpha: 0.5), width: 1),
                         ),
                         child: ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: alertColor.withOpacity(0.1),
+                            backgroundColor: alertColor.withValues(alpha: 0.1),
                             child: Icon(
                               item['type'] == 'url' ? Icons.link : item['type'] == 'file' ? Icons.insert_drive_file : Icons.phone,
                               color: alertColor,
@@ -495,6 +638,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
       },
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Radio<String>(
             value: value,
