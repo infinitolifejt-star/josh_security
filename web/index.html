@@ -5,12 +5,29 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="JOSH Security - Proyecto Centinela.">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
   <title>JOSH Security | Centinela</title>
   <style>
-    body { background-color: #020617; }
+    body { 
+      background-color: #020617; 
+      margin: 0;
+    }
   </style>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    {{flutter_bootstrap_js}}
+    
+    // Forzar la inicialización explícita con el motor de renderizado HTML nativo
+    window.addEventListener('load', function() {
+      _flutter.loader.load({
+        config: {
+          webRenderer: "html"
+        }
+      });
+    });
+  </script>
 </body>
 </html>
