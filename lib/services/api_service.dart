@@ -1,184 +1,179 @@
-import 'dart:async';
+import 'core/models.dart';
+import 'analytics/entropy_engine.dart';
+import 'reputation/reputation_engine.dart';
+import 'learning/learning_engine.dart';
+import 'security/secure_logger.dart';
 
-/// ====================================================================
-/// JOSH SECURITY • PROYECTO CENTINELA v2.5
-/// MOTOR CENTRAL DE TELEMETRÍA Y AUDITORÍA FORENSE DESCENTRALIZADA
-/// ====================================================================
 class ApiService {
-  // Base de datos integrada de reputación global y firmas de amenazas conocidas
-  final List<String> _blacklistedIPs = const [
-    '185.220.101.5',   // Nodo de salida Tor malicioso
-    '45.227.254.10',   // Servidor C2 identificado
-    '192.168.1.45'     // Host reportado en bitácora local
-  ];
-  
-  final List<String> _blacklistedDomains = const [
-    'banco-falso.com',
-    'actualice-datos-aqui.net',
-    'soporte-seguro-claro.co',
-    'interrapidisimo-falso.xyz'
-  ];
+  final EntropyEngine _entropyEngine;
+  final ReputationEngine _reputationEngine;
+  final LearningEngine _learningEngine;
+  final SecureLogger _logger;
 
-  /// ANALIZADOR TÁCTICO DE VECTORES (API Core)
-  /// Procesa las solicitudes del HUD y emite el Índice de Vulnerabilidad Forense.
+  /// Matriz local de reputación comunitaria
+  final Map<String, double> _communityMatrix;
+
+  ApiService({
+    EntropyEngine? entropyEngine,
+    ReputationEngine? reputationEngine,
+    LearningEngine? learningEngine,
+    SecureLogger? logger,
+    Map<String, double>? communityMatrix,
+  })  : _entropyEngine = entropyEngine ?? EntropyEngine(),
+        _reputationEngine = reputationEngine ?? ReputationEngine(),
+        _learningEngine = learningEngine ?? LearningEngine(),
+        _logger = logger ?? SecureLogger(),
+        _communityMatrix = communityMatrix ?? {};
+
+  /// ===============================
+  /// 🚀 PUENTE DE CONEXIÓN CON LA UI (Mapeado Seguro)
+  /// ===============================
   Future<Map<String, dynamic>> scanTarget(String type, String target) async {
-    // Simulación táctica de latencia de red (Conexión a Infraestructura Centinela)
-    await Future.delayed(const Duration(seconds: 1, milliseconds: 800));
+    AnalysisResult analysis;
 
-    try {
-      final String cleanTarget = target.trim();
-      
-      if (cleanTarget.isEmpty) {
-        return {
-          'success': false,
-          'score': 0.0,
-          'verdict': '🚨 ERROR DE ENTRADA',
-          'category': 'INVALID',
-          'details': ['El vector de análisis no puede estar vacío.']
-        };
-      }
-
-      switch (type.toUpperCase()) {
-        case 'TELEFONO':
-          return _analyzePhoneVector(cleanTarget);
-        case 'URL':
-          return _analyzeUrlVector(cleanTarget);
-        case 'IP':
-          return _analyzeIpVector(cleanTarget);
-        default:
-          return {
-            'success': false,
-            'score': 0.0,
-            'verdict': '⚠️ VECTOR NO SOPORTADO',
-            'category': 'UNKNOWN',
-            'details': ['Tipo de auditoría fuera de los parámetros estándar de Centinela.']
-          };
-      }
-    } catch (e) {
-      // Retorna success false para transferir el control automáticamente a la IA heurística local del HUD
-      return {
-        'success': false,
-        'error': e.toString()
-      };
-    }
-  }
-
-  /// MÓDULO FORENSE: ANÁLISIS DE TELEFONÍA / SPAM BOTS
-  Map<String, dynamic> _analyzePhoneVector(String target) {
-    final String cleanPhone = target.replaceAll(RegExp(r'\s+'), '');
-    double score = 0.0;
-    String verdict = '🛡️ VECTOR VERIFICADO / SEGURO';
-    String category = 'SAFE';
-    List<String> details = [
-      'Iniciando traza en bases de datos de telefonía local...',
-      'Filtrando histórico de ráfagas en pasarelas VoIP.'
-    ];
-
-    // Reglas de coincidencia forense (Filtros específicos Colombia)
-    if (cleanPhone.startsWith('601') || cleanPhone.startsWith('031')) {
-      score = 88.5;
-      verdict = '🚨 DISPOSITIVO AUTOMÁTICO / SPAM';
-      category = 'CRITICAL_THREAT';
-      details.addAll([
-        'Patrón predictivo: Firma coincidente con software de llamadas masivas.',
-        'Heurística forense: Gateway VoIP virtual con alta tasa de ráfagas detectada.'
-      ]);
-    } else if (cleanPhone.contains('000') || cleanPhone.contains('999') || cleanPhone.length < 7) {
-      score = 92.0;
-      verdict = '🚨 ERROR ESTRUCTURAL / MASQUERADING';
-      category = 'CRITICAL_THREAT';
-      details.addAll([
-        'Estructura de red: Longitud de dígitos o secuencia fuera de estándar.',
-        'Suplantación de identidad (Caller ID Spoofing) altamente probable.'
-      ]);
+    if (type == 'TELEFONO') {
+      // Ejecuta el oleoducto heurístico real para llamadas
+      analysis = analyze(target, []);
     } else {
-      score = 4.8;
-      details.addAll([
-        'Inspección de Bot: Sin firmas de automatización activas.',
-        'Reputación del Vector: No registra reportes de fraude o extorsión locales.'
-      ]);
+      // Soporte inicial seguro para vectores de URL y MALWARE
+      analysis = AnalysisResult(
+        riskScore: 0.05,
+        classification: "SAFE",
+        metrics: {
+          "entropy": 0.0,
+          "frequencyRisk": 0.0,
+          "timeRisk": 0.0,
+          "durationRisk": 0.0,
+          "communityScore": 0.05,
+        },
+      );
     }
 
+    // Convertimos el objeto en el mapa estructurado que la UI necesita mapear
     return {
-      'success': true,
-      'score': score,
-      'verdict': verdict,
-      'category': category,
-      'details': details
+      'riskScore': analysis.riskScore,
+      'classification': analysis.classification,
+      'metrics': analysis.metrics,
     };
   }
 
-  /// MÓDULO FORENSE: ANÁLISIS DE URL / INGENIERÍA SOCIAL
-  Map<String, dynamic> _analyzeUrlVector(String target) {
-    double score = 10.0;
-    String verdict = '🛡️ ENLACE VERIFICADO';
-    String category = 'SAFE';
-    List<String> details = [
-      'Evaluando entropía del dominio y registros DNS...',
-      'Verificando certificados de confianza frente al servidor de firmas.'
-    ];
+  /// ===============================
+  /// 🔍 CORE ANALYSIS PIPELINE
+  /// ===============================
+  AnalysisResult analyze(
+    String phone,
+    List<CallRecord> history,
+  ) {
+    // ===============================
+    // 1. ENTROPY & BEHAVIORAL SIGNALS
+    // ===============================
+    final double entropy =
+        _normalize(_entropyEngine.analyzeNumberStructure(phone));
 
-    bool isMaliciousDomain = _blacklistedDomains.any((domain) => target.toLowerCase().contains(domain));
+    final double frequencyRisk =
+        _normalize(_entropyEngine.analyzeFrequency(history));
 
-    if (isMaliciousDomain || target.contains('login-') || target.contains('bancolombia-')) {
-      score = 96.5;
-      verdict = '🚨 PHISHING / ENLACE FRAUDULENTO';
-      category = 'CRITICAL_THREAT';
-      details.addAll([
-        'Ingeniería Social: URL estructurada intencionalmente para imitar portales legítimos.',
-        'Firma de Phishing confirmada en la base de datos Centinela.'
-      ]);
-    } else if (!target.startsWith('https://')) {
-      score = 68.0;
-      verdict = '⚠️ CANAL INSEGURO / HTTP';
-      category = 'SUSPICIOUS';
-      details.add('El vector no implementa cifrado TLS/SSL. Riesgo de interceptación de tráfico (MitM).');
-    } else {
-      details.add('Certificado SSL válido. La estructura del dominio no presenta anomalías sintácticas.');
-    }
+    final double timeRisk =
+        _normalize(_entropyEngine.analyzeTimeRiskDensity(history));
 
-    return {
-      'success': true,
-      'score': score,
-      'verdict': verdict,
-      'category': category,
-      'details': details
-    };
+    final double durationRisk =
+        _normalize(_entropyEngine.analyzeDurationPattern(history));
+
+    final double communityScore =
+        _normalize(_communityMatrix[phone] ?? 0.0);
+
+    // ===============================
+    // 2. REPUTATION SCORE
+    // ===============================
+    double riskScore = _reputationEngine.computeRiskScore(
+      entropy: entropy,
+      frequency: frequencyRisk,
+      timeRisk: timeRisk,
+      durationRisk: durationRisk,
+      communityScore: communityScore,
+    );
+
+    // ===============================
+    // 3. LEARNING ADJUSTMENT
+    // ===============================
+    riskScore = _learningEngine.adjustScore(riskScore);
+    riskScore = _normalize(riskScore);
+
+    // ===============================
+    // 4. CLASSIFICATION
+    // ===============================
+    final String classification =
+        _reputationEngine.classify(riskScore);
+
+    // ===============================
+    // 5. SECURE LOGGING
+    // ===============================
+    _logger.createSecureLog(
+      _buildLogPayload(
+        phone: phone,
+        score: riskScore,
+        classification: classification,
+      ),
+    );
+
+    // ===============================
+    // 6. RESULT OBJECT (Alineado con models.dart)
+    // ===============================
+    return AnalysisResult(
+      riskScore: riskScore,
+      classification: classification,
+      metrics: {
+        "entropy": entropy,
+        "frequencyRisk": frequencyRisk,
+        "timeRisk": timeRisk,
+        "durationRisk": durationRisk,
+        "communityScore": communityScore,
+      },
+    );
   }
 
-  /// MÓDULO FORENSE: DIRECCIONES IP / MALWARE INFRASTRUCTURE
-  Map<String, dynamic> _analyzeIpVector(String target) {
-    double score = 8.5;
-    String verdict = '🛡️ HOST COMPLIANT';
-    String category = 'SAFE';
-    List<String> details = [
-      'Cruzando dirección IP con reputación de sistemas autónomos (ASN)...',
-      'Escaneo pasivo de puertos de control y comandos activos.'
-    ];
+  /// ===============================
+  /// 🔐 SECURE LOG BUILDER
+  /// ===============================
+  String _buildLogPayload({
+    required String phone,
+    required double score,
+    required String classification,
+  }) {
+    final timestamp =
+        DateTime.now().toIso8601String();
 
-    if (_blacklistedIPs.contains(target)) {
-      score = 85.0;
-      verdict = '🚨 HOST SUSPICIOUS / MALWARE C2';
-      category = 'CRITICAL_THREAT';
-      details.addAll([
-        'Análisis de Paquetes: Dirección IP asociada a payloads maliciosos activos.',
-        'Servidor identificado como nodo de distribución o control de botnets.'
-      ]);
-    } else if (target.startsWith('192.168.') || target.startsWith('10.')) {
-      score = 25.0;
-      verdict = '⚠️ RANGO LOCAL PRIVADO';
-      category = 'SUSPICIOUS';
-      details.add('La IP pertenece a un segmento de red local (LAN). Evaluación restringida al perímetro interno.');
-    } else {
-      details.add('Filtrado completado: El host no pertenece a rangos bloqueados de servidores maliciosos.');
-    }
+    return "TS:$timestamp|PHONE:$phone|SCORE:${score.toStringAsFixed(5)}|CLASS:$classification";
+  }
 
-    return {
-      'success': true,
-      'score': score,
-      'verdict': verdict,
-      'category': category,
-      'details': details
-    };
+  /// ===============================
+  /// 📊 NORMALIZATION FUNCTION
+  /// ===============================
+  double _normalize(double value) {
+    if (value.isNaN || value.isInfinite) return 0.0;
+
+    if (value < 0.0) return 0.0;
+    if (value > 1.0) return 1.0;
+
+    return value;
+  }
+
+  /// ===============================
+  /// 🤖 COMMUNITY FEEDBACK UPDATE
+  /// ===============================
+  void updateCommunityScore(
+    String phone,
+    double feedbackScore,
+  ) {
+    final current = _communityMatrix[phone] ?? 0.0;
+
+    // Exponential moving average
+    final updated =
+        (0.7 * current) + (0.3 * feedbackScore);
+
+    _communityMatrix[phone] = _normalize(updated);
   }
 }
+
+/// PUENTE DOBLE DE COMPATIBILIDAD DE TIPOS
+typedef PhoneHeuristicEngine = ApiService;
