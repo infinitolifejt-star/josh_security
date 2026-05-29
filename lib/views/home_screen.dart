@@ -1,3 +1,4 @@
+// lib/views/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
@@ -5,6 +6,7 @@ import '../services/api_service.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
+  @pragma('vm:entry-point')
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -24,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen>
   Color _hudColor = const Color(0xFF00E676);
 
   String? _selectedFileName;
-  int? _selectedFileSize;
+  int? _selectedFileSize; // Vinculado de forma segura en las métricas forenses
 
   List<String> _forensicLogs = [
     "CENTINELA v2.5: Núcleo heurístico cargado en memoria local."
@@ -140,6 +142,7 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       Map<String, dynamic> result;
 
+      // Sincronización milimétrica con los identificadores del ApiService
       if (_currentTab == 0) {
         result = await _apiService.scanTarget('TELEFONO', target);
       } else if (_currentTab == 1) {
@@ -152,46 +155,58 @@ class _HomeScreenState extends State<HomeScreen>
       final scoreInPercent = rawScore * 100;
       
       final classification = result['classification'] ?? 'DESCONOCIDO';
-      final metrics = result['metrics'] as Map<String, double>? ?? {};
+      final metrics = result['metrics'] as Map<String, dynamic>? ?? {};
+      final backendLogs = result['logs'] as String? ?? 'Análisis completado sin logs externos.';
 
       setState(() {
         _vulnerabilityScore = scoreInPercent;
         _verdictText = classification;
 
+        // Balanceo del color del HUD según criticidad real
         if (scoreInPercent >= 70) {
-          _hudColor = const Color(0xFFFF5252);
-        } else if (scoreInPercent >= 30) {
-          _hudColor = const Color(0xFFFFD740);
+          _hudColor = const Color(0xFFFF5252); // Crítico (Rojo)
+        } else if (scoreInPercent >= 35) {
+          _hudColor = const Color(0xFFFFD740); // Advertencia (Amarillo)
         } else {
-          _hudColor = const Color(0xFF00E676);
+          _hudColor = const Color(0xFF00E676); // Seguro (Verde)
         }
 
         if (_currentTab == 0) {
           _statusCategory = "ANÁLISIS COMPLETADO • TELEFONÍA";
+          
+          // Extracción segura de tipos dinámicos para evitar Dart Cast Exceptions
+          final double entropyVal = (metrics['entropy'] as num?)?.toDouble() ?? 0.0;
+          final double freqVal = (metrics['frequencyRisk'] as num?)?.toDouble() ?? 0.0;
+          final double timeVal = (metrics['timeRisk'] as num?)?.toDouble() ?? 0.0;
+          final double durVal = (metrics['durationRisk'] as num?)?.toDouble() ?? 0.0;
+          final double commVal = (metrics['communityScore'] as num?)?.toDouble() ?? 0.0;
+
           _forensicLogs = [
             "OBJETIVO EN RUTA: $target",
-            "» Entropía Estructural: ${(metrics['entropy'] ?? 0.0 * 100).toStringAsFixed(1)}%",
-            "» Riesgo por Frecuencia: ${(metrics['frequencyRisk'] ?? 0.0 * 100).toStringAsFixed(1)}%",
-            "» Densidad Horaria: ${(metrics['timeRisk'] ?? 0.0 * 100).toStringAsFixed(1)}%",
-            "» Patrón de Duración: ${(metrics['durationRisk'] ?? 0.0 * 100).toStringAsFixed(1)}%",
-            "» Reputación Comunitaria: ${(metrics['communityScore'] ?? 0.0 * 100).toStringAsFixed(1)}%",
-            "Análisis de comportamiento finalizado con éxito."
+            "» Entropía Estructural: ${(entropyVal * 100).toStringAsFixed(1)}%",
+            "» Riesgo por Frecuencia: ${(freqVal * 100).toStringAsFixed(1)}%",
+            "» Densidad Horaria: ${(timeVal * 100).toStringAsFixed(1)}%",
+            "» Patrón de Duración: ${(durVal * 100).toStringAsFixed(1)}%",
+            "» Reputación Comunitaria: ${(commVal * 100).toStringAsFixed(1)}%",
+            "» Balanceador de Prefijos: ${metrics['calibrated'] == 1.0 ? 'APLICADO (Prefijo Co)' : 'NINGUNO'}",
+            "REPORT: $backendLogs"
           ];
         } else if (_currentTab == 1) {
           _statusCategory = "ANÁLISIS COMPLETADO • PHISHING";
           _forensicLogs = [
             "URL AUDITADA: $target",
-            "» Servidores DNS de respaldo analizados correctamente.",
-            "» Comprobación de patrones de spoofing de dominio: LIMPIO.",
-            "» Base de datos Safe Browsing consultada."
+            "» Desglose de amenazas en canales HTTP/REST terminado.",
+            "» Auditoría de patrones de spoofing estructural activa.",
+            "AUDIT LOG: $backendLogs"
           ];
         } else {
           _statusCategory = "ANÁLISIS COMPLETADO • MALWARE";
           _forensicLogs = [
-            "BINARIO DE ENTRENAMIENTO: $target",
-            "» Firma SHA-256 calculada y comparada localmente.",
-            "» Sandbox ejecutado en contenedor virtual seguro.",
-            "» Comprobación estructural de desbordamiento de búfer completa."
+            "BINARIO DE INSPECCIÓN: $target",
+            if (_selectedFileSize != null) "» Peso Estático Verificado: ${_formatBytes(_selectedFileSize!)}",
+            "» Firma digital procesada y enviada al backend SQLite.",
+            "» Análisis heurístico estático de desbordamiento completado.",
+            "AUDIT LOG: $backendLogs"
           ];
         }
 
@@ -209,13 +224,15 @@ class _HomeScreenState extends State<HomeScreen>
         _statusCategory = "Subsistema en Crisis";
         _hudColor = const Color(0xFFFF5252);
         _forensicLogs = [
-          "CRÍTICO: Interrupción abrupta en la comunicación del motor.",
+          "CRÍTICO: Interrupción abrupta en la comunicación del motor analítico.",
           e.toString(),
         ];
       });
     } finally {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+      // Corrección del bloque finally para remover el 'return' de control de flujo
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -253,10 +270,10 @@ class _HomeScreenState extends State<HomeScreen>
       decoration: BoxDecoration(
         color: const Color(0xFF1C2541),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _hudColor.withOpacity(0.4), width: 2),
+        border: Border.all(color: _hudColor.withValues(alpha: 0.4), width: 2),
         boxShadow: [
           BoxShadow(
-            color: _hudColor.withOpacity(0.08),
+            color: _hudColor.withValues(alpha: 0.08),
             blurRadius: 16,
             spreadRadius: 2,
           )
@@ -286,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen>
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: _hudColor.withOpacity(0.6), width: 2),
+              border: Border.all(color: _hudColor.withValues(alpha: 0.6), width: 2),
             ),
             child: CircleAvatar(
               radius: 40,
@@ -342,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen>
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           color: const Color(0xFF3A506B),
-          border: Border.all(color: Colors.blueAccent.withOpacity(0.4)),
+          border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.4)),
         ),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.blueGrey[300],
@@ -443,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween, // 🌟 SOLUCIÓN AQUÍ: Corrección de 'between' a 'spaceBetween'
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 _statusCategory,
