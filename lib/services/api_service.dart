@@ -1,7 +1,7 @@
 // lib/services/api_service.dart
 import 'dart:convert';
-import 'dart:math' as math; // Corrección: Restaurado para habilitar math.max
-import 'package:flutter/foundation.dart' show kIsWeb; // Corrección: Ruta nativa correcta del SDK de Flutter
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'core/models.dart';
 import 'analytics/entropy_engine.dart';
@@ -14,19 +14,14 @@ class ApiService {
   final ReputationEngine _reputationEngine;
   final LearningEngine _learningEngine;
   final SecureLogger _logger;
-
-  /// Matriz local de reputación comunitaria
   final Map<String, double> _communityMatrix;
 
   /// Endpoint base adaptativo para la API segura en Flask
-  /// Resuelve dinámicamente el direccionamiento según el entorno de ejecución
   static String get _baseUrl {
     if (kIsWeb) {
-      return 'http://localhost:5000/api';
+      return 'http://localhost:5000';
     }
-    // Si se ejecuta en un emulador Android usa 10.0.2.2, si es dispositivo físico se recomienda usar la IP local de tu red (ej. 192.168.x.x o 10.120.2.1)
-    // Por defecto se establece la IP configurada en tu interfaz de red de desarrollo visible en consola.
-    return 'http://127.0.0.1:5000/api'; 
+    return 'http://127.0.0.1:5000'; 
   }
 
   /// Calibración heurística para el ecosistema telefónico colombiano
@@ -47,127 +42,35 @@ class ApiService {
         _logger = logger ?? SecureLogger(),
         _communityMatrix = communityMatrix ?? {};
 
-  /// ===============================
-  /// 🚀 PUENTE DE CONEXIÓN CON LA UI (Mapeado Seguro & REST Híbrido)
-  /// ===============================
+  /// =====================================================================
+  /// 🚀 PUENTE DE CONEXIÓN UNIFICADO CON LA API DE FLASK (Modo Red Completo)
+  /// =====================================================================
   Future<Map<String, dynamic>> scanTarget(String type, String target) async {
-    // Variable para empaquetar la auditoría forense que irá al HUD
     Map<String, dynamic> resultData;
 
-    if (type == 'TELEFONO') {
-      // 1. Ejecuta el oleoducto heurístico local de llamadas
-      final AnalysisResult analysis = analyze(target, []);
-      
-      resultData = {
-        'riskScore': analysis.riskScore,
-        'classification': analysis.classification,
-        'metrics': analysis.metrics,
-        'logs': 'HEURÍSTICA LOCAL: Análisis completado con éxito. Multi-motores estables.',
-      };
-    } else {
-      // 2. Ejecuta la consulta REST en caliente hacia Flask para URL y MALWARE
-      resultData = await _executeNetworkScan(target, type);
+    // Normalizar etiquetas para asegurar compatibilidad exacta con los 3 motores de app.py
+    String normalizedType = type.toUpperCase();
+    if (normalizedType == 'TELEFONO' || normalizedType == 'CELLULAR' || normalizedType == 'SPAM') {
+      normalizedType = 'SPAM';
+    } else if (normalizedType == 'URL' || normalizedType == 'PHISHING') {
+      normalizedType = 'PHISHING';
+    } else if (normalizedType == 'MALWARE' || normalizedType == 'FILE') {
+      normalizedType = 'MALWARE';
     }
 
-    // Sincronización en segundo plano con el backend para persistencia histórica en SQLite
-    // Se ejecuta de forma asíncrona ("Fire and Forget") para no congelar la UI
-    _syncWithSqlite(target, type, resultData);
+    // CONTROL OPERATIVO: Forzamos a que TODOS los escaneos consuman el Py-Server en vivo
+    // Rompemos la simulación local estática para que la persistencia y el historial funcionen.
+    resultData = await _executeNetworkScan(target, normalizedType);
+
+    // Sincronización asíncrona de auditoría paralela
+    _syncWithSqlite(target, normalizedType, resultData);
 
     return resultData;
   }
 
-  /// ===============================
-  /// 🔍 CORE ANALYSIS PIPELINE (IA Heurística Calibrada)
-  /// ===============================
-  AnalysisResult analyze(String phone, List<CallRecord> history) {
-    // Limpieza de caracteres no numéricos
-    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-
-    // ===============================
-    // 1. ENTROPY & BEHAVIORAL SIGNALS
-    // ===============================
-    final double entropy =
-        _normalize(_entropyEngine.analyzeNumberStructure(cleanPhone));
-
-    final double frequencyRisk =
-        _normalize(_entropyEngine.analyzeFrequency(history));
-
-    final double timeRisk =
-        _normalize(_entropyEngine.analyzeTimeRiskDensity(history));
-
-    final double durationRisk =
-        _normalize(_entropyEngine.analyzeDurationPattern(history));
-
-    final double communityScore =
-        _normalize(_communityMatrix[cleanPhone] ?? 0.0);
-
-    // ===============================
-    // 2. REPUTATION SCORE & COLOMBIAN CALIBRATION
-    // ===============================
-    double riskScore = _reputationEngine.computeRiskScore(
-      entropy: entropy,
-      frequency: frequencyRisk,
-      timeRisk: timeRisk,
-      durationRisk: durationRisk,
-      communityScore: communityScore,
-    );
-
-    // Calibración anti-falso positivo: Si el prefijo celular es plenamente válido en Colombia,
-    // amortiguamos el peso de riesgo matemático por baja entropía de la secuencia.
-    bool hasValidPrefix = false;
-    for (final prefix in _validColombianPrefixes) {
-      if (cleanPhone.startsWith(prefix)) {
-        hasValidPrefix = true;
-        break;
-      }
-    }
-
-    if (hasValidPrefix && riskScore > 0.1) {
-      riskScore = math.max(0.0, riskScore - 0.20); // Amortiguación controlada sin subdesbordamiento
-    }
-
-    // ===============================
-    // 3. LEARNING ADJUSTMENT
-    // ===============================
-    riskScore = _learningEngine.adjustScore(riskScore);
-    riskScore = _normalize(riskScore);
-
-    // ===============================
-    // 4. CLASSIFICATION
-    // ===============================
-    final String classification = _reputationEngine.classify(riskScore);
-
-    // ===============================
-    // 5. SECURE LOGGING
-    // ===============================
-    _logger.createSecureLog(
-      _buildLogPayload(
-        phone: cleanPhone,
-        score: riskScore,
-        classification: classification,
-      ),
-    );
-
-    // ===============================
-    // 6. RESULT OBJECT
-    // ===============================
-    return AnalysisResult(
-      riskScore: riskScore,
-      classification: classification,
-      metrics: {
-        "entropy": double.parse(entropy.toStringAsFixed(3)),
-        "frequencyRisk": frequencyRisk,
-        "timeRisk": timeRisk,
-        "durationRisk": durationRisk,
-        "communityScore": communityScore,
-        "calibrated": hasValidPrefix ? 1.0 : 0.0
-      },
-    );
-  }
-
-  /// ===============================
+  /// =====================================================================
   /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
-  /// ===============================
+  /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
     try {
       final response = await http.post(
@@ -175,27 +78,46 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'target': target,
-          'type': type,
+          'type': type, // Envía 'SPAM', 'PHISHING' o 'MALWARE' de forma limpia
         }),
       ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> data = jsonDecode(response.body);
         return {
-          'riskScore': data['risk_score'] ?? 0.0,
-          'classification': data['classification'] ?? 'UNKNOWN',
+          'riskScore': data['risk_score'] ?? 0.12,
+          'classification': data['classification'] ?? 'SAFE',
           'metrics': data['metrics'] ?? {"network": 1.0},
-          'logs': data['logs'] ?? 'AUDITORÍA CLOUD: Respuesta exitosa del microservicio.',
+          'logs': data['logs'] ?? 'AUDITORÍA CENTRAL: Microservicio Centinela estable.',
         };
       } else {
-        return _fallbackStaticResult(type, 'Error de respuesta del servidor: ${response.statusCode}');
+        return _fallbackStaticResult(type, 'Error HTTP de pasarela: ${response.statusCode}');
       }
     } catch (e) {
-      return _fallbackStaticResult(type, 'Servidor PY-SERVER OFFLINE. Modo contingencia activo.');
+      return _fallbackStaticResult(type, 'Servidor CORE OFFLINE. Modo resiliencia activado.');
     }
   }
 
-  /// 🗄️ PERSISTENCIA ASÍNCRONA EN HISTORIAL / SQLITE DEL BACKEND
+  /// =====================================================================
+  /// 🔍 HISTORIAL DINÁMICO: CONSULTA ASÍNCRONA DE REGISTROS DE SESIÓN
+  /// =====================================================================
+  Future<List<dynamic>> fetchScanHistory() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/api/history'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 4));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+    } catch (e) {
+      // Retornar logs de contingencia silenciosa si el canal REST está ocupado
+    }
+    return [];
+  }
+
+  /// 🗄️ PERSISTENCIA EN SEGUNDO PLANO
   Future<void> _syncWithSqlite(String target, String type, Map<String, dynamic> localResult) async {
     try {
       await http.post(
@@ -206,55 +128,66 @@ class ApiService {
           'type': type,
           'risk_score': localResult['riskScore'],
           'classification': localResult['classification'],
-          'logs': localResult['logs'] ?? 'Sincronización automática local.',
+          'logs': localResult['logs'] ?? 'Trazabilidad integrada.',
         }),
       ).timeout(const Duration(seconds: 2));
-    } catch (_) {
-      // Silenciar excepción de red para asegurar aislamiento de fallas (Fail-Safe) en la UI principal
-    }
+    } catch (_) {}
   }
 
   /// 🛡️ MÓDULO DE DEGRADACIÓN SEGURA (FALLBACK)
   Map<String, dynamic> _fallbackStaticResult(String type, String errorReason) {
     return {
-      'riskScore': 0.10,
-      'classification': 'SEGURO (Caché Temporal)',
+      'riskScore': 0.15,
+      'classification': 'SAFE',
       'metrics': {"entropy": 0.0, "fallback": 1.0},
-      'logs': 'AUDITORÍA CONTROL: $errorReason. Se aplica política de protección local preventiva.'
+      'logs': 'CONTROL INTERNO: $errorReason. Resguardo local preventivo activo.'
     };
   }
 
-  /// ===============================
-  /// 🔐 SECURE LOG BUILDER
-  /// ===============================
-  String _buildLogPayload({
-    required String phone,
-    required double score,
-    required String classification,
-  }) {
-    final timestamp = DateTime.now().toIso8601String();
-    return "TS:$timestamp|PHONE:$phone|SCORE:${score.toStringAsFixed(5)}|CLASS:$classification";
+  /// Heurística local de respaldo (Mantenida por integridad estructural)
+  AnalysisResult analyze(String phone, List<CallRecord> history) {
+    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+    final double entropy = _normalize(_entropyEngine.analyzeNumberStructure(cleanPhone));
+    final double frequencyRisk = _normalize(_entropyEngine.analyzeFrequency(history));
+    final double timeRisk = _normalize(_entropyEngine.analyzeTimeRiskDensity(history));
+    final double durationRisk = _normalize(_entropyEngine.analyzeDurationPattern(history));
+    final double communityScore = _normalize(_communityMatrix[cleanPhone] ?? 0.0);
+
+    double riskScore = _reputationEngine.computeRiskScore(
+      entropy: entropy,
+      frequency: frequencyRisk,
+      timeRisk: timeRisk,
+      durationRisk: durationRisk,
+      communityScore: communityScore,
+    );
+
+    bool hasValidPrefix = false;
+    for (final prefix in _validColombianPrefixes) {
+      if (cleanPhone.startsWith(prefix)) {
+        hasValidPrefix = true;
+        break;
+      }
+    }
+    if (hasValidPrefix && riskScore > 0.1) {
+      riskScore = math.max(0.0, riskScore - 0.20);
+    }
+
+    riskScore = _normalize(_learningEngine.adjustScore(riskScore));
+    final String classification = _reputationEngine.classify(riskScore);
+
+    return AnalysisResult(
+      riskScore: riskScore,
+      classification: classification,
+      metrics: {"entropy": entropy, "calibrated": hasValidPrefix ? 1.0 : 0.0},
+    );
   }
 
-  /// ===============================
-  /// 📊 NORMALIZATION FUNCTION
-  /// ===============================
   double _normalize(double value) {
     if (value.isNaN || value.isInfinite) return 0.0;
     if (value < 0.0) return 0.0;
     if (value > 1.0) return 1.0;
     return value;
   }
-
-  /// ===============================
-  /// 🤖 COMMUNITY FEEDBACK UPDATE
-  /// ===============================
-  void updateCommunityScore(String phone, double feedbackScore) {
-    final current = _communityMatrix[phone] ?? 0.0;
-    final updated = (0.7 * current) + (0.3 * feedbackScore);
-    _communityMatrix[phone] = _normalize(updated);
-  }
 }
 
-/// PUENTE DOBLE DE COMPATIBILIDAD DE TIPOS
 typedef PhoneHeuristicEngine = ApiService;
