@@ -16,12 +16,16 @@ class ApiService {
   final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
+  /// ⚠️ CONFIGURACIÓN DE RED LOCAL:
+  /// Si pruebas en un CELULAR FÍSICO, cambia '127.0.0.1' por la IP local de tu PC (Ej: '192.168.1.15').
+  static const String _pcIp = '127.0.0.1';
+
   /// Endpoint base adaptativo para la API segura en Flask
   static String get _baseUrl {
     if (kIsWeb) {
       return 'http://localhost:5000';
     }
-    return 'http://127.0.0.1:5000'; 
+    return 'http://$_pcIp:5000'; 
   }
 
   /// Calibración heurística para el ecosistema telefónico colombiano
@@ -69,24 +73,38 @@ class ApiService {
   }
 
   /// =====================================================================
-  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
+  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE (CON PREVENCIÓN DE CRASH)
   /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
+    final String targetEndpoint = '$_baseUrl/api/v1/scan';
     try {
+      print('🛰️ Centinela enviando payload de seguridad a: $targetEndpoint');
+      
       final response = await http.post(
-        Uri.parse('$_baseUrl/v1/scan'),
+        Uri.parse(targetEndpoint),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'target': target,
           'type': type, // Envía 'SPAM', 'PHISHING' o 'MALWARE' de forma limpia
         }),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 8)); // Ampliado ligeramente para evitar cortes prematuros en Wi-Fi
+
+      print('📡 Respuesta de red recibida. Estatus HTTP: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> data = jsonDecode(response.body);
+        
+        // Extracción robusta adaptando tipos de datos híbridos (Int/Double/String)
+        double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
+        String parsedClassification = data['classification']?.toString() ?? 'SAFE';
+        String parsedRiskLevel = data['risk_level']?.toString() ?? parsedClassification;
+        String parsedScoreLabel = data['score']?.toString() ?? '0';
+
         return {
-          'riskScore': data['risk_score'] ?? 0.12,
-          'classification': data['classification'] ?? 'SAFE',
+          'riskScore': parsedScore,
+          'score': parsedScoreLabel,
+          'classification': parsedClassification,
+          'riskLevel': parsedRiskLevel,
           'metrics': data['metrics'] ?? {"network": 1.0},
           'logs': data['logs'] ?? 'AUDITORÍA CENTRAL: Microservicio Centinela estable.',
         };
@@ -94,6 +112,7 @@ class ApiService {
         return _fallbackStaticResult(type, 'Error HTTP de pasarela: ${response.statusCode}');
       }
     } catch (e) {
+      print('🚨 Falla de enlace crítico en canal REST ($_baseUrl): $e');
       return _fallbackStaticResult(type, 'Servidor CORE OFFLINE. Modo resiliencia activado.');
     }
   }
@@ -112,16 +131,16 @@ class ApiService {
         return jsonDecode(response.body) as List<dynamic>;
       }
     } catch (e) {
-      // Retornar logs de contingencia silenciosa si el canal REST está ocupado
+      print('⚠️ Canal de historial saturado o desconectado: $e');
     }
     return [];
   }
 
-  /// 🗄️ PERSISTENCIA EN SEGUNDO PLANO
+  /// 🗄️ PERSISTENCIA EN SEGUNDO PLANO (RUTAS UNIFICADAS CON /API)
   Future<void> _syncWithSqlite(String target, String type, Map<String, dynamic> localResult) async {
     try {
       await http.post(
-        Uri.parse('$_baseUrl/v1/sync'), 
+        Uri.parse('$_baseUrl/api/v1/sync'), 
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'target': target,
@@ -134,11 +153,13 @@ class ApiService {
     } catch (_) {}
   }
 
-  /// 🛡️ MÓDULO DE DEGRADACIÓN SEGURA (FALLBACK)
+  /// 🛡️ MÓDULO DE DEGRADACIÓN SEGURA (FALLBACK ENRIQUECIDO)
   Map<String, dynamic> _fallbackStaticResult(String type, String errorReason) {
     return {
       'riskScore': 0.15,
+      'score': '0',
       'classification': 'SAFE',
+      'riskLevel': 'INDETERMINADO',
       'metrics': {"entropy": 0.0, "fallback": 1.0},
       'logs': 'CONTROL INTERNO: $errorReason. Resguardo local preventivo activo.'
     };

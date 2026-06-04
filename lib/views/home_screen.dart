@@ -108,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen>
           "Carga de binario exitosa.",
           "Cripto-Nombre: ${file.name}",
           "Tamaño de carga: ${_formatBytes(file.size)}",
-          "Estado: Listo para inspección criptográfica."
+          "Estado: Listo para inspection criptográfica."
         ];
       });
     } catch (e) {
@@ -142,7 +142,6 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       Map<String, dynamic> result;
 
-      // Sincronización milimétrica con los identificadores del ApiService
       if (_currentTab == 0) {
         result = await _apiService.scanTarget('TELEFONO', target);
       } else if (_currentTab == 1) {
@@ -162,19 +161,18 @@ class _HomeScreenState extends State<HomeScreen>
         _vulnerabilityScore = scoreInPercent;
         _verdictText = classification;
 
-        // Balanceo del color del HUD según criticidad real
         if (scoreInPercent >= 70) {
-          _hudColor = const Color(0xFFFF5252); // Crítico (Rojo)
+          _hudColor = const Color(0xFFFF5252);
         } else if (scoreInPercent >= 35) {
-          _hudColor = const Color(0xFFFFD740); // Advertencia (Amarillo)
+          _hudColor = const Color(0xFFFFD740);
         } else {
-          _hudColor = const Color(0xFF00E676); // Seguro (Verde)
+          _hudColor = const Color(0xFF00E676);
         }
 
+        String vectorName = "TELEFÓNICO";
         if (_currentTab == 0) {
           _statusCategory = "ANÁLISIS COMPLETADO • TELEFONÍA";
-          
-          // Extracción segura de tipos dinámicos para evitar Dart Cast Exceptions
+          vectorName = "TELEFÓNICO";
           final double entropyVal = (metrics['entropy'] as num?)?.toDouble() ?? 0.0;
           final double freqVal = (metrics['frequencyRisk'] as num?)?.toDouble() ?? 0.0;
           final double timeVal = (metrics['timeRisk'] as num?)?.toDouble() ?? 0.0;
@@ -193,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen>
           ];
         } else if (_currentTab == 1) {
           _statusCategory = "ANÁLISIS COMPLETADO • PHISHING";
+          vectorName = "PHISHING/URL";
           _forensicLogs = [
             "URL AUDITADA: $target",
             "» Desglose de amenazas en canales HTTP/REST terminado.",
@@ -201,6 +200,7 @@ class _HomeScreenState extends State<HomeScreen>
           ];
         } else {
           _statusCategory = "ANÁLISIS COMPLETADO • MALWARE";
+          vectorName = "MALWARE/BIN";
           _forensicLogs = [
             "BINARIO DE INSPECCIÓN: $target",
             if (_selectedFileSize != null) "» Peso Estático Verificado: ${_formatBytes(_selectedFileSize!)}",
@@ -211,10 +211,11 @@ class _HomeScreenState extends State<HomeScreen>
         }
 
         _masterBitacora.insert(0, {
-          'timestamp': DateTime.now().toIso8601String(),
+          'timestamp': DateTime.now().toIso8601String().substring(11, 19),
           'target': target,
           'score': scoreInPercent,
-          'verdict': _verdictText,
+          'verdict': classification,
+          'vector': vectorName,
         });
       });
     } catch (e) {
@@ -229,11 +230,16 @@ class _HomeScreenState extends State<HomeScreen>
         ];
       });
     } finally {
-      // Corrección del bloque finally para remover el 'return' de control de flujo
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _clearMasterBitacora() {
+    setState(() {
+      _masterBitacora.clear();
+    });
   }
 
   @override
@@ -252,9 +258,11 @@ class _HomeScreenState extends State<HomeScreen>
               _buildInputSection(),
               const SizedBox(height: 16),
               SizedBox(
-                height: 250,
+                height: 220,
                 child: _buildBottomLogsSection(),
               ),
+              const SizedBox(height: 16),
+              _buildAnalyticsHistorySection(),
             ],
           ),
         ),
@@ -503,6 +511,140 @@ class _HomeScreenState extends State<HomeScreen>
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsHistorySection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111A35),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF1C2541)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.history_toggle_off, color: Color(0xFF5BC0BE), size: 16),
+                  SizedBox(width: 8),
+                  Text(
+                    "HISTORIAL DE ENTRADAS ANALIZADAS",
+                    style: TextStyle(
+                      color: Color(0xFF5BC0BE),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+              ),
+              if (_masterBitacora.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF5252), size: 20),
+                  tooltip: "Limpiar Consola HUD",
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                  onPressed: _clearMasterBitacora,
+                ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Divider(color: Color(0xFF1C2541), thickness: 1.5),
+          ),
+          _masterBitacora.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Text(
+                      "No hay registros de amenazas en la sesión activa.",
+                      style: TextStyle(
+                        color: Colors.blueGrey[500],
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _masterBitacora.length,
+                  itemBuilder: (context, index) {
+                    final item = _masterBitacora[index];
+                    final double score = item['score'] ?? 0.0;
+                    
+                    Color alertColor = const Color(0xFF00E676);
+                    if (score >= 70) {
+                      alertColor = const Color(0xFFFF5252);
+                    } else if (score >= 35) {
+                      alertColor = const Color(0xFFFFD740);
+                    }
+
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0A1128),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: alertColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: alertColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              "${score.toStringAsFixed(0)}%",
+                              style: TextStyle(
+                                color: alertColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item['target'] ?? 'Objetivo Desconocido',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "[${item['timestamp']}] VÉCTOR: ${item['vector']} • ${item['verdict']}",
+                                  style: TextStyle(
+                                    color: Colors.blueGrey[400],
+                                    fontFamily: 'monospace',
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
         ],
       ),
     );
