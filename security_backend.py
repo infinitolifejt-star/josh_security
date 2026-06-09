@@ -208,6 +208,7 @@ def scan_endpoint():
 
     # =====================================================================
     # ARQUITECTURA DE TRIPLE FILTRADO (VERDE / AMARILLO / ROJO)
+    # Estandarizado a "DANGER", "WARNING", "SAFE" para compatibilidad Flutter
     # =====================================================================
     
     # MÓDULO A: TELEFONÍA (SPAM / BOTS)
@@ -216,15 +217,15 @@ def scan_endpoint():
         
         if "8888888888" in clean_phone or clean_phone.count(clean_phone[0]) == len(clean_phone):
             risk_score = 0.98
-            classification = "CRITICAL_THREAT"  # 🔴 ROJO
+            classification = "DANGER"  # 🔴 ROJO
             vt_summary = "Bloqueado: Patrón de ráfaga o estructura numérica artificial en lista negra."
         elif clean_phone.startswith(("4470", "234", "79", "1888")):
             risk_score = 0.95
-            classification = "CRITICAL_THREAT"  # 🔴 ROJO
+            classification = "DANGER"  # 🔴 ROJO
             vt_summary = "Alerta Forense: Origen VoIP virtual vinculado a fraudes internacionales."
         elif clean_phone.startswith("018000") or target.startswith("+") or len(clean_phone) < 7 or len(clean_phone) > 15:
             risk_score = 0.55
-            classification = "SUSPICIOUS"  # 🟡 AMARILLO
+            classification = "WARNING"  # 🟡 AMARILLO
             vt_summary = "Advertencia Preventiva: Línea comercial entrante o prefijo internacional no verificado."
         else:
             risk_score = 0.10
@@ -239,11 +240,11 @@ def scan_endpoint():
 
         if "banc0" in target_low or ".xyz" in target_low or "actualizacion" in target_low or motores_maliciosos_vt > 2 or es_malicioso_gsb:
             risk_score = 0.96
-            classification = "CRITICAL_THREAT"  # 🔴 ROJO
+            classification = "DANGER"  # 🔴 ROJO
             vt_summary = f"Alerta Phishing: Servidor fraudulento detectado. VirusTotal: {motores_maliciosos_vt} alertas."
         elif "blogspot" in target_low or "bit.ly" in target_low or not target_low.startswith("https://"):
             risk_score = 0.48
-            classification = "SUSPICIOUS"  # 🟡 AMARILLO
+            classification = "WARNING"  # 🟡 AMARILLO
             vt_summary = "Precaución: Enlace acortado, hosting libre o carente de protocolo SSL seguro (http)."
         else:
             risk_score = 0.05
@@ -257,11 +258,11 @@ def scan_endpoint():
         
         if any(ext in target_low for ext in [".exe", ".apk", ".msi", ".ps1"]):
             risk_score = 0.99
-            classification = "CRITICAL_THREAT"  # 🔴 ROJO
+            classification = "DANGER"  # 🔴 ROJO
             vt_summary = f"Freno Forense Centinela: Payload ejecutable de alto riesgo '{target}' bloqueado."
         elif any(ext in target_low for ext in [".bat", ".xlsm", ".zip", ".rar"]) or "herramientas" in target_low:
             risk_score = 0.62
-            classification = "SUSPICIOUS"  # 🟡 AMARILLO
+            classification = "WARNING"  # 🟡 AMARILLO
             vt_summary = "Advertencia de Contenedor: El archivo posee scripts de sistema o macros ejecutables."
         else:
             risk_score = 0.08
@@ -281,10 +282,10 @@ def scan_endpoint():
     except Exception as e:
         print(f"⚠️ Fallo de persistencia SQLite: {e}")
 
-    # RESPUESTA CON REDUNDANCIA TOTAL DE CLAVES JSON (Garantiza sincronización en Flutter)
+    # RESPUESTA CON REDUNDANCIA TOTAL DE CLAVES JSON
     response_payload = {
         'risk_score': float(risk_score),
-        'score': float(risk_score),
+        'score': float(risk_score),  # Mantengo float por si el UI hace la multiplicación * 100 internamente
         'classification': str(classification),
         'risk_level': str(classification),
         'threat_level': str(classification),
@@ -383,4 +384,5 @@ if __name__ == '__main__':
     print("==================================================================")
     print("🛡️ SUITE UNIFICADA CENTINELA ENGINE CORRIENDO EN PUERTO LOCAL 5000")
     print("==================================================================")
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    # CORRECCIÓN CRÍTICA APLICADA: host='0.0.0.0' para evitar bloqueo de Chrome
+    app.run(host='0.0.0.0', port=5000, debug=True)

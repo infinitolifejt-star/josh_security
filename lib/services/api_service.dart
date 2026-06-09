@@ -1,4 +1,3 @@
-// lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -16,16 +15,15 @@ class ApiService {
   final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
-  /// ⚠️ CONFIGURACIÓN DE RED LOCAL:
-  /// Si pruebas en un CELULAR FÍSICO, cambia '127.0.0.1' por la IP local de tu PC (Ej: '192.168.1.15').
-  static const String _pcIp = '127.0.0.1';
-
-  /// Endpoint base adaptativo para la API segura en Flask
+  /// =====================================================================
+  /// ⚠️ CONFIGURACIÓN DE RED (Mapeo directo a servidor CORE)
+  /// =====================================================================
   static String get _baseUrl {
     if (kIsWeb) {
-      return 'http://localhost:5000';
+      return 'http://localhost:5000'; // Para pruebas en Chrome
     }
-    return 'http://$_pcIp:5000'; 
+    // Conexión directa para el dispositivo Android físico mediante Wi-Fi local
+    return 'http://192.168.1.13:5000'; 
   }
 
   /// Calibración heurística para el ecosistema telefónico colombiano
@@ -63,7 +61,6 @@ class ApiService {
     }
 
     // CONTROL OPERATIVO: Forzamos a que TODOS los escaneos consuman el Py-Server en vivo
-    // Rompemos la simulación local estática para que la persistencia y el historial funcionen.
     resultData = await _executeNetworkScan(target, normalizedType);
 
     // Sincronización asíncrona de auditoría paralela
@@ -85,16 +82,15 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'target': target,
-          'type': type, // Envía 'SPAM', 'PHISHING' o 'MALWARE' de forma limpia
+          'type': type,
         }),
-      ).timeout(const Duration(seconds: 8)); // Ampliado ligeramente para evitar cortes prematuros en Wi-Fi
+      ).timeout(const Duration(seconds: 15)); // Tolerancia adaptada para la latencia de datos móviles
 
       print('📡 Respuesta de red recibida. Estatus HTTP: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> data = jsonDecode(response.body);
         
-        // Extracción robusta adaptando tipos de datos híbridos (Int/Double/String)
         double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
         String parsedClassification = data['classification']?.toString() ?? 'SAFE';
         String parsedRiskLevel = data['risk_level']?.toString() ?? parsedClassification;
@@ -125,7 +121,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/history'),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as List<dynamic>;
@@ -149,7 +145,7 @@ class ApiService {
           'classification': localResult['classification'],
           'logs': localResult['logs'] ?? 'Trazabilidad integrada.',
         }),
-      ).timeout(const Duration(seconds: 2));
+      ).timeout(const Duration(seconds: 3));
     } catch (_) {}
   }
 
@@ -170,7 +166,7 @@ class ApiService {
     final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
     final double entropy = _normalize(_entropyEngine.analyzeNumberStructure(cleanPhone));
     final double frequencyRisk = _normalize(_entropyEngine.analyzeFrequency(history));
-    final double timeRisk = _normalize(_entropyEngine.analyzeTimeRiskDensity(history));
+    final double timeRisk = _normalize(_normalize(_entropyEngine.analyzeTimeRiskDensity(history)));
     final double durationRisk = _normalize(_entropyEngine.analyzeDurationPattern(history));
     final double communityScore = _normalize(_communityMatrix[cleanPhone] ?? 0.0);
 
