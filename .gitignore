@@ -1,4 +1,3 @@
-@(
 # Seguridad Proactiva
 .env
 *.env
@@ -10,7 +9,17 @@
 .packages
 build/
 
-# OS
+# Sistemas Operativos
 .DS_Store
 Thumbs.db
-)
+
+# [DEUDA TÉCNICA - CENTINELA] Persistencia Local SQLite y Logs
+database.db
+database.db-shm
+database.db-wal
+*.log
+
+# Evidencia Visual Temporal y Reportes Excluidos
+flutter_*.png
+Reporte_Forense_JoshSecurity.pdf
+Centinela_Pilar2_Conexion.pptx
