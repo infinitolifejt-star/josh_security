@@ -15,18 +15,19 @@ class ApiService {
   final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
-  /// =====================================================================
-  /// ⚠️ CONFIGURACIÓN DE RED (Mapeo directo a servidor CORE)
-  /// =====================================================================
+  /// ⚠️ ARQUITECTURA ALPHA UNIFICADA
+  /// IP de tu máquina en el WiFi de la casa (Validada con ipconfig)
+  static const String _wifiLocalIp = 'http://192.168.1.13:5000';
+
+  /// Endpoint base adaptativo: Manejo de entornos e interceptores de red
   static String get _baseUrl {
     if (kIsWeb) {
-      return 'http://localhost:5000'; // Para pruebas en Chrome
+      return 'http://localhost:5000'; // Ruta para el navegador en el PC
     }
-    // Conexión directa para el dispositivo Android físico mediante Wi-Fi local
-    return 'http://192.168.1.13:5000'; 
+    // Retorna la IP de red directa para la compilación del APK de producción
+    return _wifiLocalIp; 
   }
 
-  /// Calibración heurística para el ecosistema telefónico colombiano
   final List<String> _validColombianPrefixes = [
     '300', '301', '302', '303', '304', '305', '310', '311', '312', '313', '314', 
     '315', '316', '317', '318', '319', '320', '321', '322', '323', '324', '350', '351'
@@ -45,12 +46,11 @@ class ApiService {
         _communityMatrix = communityMatrix ?? {};
 
   /// =====================================================================
-  /// 🚀 PUENTE DE CONEXIÓN UNIFICADO CON LA API DE FLASK (Modo Red Completo)
+  /// 🚀 PUENTE DE CONEXIÓN UNIFICADO CON LA API DE FLASK
   /// =====================================================================
   Future<Map<String, dynamic>> scanTarget(String type, String target) async {
     Map<String, dynamic> resultData;
 
-    // Normalizar etiquetas para asegurar compatibilidad exacta con los 3 motores de app.py
     String normalizedType = type.toUpperCase();
     if (normalizedType == 'TELEFONO' || normalizedType == 'CELLULAR' || normalizedType == 'SPAM') {
       normalizedType = 'SPAM';
@@ -60,33 +60,33 @@ class ApiService {
       normalizedType = 'MALWARE';
     }
 
-    // CONTROL OPERATIVO: Forzamos a que TODOS los escaneos consuman el Py-Server en vivo
     resultData = await _executeNetworkScan(target, normalizedType);
-
-    // Sincronización asíncrona de auditoría paralela
     _syncWithSqlite(target, normalizedType, resultData);
 
     return resultData;
   }
 
   /// =====================================================================
-  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE (CON PREVENCIÓN DE CRASH)
+  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
   /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
     final String targetEndpoint = '$_baseUrl/api/v1/scan';
     try {
-      print('🛰️ Centinela enviando payload de seguridad a: $targetEndpoint');
+      print('🛰️ [RED] Centinela enviando payload a: $targetEndpoint');
       
       final response = await http.post(
         Uri.parse(targetEndpoint),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Connection': 'keep-alive', // 🔧 Fuerza el canal de red a mantenerse abierto
+        },
         body: jsonEncode({
           'target': target,
           'type': type,
         }),
-      ).timeout(const Duration(seconds: 15)); // Tolerancia adaptada para la latencia de datos móviles
+      ).timeout(const Duration(seconds: 12)); // Tolerancia extendida para saltar ráfagas de Firewall
 
-      print('📡 Respuesta de red recibida. Estatus HTTP: ${response.statusCode}');
+      print('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> data = jsonDecode(response.body);
@@ -102,20 +102,17 @@ class ApiService {
           'classification': parsedClassification,
           'riskLevel': parsedRiskLevel,
           'metrics': data['metrics'] ?? {"network": 1.0},
-          'logs': data['logs'] ?? 'AUDITORÍA CENTRAL: Microservicio Centinela estable.',
+          'logs': data['logs'] ?? 'AUDITORÍA CENTRAL: Conexión WiFi local exitosa.',
         };
       } else {
         return _fallbackStaticResult(type, 'Error HTTP de pasarela: ${response.statusCode}');
       }
     } catch (e) {
-      print('🚨 Falla de enlace crítico en canal REST ($_baseUrl): $e');
-      return _fallbackStaticResult(type, 'Servidor CORE OFFLINE. Modo resiliencia activado.');
+      print('🚨 [ERROR RED] Falla al conectar con ($_baseUrl): $e');
+      return _fallbackStaticResult(type, 'Servidor CORE INALCANZABLE. Fallback 15% Activado.');
     }
   }
 
-  /// =====================================================================
-  /// 🔍 HISTORIAL DINÁMICO: CONSULTA ASÍNCRONA DE REGISTROS DE SESIÓN
-  /// =====================================================================
   Future<List<dynamic>> fetchScanHistory() async {
     try {
       final response = await http.get(
@@ -127,12 +124,11 @@ class ApiService {
         return jsonDecode(response.body) as List<dynamic>;
       }
     } catch (e) {
-      print('⚠️ Canal de historial saturado o desconectado: $e');
+      print('⚠️ Error al pedir historial: $e');
     }
     return [];
   }
 
-  /// 🗄️ PERSISTENCIA EN SEGUNDO PLANO (RUTAS UNIFICADAS CON /API)
   Future<void> _syncWithSqlite(String target, String type, Map<String, dynamic> localResult) async {
     try {
       await http.post(
@@ -149,7 +145,6 @@ class ApiService {
     } catch (_) {}
   }
 
-  /// 🛡️ MÓDULO DE DEGRADACIÓN SEGURA (FALLBACK ENRIQUECIDO)
   Map<String, dynamic> _fallbackStaticResult(String type, String errorReason) {
     return {
       'riskScore': 0.15,
@@ -157,18 +152,22 @@ class ApiService {
       'classification': 'SAFE',
       'riskLevel': 'INDETERMINADO',
       'metrics': {"entropy": 0.0, "fallback": 1.0},
-      'logs': 'CONTROL INTERNO: $errorReason. Resguardo local preventivo activo.'
+      'logs': 'CONTROL INTERNO: $errorReason'
     };
   }
 
-  /// Heurística local de respaldo (Mantenida por integridad estructural)
   AnalysisResult analyze(String phone, List<CallRecord> history) {
     final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+    
+    print('🔍 [DEBUG HEURÍSTICO] Analizando: $cleanPhone | Historial: ${history.length} registros');
+
     final double entropy = _normalize(_entropyEngine.analyzeNumberStructure(cleanPhone));
     final double frequencyRisk = _normalize(_entropyEngine.analyzeFrequency(history));
     final double timeRisk = _normalize(_normalize(_entropyEngine.analyzeTimeRiskDensity(history)));
     final double durationRisk = _normalize(_entropyEngine.analyzeDurationPattern(history));
     final double communityScore = _normalize(_communityMatrix[cleanPhone] ?? 0.0);
+
+    print('📊 [DEBUG VECTORES] Ent: $entropy, Freq: $frequencyRisk, Time: $timeRisk, Dur: $durationRisk');
 
     double riskScore = _reputationEngine.computeRiskScore(
       entropy: entropy,
@@ -191,6 +190,8 @@ class ApiService {
 
     riskScore = _normalize(_learningEngine.adjustScore(riskScore));
     final String classification = _reputationEngine.classify(riskScore);
+    
+    print('🏁 [DEBUG RESULTADO] Score final: $riskScore | Clasificación: $classification');
 
     return AnalysisResult(
       riskScore: riskScore,
