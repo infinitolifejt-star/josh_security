@@ -15,18 +15,12 @@ class ApiService {
   final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
-  /// ⚠️ ARQUITECTURA ALPHA UNIFICADA
-  /// IP de tu máquina en el WiFi de la casa (Validada con ipconfig)
+  /// ⚠️ ARQUITECTURA ALPHA UNIFICADA - FORZADO DE CANAL DE RED
+  /// IP física fija de tu laptop en el router de tu casa
   static const String _wifiLocalIp = 'http://192.168.1.13:5000';
 
-  /// Endpoint base adaptativo: Manejo de entornos e interceptores de red
-  static String get _baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:5000'; // Ruta para el navegador en el PC
-    }
-    // Retorna la IP de red directa para la compilación del APK de producción
-    return _wifiLocalIp; 
-  }
+  /// Endpoint base adaptativo corregido para evitar rebotes de enrutamiento
+  static String get _baseUrl => _wifiLocalIp;
 
   final List<String> _validColombianPrefixes = [
     '300', '301', '302', '303', '304', '305', '310', '311', '312', '313', '314', 
