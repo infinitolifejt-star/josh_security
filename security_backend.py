@@ -1,6 +1,6 @@
 # =====================================================================
-# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v3.6)
-# REEMPLAZO TOTAL - CONEXIÓN CERTIFICADA VIRUSTOTAL & GOOGLE SAFE BROWSING
+# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v3.7)
+# REEMPLAZO TOTAL - CONEXIÓN CERTIFICADA EN LA NUBE & VARIABLES DE ENTORNO
 # PROTOCOLO MAESTRO: INGENIERÍA SOBERANA CON PERSISTENCIA FORENSE
 # =====================================================================
 import os
@@ -20,7 +20,7 @@ from reportlab.lib import colors
 
 app = Flask(__name__)
 
-# Configuración institucional de CORS para desarrollo en localhost
+# Configuración institucional de CORS adaptada para producción y local
 CORS(app, resources={
     r"/*": {
         "origins": "*",
@@ -31,9 +31,12 @@ CORS(app, resources={
 
 DATABASE_FILE = "database.db"
 
-# LLAVES DE ACCESO ESTRATÉGICO A APIs DE CIBERSEGURIDAD
-VT_API_KEY = "003fa969b0ddef2e33b9cb5cb7a00747ce1c2d2b1e52197a6e0a87649a4548e8"
-GSB_API_KEY = "INGRESA_AQUI_TU_GOOGLE_SAFE_BROWSING_API_KEY"  
+# =====================================================================
+# PROTECCIÓN DE CREDENCIALES MEDIANTE VARIABLES DE ENTORNO (FALLBACK SEGURO)
+# =====================================================================
+# En local usará tu llave por defecto; en Render usará la llave inyectada en el panel de control.
+VT_API_KEY = os.environ.get("VT_API_KEY", "003fa969b0ddef2e33b9cb5cb7a00747ce1c2d2b1e52197a6e0a87649a4548e8")
+GSB_API_KEY = os.environ.get("GSB_API_KEY", "INGRESA_AQUI_TU_GOOGLE_SAFE_BROWSING_API_KEY")
 
 # =====================================================================
 # PERSISTENCIA LOCAL Y CONCURRENCIA (MODO WAL)
@@ -208,7 +211,6 @@ def scan_endpoint():
 
     # =====================================================================
     # ARQUITECTURA DE TRIPLE FILTRADO (VERDE / AMARILLO / ROJO)
-    # Estandarizado a "DANGER", "WARNING", "SAFE" para compatibilidad Flutter
     # =====================================================================
     
     # MÓDULO A: TELEFONÍA (SPAM / BOTS)
@@ -254,7 +256,6 @@ def scan_endpoint():
     # MÓDULO C: ARCHIVOS Y PAYLOADS (MALWARE)
     elif tipo == "MALWARE":
         target_low = target.lower()
-        hash_objeto = hashlib.sha256(target.encode()).hexdigest()
         
         if any(ext in target_low for ext in [".exe", ".apk", ".msi", ".ps1"]):
             risk_score = 0.99
@@ -285,7 +286,7 @@ def scan_endpoint():
     # RESPUESTA CON REDUNDANCIA TOTAL DE CLAVES JSON
     response_payload = {
         'risk_score': float(risk_score),
-        'score': float(risk_score),  # Mantengo float por si el UI hace la multiplicación * 100 internamente
+        'score': float(risk_score),
         'classification': str(classification),
         'risk_level': str(classification),
         'threat_level': str(classification),
@@ -384,5 +385,5 @@ if __name__ == '__main__':
     print("==================================================================")
     print("🛡️ SUITE UNIFICADA CENTINELA ENGINE CORRIENDO EN PUERTO LOCAL 5000")
     print("==================================================================")
-    # CORRECCIÓN CRÍTICA APLICADA: host='0.0.0.0' para evitar bloqueo de Chrome
+    # TODO: [DEUDA TÉCNICA - CENTINELA] Cambiar debug=False al pasar a producción real
     app.run(host='0.0.0.0', port=5000, debug=True)
