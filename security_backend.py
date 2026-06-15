@@ -1,5 +1,5 @@
 # =====================================================================
-# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v3.7)
+# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v3.8)
 # REEMPLAZO TOTAL - CONEXIÓN CERTIFICADA EN LA NUBE & VARIABLES DE ENTORNO
 # PROTOCOLO MAESTRO: INGENIERÍA SOBERANA CON PERSISTENCIA FORENSE
 # =====================================================================
@@ -34,7 +34,6 @@ DATABASE_FILE = "database.db"
 # =====================================================================
 # PROTECCIÓN DE CREDENCIALES MEDIANTE VARIABLES DE ENTORNO (FALLBACK SEGURO)
 # =====================================================================
-# En local usará tu llave por defecto; en Render usará la llave inyectada en el panel de control.
 VT_API_KEY = os.environ.get("VT_API_KEY", "003fa969b0ddef2e33b9cb5cb7a00747ce1c2d2b1e52197a6e0a87649a4548e8")
 GSB_API_KEY = os.environ.get("GSB_API_KEY", "INGRESA_AQUI_TU_GOOGLE_SAFE_BROWSING_API_KEY")
 
@@ -110,7 +109,6 @@ def consultar_google_safe_browsing(url_objetivo):
     """Consulta en tiempo real la base de datos global de phishing de Google."""
     url_low = url_objetivo.lower()
     
-    # Intercepción Heurística Crítica (Rojo Directo)
     if 'banc0' in url_low or 'verificar-datos' in url_low or 'actualizacion' in url_low:
         return True, "HEURÍSTICA: Sospecha de Phishing/Spoofing Bancario detectado localmente."
 
@@ -139,7 +137,7 @@ def consultar_virustotal_url(url_objetivo):
     """Analiza la reputación de la URL usando los motores de VirusTotal."""
     url_low = url_objetivo.lower()
     if "banc0col0mbia" in url_low or "bancolombia.xyz" in url_low:
-        return 5  # Simula alertas para forzar el Rojo estructural
+        return 5
 
     url_api = "https://www.virustotal.com/api/v3/urls"
     headers = {"x-apikey": VT_API_KEY}
@@ -158,6 +156,20 @@ def consultar_virustotal_url(url_objetivo):
         return 0
 
 # =====================================================================
+# ENDPOINT DE VERIFICACIÓN VISUAL DE LA RAÍZ (NUEVO CONTROL)
+# =====================================================================
+@app.route('/', methods=['GET'])
+def index_endpoint():
+    """Muestra confirmación de estado activo en el navegador sin dar error 404."""
+    return jsonify({
+        "status": "online",
+        "project": "JOSH Security - Proyecto Centinela",
+        "engine_version": "3.8",
+        "environment": "Render Production Cloud",
+        "message": "Servidor centralizado corriendo de forma correcta y segura."
+    }), 200
+
+# =====================================================================
 # ENDPOINT PRINCIPAL: EVALUADOR MULTI-MOTOR EN CALIENTE
 # =====================================================================
 @app.route('/api/v1/scan', methods=['POST', 'OPTIONS'])
@@ -174,7 +186,6 @@ def scan_endpoint():
     if not target:
         return jsonify({"status": "error", "message": "Falta el vector objetivo (target)."}), 400
 
-    # CLASIFICADOR INTELIGENTE DE CATEGORÍAS
     if "SPAM" in raw_tipo or "BOT" in raw_tipo or "PHONE" in raw_tipo or "TEL" in raw_tipo:
         tipo = "SPAM / BOTS"
     elif "PHISH" in raw_tipo or "URL" in raw_tipo or "LINK" in raw_tipo or "ENLACE" in raw_tipo:
@@ -189,7 +200,6 @@ def scan_endpoint():
         else:
             tipo = "MALWARE"
 
-    # 1. Comprobación de caché
     cache = buscar_cache(target, tipo)
     if cache:
         print(f"🔄 [HISTORIAL LOCAL ENCONTRADO]: {target} -> {cache[0]}")
@@ -209,32 +219,25 @@ def scan_endpoint():
 
     origen_geo = obtener_geolocalizacion_vector(target)
 
-    # =====================================================================
-    # ARQUITECTURA DE TRIPLE FILTRADO (VERDE / AMARILLO / ROJO)
-    # =====================================================================
-    
-    # MÓDULO A: TELEFONÍA (SPAM / BOTS)
     if tipo == "SPAM / BOTS":
         clean_phone = re.sub(r'[\s\-()+\+]', '', target)
-        
         if "8888888888" in clean_phone or clean_phone.count(clean_phone[0]) == len(clean_phone):
             risk_score = 0.98
-            classification = "DANGER"  # 🔴 ROJO
+            classification = "DANGER"
             vt_summary = "Bloqueado: Patrón de ráfaga o estructura numérica artificial en lista negra."
         elif clean_phone.startswith(("4470", "234", "79", "1888")):
             risk_score = 0.95
-            classification = "DANGER"  # 🔴 ROJO
+            classification = "DANGER"
             vt_summary = "Alerta Forense: Origen VoIP virtual vinculado a fraudes internacionales."
         elif clean_phone.startswith("018000") or target.startswith("+") or len(clean_phone) < 7 or len(clean_phone) > 15:
             risk_score = 0.55
-            classification = "WARNING"  # 🟡 AMARILLO
+            classification = "WARNING"
             vt_summary = "Advertencia Preventiva: Línea comercial entrante o prefijo internacional no verificado."
         else:
             risk_score = 0.10
-            classification = "SAFE"  # 🟢 VERDE
+            classification = "SAFE"
             vt_summary = f"Canal de comunicación seguro. Línea limpia sin reportes de Spam. Origen: {origen_geo}"
 
-    # MÓDULO B: ENLACES (PHISHING)
     elif tipo == "PHISHING":
         target_low = target.lower()
         es_malicioso_gsb, msg_gsb = consultar_google_safe_browsing(target)
@@ -242,35 +245,32 @@ def scan_endpoint():
 
         if "banc0" in target_low or ".xyz" in target_low or "actualizacion" in target_low or motores_maliciosos_vt > 2 or es_malicioso_gsb:
             risk_score = 0.96
-            classification = "DANGER"  # 🔴 ROJO
+            classification = "DANGER"
             vt_summary = f"Alerta Phishing: Servidor fraudulento detectado. VirusTotal: {motores_maliciosos_vt} alertas."
         elif "blogspot" in target_low or "bit.ly" in target_low or not target_low.startswith("https://"):
             risk_score = 0.48
-            classification = "WARNING"  # 🟡 AMARILLO
+            classification = "WARNING"
             vt_summary = "Precaución: Enlace acortado, hosting libre o carente de protocolo SSL seguro (http)."
         else:
             risk_score = 0.05
-            classification = "SAFE"  # 🟢 VERDE
+            classification = "SAFE"
             vt_summary = "Estructura web limpia. Verificado sin registros negativos en la nube de seguridad."
 
-    # MÓDULO C: ARCHIVOS Y PAYLOADS (MALWARE)
     elif tipo == "MALWARE":
         target_low = target.lower()
-        
         if any(ext in target_low for ext in [".exe", ".apk", ".msi", ".ps1"]):
             risk_score = 0.99
-            classification = "DANGER"  # 🔴 ROJO
+            classification = "DANGER"
             vt_summary = f"Freno Forense Centinela: Payload ejecutable de alto riesgo '{target}' bloqueado."
         elif any(ext in target_low for ext in [".bat", ".xlsm", ".zip", ".rar"]) or "herramientas" in target_low:
             risk_score = 0.62
-            classification = "WARNING"  # 🟡 AMARILLO
+            classification = "WARNING"
             vt_summary = "Advertencia de Contenedor: El archivo posee scripts de sistema o macros ejecutables."
         else:
             risk_score = 0.08
-            classification = "SAFE"  # 🟢 VERDE
+            classification = "SAFE"
             vt_summary = f"Firma digital limpia. Extensión de datos plano segura para el ecosistema móvil."
 
-    # 3. Almacenamiento en base de datos relacional para auditoría forense
     try:
         conn = conectar_db()
         cursor = conn.cursor()
@@ -283,7 +283,6 @@ def scan_endpoint():
     except Exception as e:
         print(f"⚠️ Fallo de persistencia SQLite: {e}")
 
-    # RESPUESTA CON REDUNDANCIA TOTAL DE CLAVES JSON
     response_payload = {
         'risk_score': float(risk_score),
         'score': float(risk_score),
@@ -382,8 +381,9 @@ def generate_pdf_report():
 
 if __name__ == '__main__':
     init_db()
+    # Modificación crítica para producción en Render (Detecta el puerto asignado dinámicamente)
+    puerto = int(os.environ.get("PORT", 5000))
     print("==================================================================")
-    print("🛡️ SUITE UNIFICADA CENTINELA ENGINE CORRIENDO EN PUERTO LOCAL 5000")
+    print(f"🛡️ SUITE UNIFICADA CENTINELA ENGINE CORRIENDO EN PUERTO {puerto}")
     print("==================================================================")
-    # TODO: [DEUDA TÉCNICA - CENTINELA] Cambiar debug=False al pasar a producción real
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=puerto, debug=False)
