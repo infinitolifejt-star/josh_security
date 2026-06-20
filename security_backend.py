@@ -1,5 +1,5 @@
 # =====================================================================
-# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v3.8)
+# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v3.9 - CLOUD PRODUCTION)
 # REEMPLAZO TOTAL - CONEXIÓN CERTIFICADA EN LA NUBE & VARIABLES DE ENTORNO
 # PROTOCOLO MAESTRO: INGENIERÍA SOBERANA CON PERSISTENCIA FORENSE
 # =====================================================================
@@ -20,7 +20,7 @@ from reportlab.lib import colors
 
 app = Flask(__name__)
 
-# Configuración institucional de CORS adaptada para producción y local
+# Configuración institucional de CORS adaptada para producción Cloud y Local
 CORS(app, resources={
     r"/*": {
         "origins": "*",
@@ -35,7 +35,7 @@ DATABASE_FILE = "database.db"
 # PROTECCIÓN DE CREDENCIALES MEDIANTE VARIABLES DE ENTORNO (FALLBACK SEGURO)
 # =====================================================================
 VT_API_KEY = os.environ.get("VT_API_KEY", "003fa969b0ddef2e33b9cb5cb7a00747ce1c2d2b1e52197a6e0a87649a4548e8")
-GSB_API_KEY = os.environ.get("GSB_API_KEY", "INGRESA_AQUI_TU_GOOGLE_SAFE_BROWSING_API_KEY")
+GSB_API_KEY = os.environ.get("GSB_API_KEY", "")
 
 # =====================================================================
 # PERSISTENCIA LOCAL Y CONCURRENCIA (MODO WAL)
@@ -108,11 +108,10 @@ def obtener_geolocalizacion_vector(target):
 def consultar_google_safe_browsing(url_objetivo):
     """Consulta en tiempo real la base de datos global de phishing de Google."""
     url_low = url_objetivo.lower()
-    
     if 'banc0' in url_low or 'verificar-datos' in url_low or 'actualizacion' in url_low:
         return True, "HEURÍSTICA: Sospecha de Phishing/Spoofing Bancario detectado localmente."
 
-    if GSB_API_KEY == "INGRESA_AQUI_TU_GOOGLE_SAFE_BROWSING_API_KEY" or not GSB_API_KEY:
+    if not GSB_API_KEY or GSB_API_KEY == "INGRESA_AQUI_TU_GOOGLE_SAFE_BROWSING_API_KEY":
         return False, "Limpio en verificación heurística base."
 
     api_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GSB_API_KEY}"
@@ -156,7 +155,7 @@ def consultar_virustotal_url(url_objetivo):
         return 0
 
 # =====================================================================
-# ENDPOINT DE VERIFICACIÓN VISUAL DE LA RAÍZ (NUEVO CONTROL)
+# ENDPOINT DE VERIFICACIÓN VISUAL DE LA RAÍZ
 # =====================================================================
 @app.route('/', methods=['GET'])
 def index_endpoint():
@@ -164,7 +163,7 @@ def index_endpoint():
     return jsonify({
         "status": "online",
         "project": "JOSH Security - Proyecto Centinela",
-        "engine_version": "3.8",
+        "engine_version": "3.9",
         "environment": "Render Production Cloud",
         "message": "Servidor centralizado corriendo de forma correcta y segura."
     }), 200
@@ -302,9 +301,35 @@ def scan_endpoint():
     return jsonify(response_payload), 200
 
 # =====================================================================
-# HISTORIAL DINÁMICO EN VIVO PARA EL HUD
+# ENDPOINT DE CONEXIÓN DE FLUTTER: RECEPTOR DE SINCRONIZACIÓN LOCAL
 # =====================================================================
-@app.route('/api/history', methods=['GET'])
+@app.route('/api/v1/sync', methods=['POST'])
+def sync_endpoint():
+    data = request.get_json() or {}
+    target = data.get('target', 'Desconocido')
+    tipo = data.get('type', 'SPAM')
+    risk_score = data.get('risk_score', 0.15)
+    classification = data.get('classification', 'SAFE')
+    logs = data.get('logs', 'Trazabilidad integrada.')
+    origen_geo = obtener_geolocalizacion_vector(target)
+
+    try:
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO escaneos (tipo, objetivo, resultado, vt_result, score, geo) VALUES (?, ?, ?, ?, ?, ?)",
+            (tipo, target, classification, logs, risk_score, origen_geo)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Sincronización Cloud exitosa."}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# =====================================================================
+# HISTORIAL DINÁMICO EN VIVO ADAPTADO COMPLETO PARA EL HUD DE FLUTTER
+# =====================================================================
+@app.route('/api/v1/history', methods=['GET'])
 def get_history():
     conn = conectar_db()
     conn.row_factory = sqlite3.Row
@@ -317,6 +342,10 @@ def get_history():
     for row in rows:
         formatted_history.append({
             'target': row['objetivo'],
+            'type': row['tipo'],
+            'risk_score': row['score'],
+            'classification': row['resultado'],
+            'logs': row['vt_result'],
             'category': row['resultado'],
             'score': row['score'],
             'details': [
@@ -381,7 +410,6 @@ def generate_pdf_report():
 
 if __name__ == '__main__':
     init_db()
-    # Modificación crítica para producción en Render (Detecta el puerto asignado dinámicamente)
     puerto = int(os.environ.get("PORT", 5000))
     print("==================================================================")
     print(f"🛡️ SUITE UNIFICADA CENTINELA ENGINE CORRIENDO EN PUERTO {puerto}")
