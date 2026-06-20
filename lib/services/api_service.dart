@@ -15,12 +15,12 @@ class ApiService {
   final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
-  /// ⚠️ ARQUITECTURA ALPHA UNIFICADA - FORZADO DE CANAL DE RED
-  /// IP física fija de tu laptop en el router de tu casa
-  static const String _wifiLocalIp = 'http://192.168.1.13:5000';
+  /// ⚠️ ARQUITECTURA ALPHA CLOUD - CONEXIÓN GLOBAL RENDER
+  /// URL oficial de producción en la nube (Servidor Central 24/7)
+  static const String _cloudUrl = 'https://josh-security-backend.onrender.com';
 
-  /// Endpoint base adaptativo corregido para evitar rebotes de enrutamiento
-  static String get _baseUrl => _wifiLocalIp;
+  /// Endpoint base apuntando a la nube de Render
+  static String get _baseUrl => _cloudUrl;
 
   final List<String> _validColombianPrefixes = [
     '300', '301', '302', '303', '304', '305', '310', '311', '312', '313', '314', 
@@ -40,7 +40,7 @@ class ApiService {
         _communityMatrix = communityMatrix ?? {};
 
   /// =====================================================================
-  /// 🚀 PUENTE DE CONEXIÓN UNIFICADO CON LA API DE FLASK
+  /// 🚀 PUENTE DE CONEXIÓN UNIFICADO CON LA API DE FLASK EN RENDER
   /// =====================================================================
   Future<Map<String, dynamic>> scanTarget(String type, String target) async {
     Map<String, dynamic> resultData;
@@ -61,7 +61,7 @@ class ApiService {
   }
 
   /// =====================================================================
-  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
+  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE (MAPPING PREMIUM)
   /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
     final String targetEndpoint = '$_baseUrl/api/v1/scan';
@@ -72,13 +72,13 @@ class ApiService {
         Uri.parse(targetEndpoint),
         headers: {
           'Content-Type': 'application/json',
-          'Connection': 'keep-alive', // 🔧 Fuerza el canal de red a mantenerse abierto
+          'Connection': 'keep-alive',
         },
         body: jsonEncode({
           'target': target,
           'type': type,
         }),
-      ).timeout(const Duration(seconds: 12)); // Tolerancia extendida para saltar ráfagas de Firewall
+      ).timeout(const Duration(seconds: 25)); // Tolerancia adaptada para Cold Start
 
       print('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
@@ -90,29 +90,35 @@ class ApiService {
         String parsedRiskLevel = data['risk_level']?.toString() ?? parsedClassification;
         String parsedScoreLabel = data['score']?.toString() ?? '0';
 
+        // Sincronización exacta con las llaves que lee lib/views/home_screen.dart
         return {
           'riskScore': parsedScore,
           'score': parsedScoreLabel,
           'classification': parsedClassification,
           'riskLevel': parsedRiskLevel,
           'metrics': data['metrics'] ?? {"network": 1.0},
-          'logs': data['logs'] ?? 'AUDITORÍA CENTRAL: Conexión WiFi local exitosa.',
+          'logs': data['logs'] ?? data['verdict'] ?? 'AUDITORÍA CENTRAL: Conexión Cloud exitosa.',
         };
       } else {
-        return _fallbackStaticResult(type, 'Error HTTP de pasarela: ${response.statusCode}');
+        return _fallbackStaticResult(type, 'Error HTTP de pasarela en la Nube: ${response.statusCode}');
       }
     } catch (e) {
+      // // TODO: [DEUDA TÉCNICA - CENTINELA] Diseñar interceptor de excepciones HTTP estructurales
       print('🚨 [ERROR RED] Falla al conectar con ($_baseUrl): $e');
       return _fallbackStaticResult(type, 'Servidor CORE INALCANZABLE. Fallback 15% Activado.');
     }
   }
 
+  /// =====================================================================
+  /// 🗄️ PERSISTENCIA FORENSE DIGITAL CENTRALIZADA
+  /// =====================================================================
   Future<List<dynamic>> fetchScanHistory() async {
+    final String historyEndpoint = '$_baseUrl/api/v1/history';
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/api/history'),
+        Uri.parse(historyEndpoint),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as List<dynamic>;
@@ -124,9 +130,10 @@ class ApiService {
   }
 
   Future<void> _syncWithSqlite(String target, String type, Map<String, dynamic> localResult) async {
+    final String syncEndpoint = '$_baseUrl/api/v1/sync';
     try {
       await http.post(
-        Uri.parse('$_baseUrl/api/v1/sync'), 
+        Uri.parse(syncEndpoint), 
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'target': target,
@@ -135,7 +142,7 @@ class ApiService {
           'classification': localResult['classification'],
           'logs': localResult['logs'] ?? 'Trazabilidad integrada.',
         }),
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 5));
     } catch (_) {}
   }
 
@@ -150,6 +157,9 @@ class ApiService {
     };
   }
 
+  /// =====================================================================
+  /// 🧠 MOTOR HEURÍSTICO LOCAL Y ANÁLISIS DE TELEMETRÍA (OPERADORES COL)
+  /// =====================================================================
   AnalysisResult analyze(String phone, List<CallRecord> history) {
     final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
     
