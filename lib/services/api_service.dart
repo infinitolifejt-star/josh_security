@@ -16,10 +16,7 @@ class ApiService {
   final Map<String, double> _communityMatrix;
 
   /// ⚠️ ARQUITECTURA ALPHA CLOUD - CONEXIÓN GLOBAL RENDER
-  /// URL oficial de producción en la nube (Servidor Central 24/7)
   static const String _cloudUrl = 'https://josh-security-backend.onrender.com';
-
-  /// Endpoint base apuntando a la nube de Render
   static String get _baseUrl => _cloudUrl;
 
   final List<String> _validColombianPrefixes = [
@@ -43,8 +40,6 @@ class ApiService {
   /// 🚀 PUENTE DE CONEXIÓN UNIFICADO CON LA API DE FLASK EN RENDER
   /// =====================================================================
   Future<Map<String, dynamic>> scanTarget(String type, String target) async {
-    Map<String, dynamic> resultData;
-
     String normalizedType = type.toUpperCase();
     if (normalizedType == 'TELEFONO' || normalizedType == 'CELLULAR' || normalizedType == 'SPAM') {
       normalizedType = 'SPAM';
@@ -54,18 +49,21 @@ class ApiService {
       normalizedType = 'MALWARE';
     }
 
-    resultData = await _executeNetworkScan(target, normalizedType);
+    // Ejecuta escaneo en la nube
+    final Map<String, dynamic> resultData = await _executeNetworkScan(target, normalizedType);
+    
+    // Sincronización asíncrona sin bloquear la respuesta de la interfaz de usuario
     _syncWithSqlite(target, normalizedType, resultData);
 
     return resultData;
   }
 
   /// =====================================================================
-  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE (MAPPING PREMIUM)
+  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
   /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
-    // Agregamos la barra final implícita para evitar problemas de enrutamiento 404 en Render/Flask
-    final String targetEndpoint = '$_baseUrl/api/v1/scan';
+    // Definición estricta con barra al final para compatibilidad absoluta con Flask Routing
+    final String targetEndpoint = '$_baseUrl/api/v1/scan/';
     
     try {
       print('🛰️ [RED] Centinela enviando payload a: $targetEndpoint');
@@ -76,12 +74,13 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Connection': 'keep-alive',
+          'X-Requested-With': 'XMLHttpRequest', // Cabecera aliada para mitigar bloqueos CORS en entornos Web
         },
         body: jsonEncode({
           'target': target,
           'type': type,
         }),
-      ).timeout(const Duration(seconds: 25)); // Tolerancia adaptada para Cold Start
+      ).timeout(const Duration(seconds: 45)); // Margen extendido (45s) optimizado para el Cold Start de Render
 
       print('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
@@ -91,11 +90,10 @@ class ApiService {
         double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
         String parsedClassification = data['classification']?.toString() ?? 'SAFE';
         String parsedRiskLevel = data['risk_level']?.toString() ?? parsedClassification;
-        String parsedScoreLabel = data['score']?.toString() ?? '0';
+        String parsedScoreLabel = data['score']?.toString() ?? '15';
 
-        // Sincronización exacta con las llaves que lee lib/views/home_screen.dart
         return {
-          'riskScore': parsedScore,
+          'riskScore': _normalize(parsedScore),
           'score': parsedScoreLabel,
           'classification': parsedClassification,
           'riskLevel': parsedRiskLevel,
@@ -103,16 +101,15 @@ class ApiService {
           'logs': data['logs'] ?? data['verdict'] ?? 'AUDITORÍA CENTRAL: Conexión Cloud exitosa.',
         };
       } else {
-        // Si da 404 o cualquier otro error, intentamos una ruta alternativa directa por si Flask omitió el prefijo
         if (response.statusCode == 404) {
-          print('⚠️ [DEBUG RUTA] 404 detectado. Intentando fallback alternativo...');
-          return await _executeAlternativeNetworkScan(target, type, '$_baseUrl/scan');
+          print('⚠️ [DEBUG RUTA] 404 detectado. Intentando fallback alternativo sin prefijo...');
+          return await _executeAlternativeNetworkScan(target, type, '$_baseUrl/scan/');
         }
         return _fallbackStaticResult(type, 'Error HTTP de pasarela en la Nube: ${response.statusCode}');
       }
     } catch (e) {
       print('🚨 [ERROR RED] Falla al conectar con ($_baseUrl): $e');
-      return _fallbackStaticResult(type, 'Servidor CORE INALCANZABLE. Fallback 15% Activado.');
+      return _fallbackStaticResult(type, 'Servidor CORE INALCANZABLE. Heurística de contingencia activada.');
     }
   }
 
@@ -126,13 +123,13 @@ class ApiService {
           'Accept': 'application/json',
         },
         body: jsonEncode({'target': target, 'type': type}),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> data = jsonDecode(response.body);
         return {
-          'riskScore': double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12,
-          'score': data['score']?.toString() ?? '0',
+          'riskScore': _normalize(double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12),
+          'score': data['score']?.toString() ?? '15',
           'classification': data['classification']?.toString() ?? 'SAFE',
           'riskLevel': data['risk_level']?.toString() ?? 'SAFE',
           'metrics': data['metrics'] ?? {"network": 1.0},
@@ -140,31 +137,31 @@ class ApiService {
         };
       }
     } catch (_) {}
-    return _fallbackStaticResult(type, 'Ruta no encontrada en el servidor (404). Verifica los endpoints en Python.');
+    return _fallbackStaticResult(type, 'Ruta no encontrada en el servidor backend.');
   }
 
   /// =====================================================================
   /// 🗄️ PERSISTENCIA FORENSE DIGITAL CENTRALIZADA
   /// =====================================================================
   Future<List<dynamic>> fetchScanHistory() async {
-    final String historyEndpoint = '$_baseUrl/api/v1/history';
+    final String historyEndpoint = '$_baseUrl/api/v1/history/';
     try {
       final response = await http.get(
         Uri.parse(historyEndpoint),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as List<dynamic>;
       }
     } catch (e) {
-      print('⚠️ Error al pedir historial: $e');
+      print('⚠️ Error al pedir historial centralizado: $e');
     }
     return [];
   }
 
   Future<void> _syncWithSqlite(String target, String type, Map<String, dynamic> localResult) async {
-    final String syncEndpoint = '$_baseUrl/api/v1/sync';
+    final String syncEndpoint = '$_baseUrl/api/v1/sync/';
     try {
       await http.post(
         Uri.parse(syncEndpoint), 
@@ -176,18 +173,19 @@ class ApiService {
           'classification': localResult['classification'],
           'logs': localResult['logs'] ?? 'Trazabilidad integrada.',
         }),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 8));
     } catch (_) {}
   }
 
+  /// Mapeo homologado para que las respuestas locales simulen la estructura que espera la UI
   Map<String, dynamic> _fallbackStaticResult(String type, String errorReason) {
     return {
       'riskScore': 0.15,
-      'score': '0',
+      'score': '15',
       'classification': 'SAFE',
-      'riskLevel': 'INDETERMINADO',
+      'riskLevel': 'FALLBACK LOCAL',
       'metrics': {"entropy": 0.0, "fallback": 1.0},
-      'logs': 'CONTROL INTERNO: $errorReason'
+      'logs': 'CONTROL INTERNO CENTINELA: $errorReason'
     };
   }
 
@@ -201,7 +199,7 @@ class ApiService {
 
     final double entropy = _normalize(_entropyEngine.analyzeNumberStructure(cleanPhone));
     final double frequencyRisk = _normalize(_entropyEngine.analyzeFrequency(history));
-    final double timeRisk = _normalize(_normalize(_entropyEngine.analyzeTimeRiskDensity(history)));
+    final double timeRisk = _normalize(_entropyEngine.analyzeTimeRiskDensity(history));
     final double durationRisk = _normalize(_entropyEngine.analyzeDurationPattern(history));
     final double communityScore = _normalize(_communityMatrix[cleanPhone] ?? 0.0);
 
