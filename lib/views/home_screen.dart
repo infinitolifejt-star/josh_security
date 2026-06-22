@@ -1,4 +1,5 @@
 // lib/views/home_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
@@ -16,20 +17,21 @@ class _HomeScreenState extends State<HomeScreen>
   final ApiService _apiService = ApiService();
   final TextEditingController _targetController = TextEditingController();
   late TabController _tabController;
+  Timer? _keepAliveTimer;
 
   bool _isLoading = false;
   int _currentTab = 0;
   double _vulnerabilityScore = 0.0;
 
   String _verdictText = "SISTEMA LISTO";
-  String _statusCategory = "ESCANER HUD • ESPERA";
+  String _statusCategory = "ESCANER HUD • TELEFONÍA";
   Color _hudColor = const Color(0xFF00E676);
 
   String? _selectedFileName;
   int? _selectedFileSize; 
 
   List<String> _forensicLogs = [
-    "CENTINELA v2.5: Núcleo heurístico cargado en memoria local."
+    "CENTINELA v4.1: Núcleo analítico acoplado a la infraestructura Cloud."
   ];
 
   final List<Map<String, dynamic>> _masterBitacora = [];
@@ -38,23 +40,29 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _initKeepAliveTimer();
+    
     _tabController.addListener(() {
-      if (!mounted) return;
+      if (!mounted || !_tabController.indexIsChanging) return;
       setState(() {
         _currentTab = _tabController.index;
         _targetController.clear();
         _selectedFileName = null;
         _selectedFileSize = null;
 
-        if (_currentTab == 0) {
-          _statusCategory = "ESCANER HUD • TELEFONÍA";
-          _forensicLogs = ["Módulo Heurístico de llamadas telefónicas activado."];
-        } else if (_currentTab == 1) {
-          _statusCategory = "ESCANER HUD • PHISHING";
-          _forensicLogs = ["Módulo de Auditoría de enlaces y URLs activado."];
-        } else {
-          _statusCategory = "ESCANER HUD • MALWARE";
-          _forensicLogs = ["Módulo de análisis estático de archivos preparado."];
+        switch (_currentTab) {
+          case 0:
+            _statusCategory = "ESCANER HUD • TELEFONÍA";
+            _forensicLogs = ["Módulo Heurístico de llamadas telefónicas activado."];
+            break;
+          case 1:
+            _statusCategory = "ESCANER HUD • PHISHING";
+            _forensicLogs = ["Módulo de Auditoría de enlaces y URLs activado."];
+            break;
+          case 2:
+            _statusCategory = "ESCANER HUD • MALWARE";
+            _forensicLogs = ["Módulo de análisis estático de archivos preparado."];
+            break;
         }
       });
     });
@@ -62,9 +70,27 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _keepAliveTimer?.cancel();
     _tabController.dispose();
     _targetController.dispose();
     super.dispose();
+  }
+
+  /// ⚙️ SISTEMA ANTI-SLEEP DE INFRAESTRUCTURA (RENDER KEEP-ALIVE)
+  void _initKeepAliveTimer() {
+    // Envía un pulso silencioso al nacer y luego cada 10 minutos exactos
+    _sendKeepAlivePulse();
+    _keepAliveTimer = Timer.periodic(const Duration(minutes: 10), (timer) {
+      _sendKeepAlivePulse();
+    });
+  }
+
+  Future<void> _sendKeepAlivePulse() async {
+    try {
+      // Consume el historial de forma silenciosa para mantener el contenedor activo
+      await _apiService.fetchScanHistory();
+      debugPrint("🛰️ [SISTEMA] Pulso keep-alive transmitido a Render para evitar suspensión.");
+    } catch (_) {}
   }
 
   String _formatBytes(int bytes) {
@@ -108,15 +134,12 @@ class _HomeScreenState extends State<HomeScreen>
           "Carga de binario exitosa.",
           "Cripto-Nombre: ${file.name}",
           "Tamaño de carga: ${_formatBytes(file.size)}",
-          "Estado: Listo para inspección criptográfica."
+          "Estado: Listo para inspección criptográfica en la nube."
         ];
       });
     } catch (e) {
       setState(() {
-        _forensicLogs = [
-          "Fallo crítico en subsistema de carga de archivos:",
-          e.toString(),
-        ];
+        _forensicLogs = ["Fallo crítico en subsistema de carga:", e.toString()];
       });
     }
   }
@@ -134,28 +157,32 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() {
       _isLoading = true;
       _forensicLogs = [
-        "Iniciando oleoducto de análisis heurístico...",
-        "Calculando variables de riesgo y entropía..."
+        "Iniciando oleoducto de análisis heurístico estructural...",
+        "Calculando variables de riesgo y telemetría en nubes centrales..."
       ];
     });
 
     try {
       Map<String, dynamic> result;
+      String vectorKey = 'TELEFONO';
+      String vectorLabel = "TELEFÓNICO";
 
-      if (_currentTab == 0) {
-        result = await _apiService.scanTarget('TELEFONO', target);
-      } else if (_currentTab == 1) {
-        result = await _apiService.scanTarget('URL', target);
-      } else {
-        result = await _apiService.scanTarget('MALWARE', target);
+      if (_currentTab == 1) {
+        vectorKey = 'URL';
+        vectorLabel = "PHISHING/URL";
+      } else if (_currentTab == 2) {
+        vectorKey = 'MALWARE';
+        vectorLabel = "MALWARE/BIN";
       }
+
+      result = await _apiService.scanTarget(vectorKey, target);
 
       final rawScore = (result['riskScore'] as num?)?.toDouble() ?? 0.15;
       final scoreInPercent = rawScore <= 1.0 ? rawScore * 100 : rawScore;
       
-      final classification = result['classification'] ?? result['status'] ?? 'ANALIZADO';
+      final classification = result['classification'] ?? 'ANALIZADO';
       final metrics = result['metrics'] as Map<String, dynamic>? ?? {};
-      final backendLogs = result['logs'] as String? ?? result['details'] ?? 'Análisis completado de forma nativa.';
+      final backendLogs = result['logs'] as String? ?? 'Análisis completado.';
 
       setState(() {
         _vulnerabilityScore = scoreInPercent;
@@ -169,42 +196,25 @@ class _HomeScreenState extends State<HomeScreen>
           _hudColor = const Color(0xFF00E676);
         }
 
-        String vectorName = "TELEFÓNICO";
+        _statusCategory = "ANÁLISIS COMPLETADO • ${vectorLabel.split('/')[0]}";
+
         if (_currentTab == 0) {
-          _statusCategory = "ANÁLISIS COMPLETADO • TELEFONÍA";
-          vectorName = "TELEFÓNICO";
-          
           final double entropyVal = (metrics['entropy'] as num?)?.toDouble() ?? 0.0;
           final double freqVal = (metrics['frequencyRisk'] as num?)?.toDouble() ?? 0.0;
           final double timeVal = (metrics['timeRisk'] as num?)?.toDouble() ?? 0.0;
 
           _forensicLogs = [
             "OBJETIVO EN RUTA: $target",
-            if (metrics.isNotEmpty) ...[
-              "» Entropía Estructural: ${(entropyVal * 100).toStringAsFixed(1)}%",
-              "» Riesgo por Frecuencia: ${(freqVal * 100).toStringAsFixed(1)}%",
-              "» Densidad Horaria: ${(timeVal * 100).toStringAsFixed(1)}%",
-            ] else
-              "» Telemetría: Datos acoplados directo de la base central.",
-            "REPORT: $backendLogs"
-          ];
-        } else if (_currentTab == 1) {
-          _statusCategory = "ANÁLISIS COMPLETADO • PHISHING";
-          vectorName = "PHISHING/URL";
-          _forensicLogs = [
-            "URL AUDITADA: $target",
-            "» Desglose de amenazas en canales HTTP/REST terminado.",
-            "» Auditoría de patrones de spoofing estructural activa.",
+            "» Entropía Estructural: ${(entropyVal * 100).toStringAsFixed(1)}%",
+            "» Riesgo por Frecuencia: ${(freqVal * 100).toStringAsFixed(1)}%",
+            "» Densidad Horaria: ${(timeVal * 100).toStringAsFixed(1)}%",
             "AUDIT LOG: $backendLogs"
           ];
         } else {
-          _statusCategory = "ANÁLISIS COMPLETADO • MALWARE";
-          vectorName = "MALWARE/BIN";
           _forensicLogs = [
-            "BINARIO DE INSPECCIÓN: $target",
-            if (_selectedFileSize != null) "» Peso Estático Verificado: ${_formatBytes(_selectedFileSize!)}",
-            "» Firma digital procesada y enviada al backend SQLite.",
-            "» Análisis heurístico estático de desbordamiento completado.",
+            "OBJETIVO EVALUADO: $target",
+            if (_currentTab == 2 && _selectedFileSize != null) "» Peso Estático: ${_formatBytes(_selectedFileSize!)}",
+            "» Patrones de desbordamiento analizados con éxito.",
             "AUDIT LOG: $backendLogs"
           ];
         }
@@ -214,7 +224,7 @@ class _HomeScreenState extends State<HomeScreen>
           'target': target,
           'score': scoreInPercent,
           'verdict': _verdictText,
-          'vector': vectorName,
+          'vector': vectorLabel,
         });
       });
     } catch (e) {
@@ -224,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen>
         _statusCategory = "Modo Híbrido Local";
         _hudColor = const Color(0xFFFFD740);
         _forensicLogs = [
-          "AVISO: Ajuste de escala o respuesta base del servidor.",
+          "AVISO: Excepción de aislamiento capturada o arranque en frío.",
           "Detalle: ${e.toString()}",
         ];
       });
@@ -236,9 +246,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _clearMasterBitacora() {
-    setState(() {
-      _masterBitacora.clear();
-    });
+    setState(() => _masterBitacora.clear());
   }
 
   @override
@@ -256,10 +264,7 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 16),
               _buildInputSection(),
               const SizedBox(height: 16),
-              SizedBox(
-                height: 220,
-                child: _buildBottomLogsSection(),
-              ),
+              SizedBox(height: 220, child: _buildBottomLogsSection()),
               const SizedBox(height: 16),
               _buildAnalyticsHistorySection(),
             ],
@@ -294,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen>
               Icon(Icons.shield_outlined, color: _hudColor, size: 18),
               const SizedBox(width: 8),
               Text(
-                "JOSH SECURITY • CENTINELA v2.5",
+                "JOSH SECURITY • CENTINELA v4.1",
                 style: TextStyle(
                   color: Colors.blueGrey[200],
                   letterSpacing: 2.5,
@@ -321,9 +326,7 @@ class _HomeScreenState extends State<HomeScreen>
                   color: _hudColor,
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  shadows: [
-                    Shadow(color: _hudColor, blurRadius: 8),
-                  ],
+                  shadows: [Shadow(color: _hudColor, blurRadius: 8)],
                 ),
               ),
             ),
@@ -361,7 +364,6 @@ class _HomeScreenState extends State<HomeScreen>
       padding: const EdgeInsets.all(4),
       child: TabBar(
         controller: _tabController,
-        indicatorPadding: EdgeInsets.zero,
         indicatorSize: TabBarIndicatorSize.tab,
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
@@ -389,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen>
       hintText = "Ingrese dirección URL fraudulenta";
     } else if (_currentTab == 2) {
       inputIcon = Icons.bug_report_outlined;
-      hintText = _selectedFileName ?? "Seleccione o nombre un binario corporativo";
+      hintText = _selectedFileName ?? "Seleccione binario corporativo";
     }
 
     return Column(
@@ -430,19 +432,14 @@ class _HomeScreenState extends State<HomeScreen>
               backgroundColor: _hudColor,
               foregroundColor: Colors.black,
               disabledBackgroundColor: Colors.blueGrey[800],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 4,
             ),
             child: _isLoading
                 ? const SizedBox(
                     height: 20,
                     width: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.black,
-                      strokeWidth: 2.5,
-                    ),
+                    child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5),
                   )
                 : const Text(
                     "ANALIZAR VECTORES EN CALIENTE",
