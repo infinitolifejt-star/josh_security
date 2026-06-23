@@ -2,11 +2,13 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
-import '../core/models.dart';
-import '../analytics/entropy_engine.dart';
-import '../reputation/reputation_engine.dart';
-import '../learning/learning_engine.dart';
-import '../security/secure_logger.dart';
+
+// 🔗 Importaciones Relativas Corregidas (Apuntan al directorio interno de services)
+import 'core/models.dart';
+import 'analytics/entropy_engine.dart';
+import 'reputation/reputation_engine.dart';
+import 'learning/learning_engine.dart';
+import 'security/secure_logger.dart';
 
 class ApiService {
   final EntropyEngine _entropyEngine;
@@ -16,7 +18,6 @@ class ApiService {
   final Map<String, double> _communityMatrix;
 
   /// ⚠️ ARQUITECTURA CLOUD - INFRAESTRUCTURA UNIFICADA EN RENDER
-  // Se unifica a la URL activa del proyecto en Render
   static const String _cloudUrl = 'https://josh-security-backend.onrender.com';
   static String get _baseUrl => _cloudUrl;
 
@@ -63,7 +64,6 @@ class ApiService {
   /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
   /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
-    // Eliminamos la barra final conflictiva para estandarizar con Flask
     final String targetEndpoint = '$_baseUrl/api/v1/scan';
     
     try {
@@ -81,7 +81,7 @@ class ApiService {
           'target': target,
           'type': type,
         }),
-      ).timeout(const Duration(seconds: 45)); // Resistencia al arranque en frío (Cold Start)
+      ).timeout(const Duration(seconds: 45));
 
       print('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
