@@ -1,12 +1,12 @@
+// lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
-import 'core/models.dart';
-import 'analytics/entropy_engine.dart';
-import 'reputation/reputation_engine.dart';
-import 'learning/learning_engine.dart';
-import 'security/secure_logger.dart';
+import '../core/models.dart';
+import '../analytics/entropy_engine.dart';
+import '../reputation/reputation_engine.dart';
+import '../learning/learning_engine.dart';
+import '../security/secure_logger.dart';
 
 class ApiService {
   final EntropyEngine _entropyEngine;
@@ -15,7 +15,8 @@ class ApiService {
   final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
-  /// ⚠️ ARQUITECTURA ALPHA CLOUD - CONEXIÓN GLOBAL RENDER
+  /// ⚠️ ARQUITECTURA CLOUD - INFRAESTRUCTURA UNIFICADA EN RENDER
+  // Se unifica a la URL activa del proyecto en Render
   static const String _cloudUrl = 'https://josh-security-backend.onrender.com';
   static String get _baseUrl => _cloudUrl;
 
@@ -62,8 +63,8 @@ class ApiService {
   /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
   /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
-    // Definición estricta con barra al final para compatibilidad absoluta con Flask Routing
-    final String targetEndpoint = '$_baseUrl/api/v1/scan/';
+    // Eliminamos la barra final conflictiva para estandarizar con Flask
+    final String targetEndpoint = '$_baseUrl/api/v1/scan';
     
     try {
       print('🛰️ [RED] Centinela enviando payload a: $targetEndpoint');
@@ -74,13 +75,13 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Connection': 'keep-alive',
-          'X-Requested-With': 'XMLHttpRequest', // Cabecera aliada para mitigar bloqueos CORS en entornos Web
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: jsonEncode({
           'target': target,
           'type': type,
         }),
-      ).timeout(const Duration(seconds: 45)); // Margen extendido (45s) optimizado para el Cold Start de Render
+      ).timeout(const Duration(seconds: 45)); // Resistencia al arranque en frío (Cold Start)
 
       print('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
@@ -90,7 +91,7 @@ class ApiService {
         double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
         String parsedClassification = data['classification']?.toString() ?? 'SAFE';
         String parsedRiskLevel = data['risk_level']?.toString() ?? parsedClassification;
-        String parsedScoreLabel = data['score']?.toString() ?? '15';
+        String parsedScoreLabel = data['score']?.toString() ?? (parsedScore * 100).toStringAsFixed(0);
 
         return {
           'riskScore': _normalize(parsedScore),
@@ -102,8 +103,8 @@ class ApiService {
         };
       } else {
         if (response.statusCode == 404) {
-          print('⚠️ [DEBUG RUTA] 404 detectado. Intentando fallback alternativo sin prefijo...');
-          return await _executeAlternativeNetworkScan(target, type, '$_baseUrl/scan/');
+          print('⚠️ [DEBUG RUTA] 404 detectado. Intentando fallback alternativo directo...');
+          return await _executeAlternativeNetworkScan(target, type, '$_baseUrl/scan');
         }
         return _fallbackStaticResult(type, 'Error HTTP de pasarela en la Nube: ${response.statusCode}');
       }
@@ -113,7 +114,7 @@ class ApiService {
     }
   }
 
-  /// Escaneo alternativo de contingencia anti-404
+  /// Escaneo alternativo de contingencia anti-404 sin prefijo api/v1
   Future<Map<String, dynamic>> _executeAlternativeNetworkScan(String target, String type, String altEndpoint) async {
     try {
       final response = await http.post(
@@ -127,9 +128,11 @@ class ApiService {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> data = jsonDecode(response.body);
+        double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
+        
         return {
-          'riskScore': _normalize(double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12),
-          'score': data['score']?.toString() ?? '15',
+          'riskScore': _normalize(parsedScore),
+          'score': data['score']?.toString() ?? (parsedScore * 100).toStringAsFixed(0),
           'classification': data['classification']?.toString() ?? 'SAFE',
           'riskLevel': data['risk_level']?.toString() ?? 'SAFE',
           'metrics': data['metrics'] ?? {"network": 1.0},
@@ -137,14 +140,14 @@ class ApiService {
         };
       }
     } catch (_) {}
-    return _fallbackStaticResult(type, 'Ruta no encontrada en el servidor backend.');
+    return _fallbackStaticResult(type, 'Ruta no encontrada en el servidor backend (404 Total).');
   }
 
   /// =====================================================================
   /// 🗄️ PERSISTENCIA FORENSE DIGITAL CENTRALIZADA
   /// =====================================================================
   Future<List<dynamic>> fetchScanHistory() async {
-    final String historyEndpoint = '$_baseUrl/api/v1/history/';
+    final String historyEndpoint = '$_baseUrl/api/v1/history';
     try {
       final response = await http.get(
         Uri.parse(historyEndpoint),
@@ -161,7 +164,7 @@ class ApiService {
   }
 
   Future<void> _syncWithSqlite(String target, String type, Map<String, dynamic> localResult) async {
-    final String syncEndpoint = '$_baseUrl/api/v1/sync/';
+    final String syncEndpoint = '$_baseUrl/api/v1/sync';
     try {
       await http.post(
         Uri.parse(syncEndpoint), 
@@ -177,12 +180,11 @@ class ApiService {
     } catch (_) {}
   }
 
-  /// Mapeo homologado para que las respuestas locales simulen la estructura que espera la UI
   Map<String, dynamic> _fallbackStaticResult(String type, String errorReason) {
     return {
       'riskScore': 0.15,
       'score': '15',
-      'classification': 'SAFE',
+      'classification': 'CONTINGENCIA',
       'riskLevel': 'FALLBACK LOCAL',
       'metrics': {"entropy": 0.0, "fallback": 1.0},
       'logs': 'CONTROL INTERNO CENTINELA: $errorReason'
