@@ -1,4 +1,3 @@
-// lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
@@ -72,16 +71,15 @@ class ApiService {
       final response = await http.post(
         Uri.parse(targetEndpoint),
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=UTF-8',
           'Accept': 'application/json',
-          'Connection': 'keep-alive',
-          'X-Requested-With': 'XMLHttpRequest',
+          'Access-Control-Allow-Origin': '*', // Bypass táctico para emuladores y Chrome Web CORS
         },
         body: jsonEncode({
           'target': target,
           'type': type,
         }),
-      ).timeout(const Duration(seconds: 45));
+      ).timeout(const Duration(seconds: 35));
 
       print('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
@@ -120,8 +118,9 @@ class ApiService {
       final response = await http.post(
         Uri.parse(altEndpoint),
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=UTF-8',
           'Accept': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
         body: jsonEncode({'target': target, 'type': type}),
       ).timeout(const Duration(seconds: 20));
@@ -151,7 +150,10 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse(historyEndpoint),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
       ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
@@ -168,7 +170,10 @@ class ApiService {
     try {
       await http.post(
         Uri.parse(syncEndpoint), 
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
         body: jsonEncode({
           'target': target,
           'type': type,
