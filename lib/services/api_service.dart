@@ -16,8 +16,8 @@ class ApiService {
   final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
-  /// ⚠️ ARQUITECTURA CLOUD - INFRAESTRUCTURA UNIFICADA EN RENDER
-  static const String _cloudUrl = 'https://josh-security-backend.onrender.com';
+  /// ⚠️ ARQUITECTURA CLOUD - INFRAESTRUCTURA UNIFICADA EN RENDER (URL CORREGIDA)
+  static const String _cloudUrl = 'https://josh-security.onrender.com';
   static String get _baseUrl => _cloudUrl;
 
   final List<String> _validColombianPrefixes = [
