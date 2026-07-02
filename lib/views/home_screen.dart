@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen>
   int? _selectedFileSize; 
 
   List<String> _forensicLogs = [
-    "CENTINELA v4.3.1: Núcleo analítico unificado y acoplado a la infraestructura Cloud."
+    "CENTINELA v4.4.0: Núcleo analítico unificado acoplado a la infraestructura Cloud en Render."
   ];
 
   final List<Map<String, dynamic>> _masterBitacora = [];
@@ -78,9 +78,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   /// ⚙️ SISTEMA ANTI-SLEEP DE INFRAESTRUCTURA (RENDER KEEP-ALIVE)
   void _initKeepAliveTimer() {
-    // Envía un pulso de red silencioso inmediatamente al nacer la app
     _sendKeepAlivePulse();
-    // Configura el temporizador para repetirse de forma autónoma cada 5 minutos exactos
     _keepAliveTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
       _sendKeepAlivePulse();
     });
@@ -220,6 +218,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
 
         _masterBitacora.insert(0, {
+          'id': DateTime.now().millisecondsSinceEpoch.toString(),
           'timestamp': DateTime.now().toIso8601String().substring(11, 19),
           'target': target,
           'score': scoreInPercent,
@@ -257,6 +256,7 @@ class _HomeScreenState extends State<HomeScreen>
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildTopHUD(),
               const SizedBox(height: 16),
@@ -298,13 +298,19 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Icon(Icons.shield_outlined, color: _hudColor, size: 18),
               const SizedBox(width: 8),
-              Text(
-                "JOSH SECURITY • CENTINELA v4.3.1",
-                style: TextStyle(
-                  color: Colors.blueGrey[200],
-                  letterSpacing: 2.5,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+              Theme(
+                data: ThemeData(useMaterial3: true),
+                child: Flexible(
+                  child: Text(
+                    "JOSH SECURITY • CENTINELA v4.4.0",
+                    style: TextStyle(
+                      color: Colors.blueGrey[200],
+                      letterSpacing: 2.5,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],
@@ -466,13 +472,16 @@ class _HomeScreenState extends State<HomeScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                _statusCategory,
-                style: const TextStyle(
-                  color: Color(0xFF5BC0BE),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11,
-                  letterSpacing: 1,
+              Expanded(
+                child: Text(
+                  _statusCategory,
+                  style: const TextStyle(
+                    color: Color(0xFF5BC0BE),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    letterSpacing: 1,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               Container(
@@ -586,6 +595,7 @@ class _HomeScreenState extends State<HomeScreen>
                     }
 
                     return Container(
+                      key: ValueKey(item['id']),
                       margin: const EdgeInsets.symmetric(vertical: 6),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -623,6 +633,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     fontWeight: FontWeight.w500,
                                   ),
                                   overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -632,6 +643,8 @@ class _HomeScreenState extends State<HomeScreen>
                                     fontFamily: 'monospace',
                                     fontSize: 10,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ],
                             ),
