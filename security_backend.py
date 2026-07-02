@@ -1,5 +1,5 @@
 # =====================================================================
-# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v4.3.3 - PRODUCTION)
+# PROJECT CENTINELA: ENGINE & SECURITY BACKEND CORE (v4.4.0 - PRODUCTION)
 # AUDITORÍA DE ESTRUCTURA Y LIMPIEZA TOTAL - PREVENCIÓN FORENSE DE 404
 # =====================================================================
 import os
@@ -87,19 +87,37 @@ def buscar_cache(target, tipo):
 # MÓDULOS ANALÍTICOS INTELIGENTES
 # =====================================================================
 def obtener_geolocalizacion_vector(target):
-    """Mapea prefijos telefónicos para identificar el origen de la llamada."""
-    num_limpio = re.sub(r'[\s\-()]', '', target)
-    if num_limpio.replace('+', '').isdigit():
-        if len(num_limpio) == 10 and num_limpio.startswith('3'):
+    """Mapea prefijos telefónicos para identificar el origen de la llamada (Soporte Fijos y Celulares COL)."""
+    # Limpieza absoluta de caracteres y prefijo internacional base
+    num_limpio = re.sub(r'[\s\-()+\+]', '', target)
+    
+    # Normalizar números con código de país Colombia (57)
+    if num_limpio.startswith('57'):
+        num_local = num_limpio[2:]
+    else:
+        num_local = num_limpio
+
+    if num_local.isdigit():
+        # Verificación estructural de telefonía celular en Colombia (Estructura de 10 dígitos que inicia con 3)
+        if len(num_local) == 10 and num_local.startswith('3'):
             return "Colombia (Red Móvil Celular)"
-        if num_limpio.startswith('601'): return "Colombia (Bogotá)"
-        if num_limpio.startswith('604'): return "Colombia (Medellín)"
-        if num_limpio.startswith('602'): return "Colombia (Cali)"
-        if num_limpio.startswith('605'): return "Colombia (Barranquilla)"
-        if num_limpio.startswith('+52') or num_limpio.startswith('52'): return "Internacional (México)"
-        if num_limpio.startswith('+1') or num_limpio.startswith('1'): return "Internacional (USA/Canadá)"
-        return "Línea No Mapeada / VoIP"
-    return "Estructura Web / URL"
+        
+        # Verificación de indicativos unificados fijos nacionales colombianos
+        if num_local.startswith('601'): return "Colombia (Bogotá / Cundinamarca)"
+        if num_local.startswith('604'): return "Colombia (Antioquia / Chocó / Córdoba)"
+        if num_local.startswith('602'): return "Colombia (Valle / Cauca / Nariño)"
+        if num_local.startswith('605'): return "Colombia (Costa Atlántica)"
+        if num_local.startswith('606'): return "Colombia (Eje Cafetero)"
+        if num_local.startswith('607'): return "Colombia (Santanderes / Arauca)"
+        if num_local.startswith('608'): return "Colombia (Llanos Orientales / Amazonía)"
+        
+        # Mapeos internacionales de seguridad
+        if num_limpio.startswith(('52', '+52')): return "Internacional (México)"
+        if num_limpio.startswith(('1', '+1')): return "Internacional (USA/Canadá)"
+        
+        return "Línea No Mapeada / VoIP Virtual"
+        
+    return "Estructura Web / Vector URL"
 
 def consultar_google_safe_browsing(url_objetivo):
     """Consulta en tiempo real la base de datos global de phishing de Google."""
@@ -158,7 +176,7 @@ def index_endpoint():
     return jsonify({
         "status": "online",
         "project": "JOSH Security - Proyecto Centinela",
-        "engine_version": "4.3.3",
+        "engine_version": "4.4.0",
         "environment": "Render Production Cloud",
         "message": "Servidor centralizado corriendo de forma correcta y segura."
     }), 200
@@ -210,22 +228,27 @@ def scan_endpoint():
     # Lógica de Evaluación por Motores de Seguridad
     if tipo == "SPAM / BOTS":
         clean_phone = re.sub(r'[\s\-()+\+]', '', target)
-        if "8888888888" in clean_phone or clean_phone.count(clean_phone[0]) == len(clean_phone):
+        if clean_phone.startswith('57'):
+            num_local = clean_phone[2:]
+        else:
+            num_local = clean_phone
+
+        if "8888888888" in num_local or (len(num_local) > 0 and num_local.count(num_local[0]) == len(num_local)):
             risk_score = 0.98
             classification = "DANGER"
             vt_summary = "Bloqueado: Patrón numérico artificial o ráfaga maliciosa."
-        elif clean_phone.startswith(("4470", "234", "79", "1888")):
+        elif num_local.startswith(("4470", "234", "79", "1888")):
             risk_score = 0.95
             classification = "DANGER"
-            vt_summary = "Alerta Forense: Origen VoIP virtual vinculado a fraudes."
-        elif clean_phone.startswith("018000") or len(clean_phone) < 7 or len(clean_phone) > 15:
+            vt_summary = "Alerta Forense: Origen VoIP virtual vinculado a fraudes de ingeniería social."
+        elif num_local.startswith("018000") or len(num_local) < 7 or len(num_local) > 15:
             risk_score = 0.55
             classification = "WARNING"
-            vt_summary = "Advertencia: Línea comercial o estructura inusual."
+            vt_summary = "Advertencia: Estructura corporativa inusual o PBX no homologada."
         else:
             risk_score = 0.10
             classification = "SAFE"
-            vt_summary = f"Línea limpia sin reportes de fraude. Origen: {origen_geo}"
+            vt_summary = f"Línea analizada sin anomalías activas. Origen detectado: {origen_geo}"
 
     elif tipo == "PHISHING":
         target_low = target.lower()
@@ -235,7 +258,7 @@ def scan_endpoint():
         if "banc0" in target_low or ".xyz" in target_low or "actualizacion" in target_low or motores_maliciosos_vt > 2 or es_malicioso_gsb:
             risk_score = 0.96
             classification = "DANGER"
-            vt_summary = f"Alerta Phishing: Servidor fraudulento. VirusTotal: {motores_maliciosos_vt} alertas."
+            vt_summary = f"Alerta Phishing: Servidor fraudulento o Spoofing detectado. VirusTotal: {motores_maliciosos_vt} alertas."
         elif "blogspot" in target_low or "bit.ly" in target_low or not target_low.startswith("https://"):
             risk_score = 0.48
             classification = "WARNING"
@@ -243,7 +266,7 @@ def scan_endpoint():
         else:
             risk_score = 0.05
             classification = "SAFE"
-            vt_summary = "Estructura web limpia. Sin registros negativos en la nube."
+            vt_summary = "Estructura web limpia. Sin registros negativos en los motores globales de seguridad."
 
     else:  # MALWARE
         target_low = target.lower()
@@ -254,7 +277,7 @@ def scan_endpoint():
         elif any(ext in target_low for ext in [".bat", ".xlsm", ".zip", ".rar"]):
             risk_score = 0.62
             classification = "WARNING"
-            vt_summary = "Advertencia: El archivo posee scripts o macros comprimidas."
+            vt_summary = "Advertencia: El archivo posee scripts o macros comprimidas propensas a malware."
         else:
             risk_score = 0.08
             classification = "SAFE"

@@ -20,9 +20,16 @@ class ApiService {
   static const String _cloudUrl = 'https://josh-security.onrender.com';
   static String get _baseUrl => _cloudUrl;
 
+  /// 🇨🇴 MATRIZ EXTENDIDA DE OPERADORES MÓVILES (Actualizado 2026)
   final List<String> _validColombianPrefixes = [
     '300', '301', '302', '303', '304', '305', '310', '311', '312', '313', '314', 
-    '315', '316', '317', '318', '319', '320', '321', '322', '323', '324', '350', '351'
+    '315', '316', '317', '318', '319', '320', '321', '322', '323', '324', '325', 
+    '326', '327', '333', '350', '351'
+  ];
+
+  /// ☎️ MATRIZ UNIFICADA DE INDICATIVOS FIJOS NACIONALES (Anti-Vishing / PBX Virtuales)
+  final List<String> _validColombianFixedPrefixes = [
+    '601', '602', '603', '604', '605', '606', '607', '608'
   ];
 
   ApiService({
@@ -220,15 +227,31 @@ class ApiService {
       communityScore: communityScore,
     );
 
-    bool hasValidPrefix = false;
+    // Verificación de Origen: ¿Es un celular o un fijo colombiano válido?
+    bool isKnownColombianOrigin = false;
+    
     for (final prefix in _validColombianPrefixes) {
-      if (cleanPhone.startsWith(prefix)) {
-        hasValidPrefix = true;
+      if (cleanPhone.startsWith(prefix) || cleanPhone.startsWith('57$prefix')) {
+        isKnownColombianOrigin = true;
         break;
       }
     }
-    if (hasValidPrefix && riskScore > 0.1) {
-      riskScore = math.max(0.0, riskScore - 0.20);
+    
+    if (!isKnownColombianOrigin) {
+      for (final fixedPrefix in _validColombianFixedPrefixes) {
+        if (cleanPhone.startsWith(fixedPrefix) || cleanPhone.startsWith('57$fixedPrefix')) {
+          isKnownColombianOrigin = true;
+          break;
+        }
+      }
+    }
+
+    // 🧠 Calibración Avanzada: Solo se premia la procedencia si la entropía no delata automatización
+    if (isKnownColombianOrigin && riskScore > 0.1 && entropy < 0.55) {
+      riskScore = math.max(0.0, riskScore - 0.15); 
+    } else if (!isKnownColombianOrigin && riskScore < 0.8) {
+      // Si viene de un origen indeterminado o prefijo internacional extraño, sube el umbral base de sospecha
+      riskScore = math.min(1.0, riskScore + 0.10);
     }
 
     riskScore = _normalize(_learningEngine.adjustScore(riskScore));
@@ -239,7 +262,11 @@ class ApiService {
     return AnalysisResult(
       riskScore: riskScore,
       classification: classification,
-      metrics: {"entropy": entropy, "calibrated": hasValidPrefix ? 1.0 : 0.0},
+      metrics: {
+        "entropy": entropy, 
+        "calibrated": isKnownColombianOrigin ? 1.0 : 0.0,
+        "learning_boost": 1.0
+      },
     );
   }
 
