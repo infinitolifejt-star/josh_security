@@ -1,4 +1,9 @@
+# =====================================================================
+# PROJECT CENTINELA: ACTIVE VISUAL ASSET OPTIMIZER (v4.4.0)
+# RECORTE QUIRÚRGICO DE BBOX Y RESPALDO PREVENTIVO DE MATRIZ PNG
+# =====================================================================
 import os
+import shutil
 from PIL import Image
 
 def optimizar_escudo_centinela(target_size=(160, 160)):
@@ -8,7 +13,7 @@ def optimizar_escudo_centinela(target_size=(160, 160)):
     posibles_rutas = [
         os.path.join("assets", "images", "logo_escudo.png"),
         os.path.join("assets", "assets", "images", "logo_escudo.png"),
-        os.path.join("web", "assets", "assets", "images", "logo_escudo.png.png"),
+        os.path.join("web", "assets", "assets", "images", "logo_escudo.png"),
         "logo_escudo.png"
     ]
     
@@ -27,6 +32,13 @@ def optimizar_escudo_centinela(target_size=(160, 160)):
 
     try:
         print(f"[->] Escudo original localizado con éxito en: {ruta_origen}")
+        
+        # PROTOCOLO DE SEGURIDAD: Generar copia de respaldo (.bak) antes de operar
+        ruta_bak = ruta_origen + ".bak"
+        if not os.path.exists(ruta_bak):
+            shutil.copy2(ruta_origen, ruta_bak)
+            print(f"[->] Copia de seguridad preventiva creada en: {ruta_bak}")
+        
         with Image.open(ruta_origen) as img:
             img = img.convert("RGBA")
             bbox = img.getbbox()
@@ -35,7 +47,7 @@ def optimizar_escudo_centinela(target_size=(160, 160)):
                 print("[->] Ejecutando recorte quirúrgico de bordes transparentes...")
                 img = img.crop(bbox)
             
-            # Redimensionado de alta definición para Flutter
+            # Redimensionado de alta definición para rendimiento óptimo en Flutter
             print(f"[->] Redimensionando a {target_size[0]}x{target_size[1]} píxeles...")
             img_resized = img.resize(target_size, Image.Resampling.LANCZOS)
             
@@ -43,7 +55,7 @@ def optimizar_escudo_centinela(target_size=(160, 160)):
             img_resized.save(ruta_origen, "PNG")
             
             print(f"\n[+] ÉXITO ABSOLUTO: ¡Protocolo Centinela Completado!")
-            print(f"[+] El escudo optimizado ha sido guardado e inyectado en: {ruta_origen}")
+            print(f"[+] El escudo optimizado ha sido inyectado con éxito en: {ruta_origen}")
             
     except Exception as e:
         print(f"[-] ERROR CRÍTICO durante el procesamiento: {str(e)}")

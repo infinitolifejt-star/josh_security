@@ -4,8 +4,8 @@
 # =====================================================================
 import os
 import sqlite3
-import hashlib
 import re
+import io
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -13,7 +13,7 @@ import requests
 
 # Librerías Forenses para generación de reportes tácticos PDF
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -31,9 +31,9 @@ CORS(app, resources={
 DATABASE_FILE = "database.db"
 
 # =====================================================================
-# PROTECCIÓN DE CREDENCIALES MEDIANTE VARIABLES DE ENTORNO
+# PROTECCIÓN DE CREDENCIALES MEDIANTE VARIABLES DE ENTORNO BLINDADAS
 # =====================================================================
-VT_API_KEY = os.environ.get("VT_API_KEY", "003fa969b0ddef2e33b9cb5cb7a00747ce1c2d2b1e52197a6e0a87649a4548e8")
+VT_API_KEY = os.environ.get("VT_API_KEY", "")
 GSB_API_KEY = os.environ.get("GSB_API_KEY", "")
 
 def conectar_db():
@@ -44,41 +44,38 @@ def conectar_db():
 
 def init_db():
     """Inicializa la estructura relacional de la bitácora de amenazas."""
-    conn = conectar_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS escaneos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipo TEXT NOT NULL,
-            objetivo TEXT NOT NULL,
-            resultado TEXT NOT NULL,
-            vt_result TEXT,
-            score REAL,
-            geo TEXT,
-            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    with conectar_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS escaneos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo TEXT NOT NULL,
+                objetivo TEXT NOT NULL,
+                resultado TEXT NOT NULL,
+                vt_result TEXT,
+                score REAL,
+                geo TEXT,
+                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
 
 def buscar_cache(target, tipo):
     """Consulta registros locales previos para control de cuotas de APIs."""
     vectores_prueba = ["8888888888", "banc0", "xyz", "malicious", "virus", "blogspot", "bit.ly", "018000"]
     for vp in vectores_prueba:
         if vp in target.lower():
-            print(f"⚡ [HEURÍSTICA] Vector de prueba detectado '{target}'. Saltando caché para actualización en caliente.")
+            print(f"⚡ [HEURÍSTICA] Vector de prueba detectado '{target}'. Saltando caché.")
             return None
 
     try:
-        conn = conectar_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT resultado, vt_result, score, geo FROM escaneos WHERE tipo = ? AND objetivo = ? ORDER BY fecha DESC LIMIT 1",
-            (tipo, target)
-        )
-        row = cursor.fetchone()
-        conn.close()
-        return row
+        with conectar_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT resultado, vt_result, score, geo FROM escaneos WHERE tipo = ? AND objetivo = ? ORDER BY fecha DESC LIMIT 1",
+                (tipo, target)
+            )
+            return cursor.fetchone()
     except Exception as e:
         print(f"⚠️ Error al consultar caché: {e}")
         return None
@@ -87,22 +84,18 @@ def buscar_cache(target, tipo):
 # MÓDULOS ANALÍTICOS INTELIGENTES
 # =====================================================================
 def obtener_geolocalizacion_vector(target):
-    """Mapea prefijos telefónicos para identificar el origen de la llamada (Soporte Fijos y Celulares COL)."""
-    # Limpieza absoluta de caracteres y prefijo internacional base
+    """Mapea prefijos telefónicos para identificar el origen de la llamada."""
     num_limpio = re.sub(r'[\s\-()+\+]', '', target)
     
-    # Normalizar números con código de país Colombia (57)
     if num_limpio.startswith('57'):
         num_local = num_limpio[2:]
     else:
         num_local = num_limpio
 
     if num_local.isdigit():
-        # Verificación estructural de telefonía celular en Colombia (Estructura de 10 dígitos que inicia con 3)
         if len(num_local) == 10 and num_local.startswith('3'):
             return "Colombia (Red Móvil Celular)"
         
-        # Verificación de indicativos unificados fijos nacionales colombianos
         if num_local.startswith('601'): return "Colombia (Bogotá / Cundinamarca)"
         if num_local.startswith('604'): return "Colombia (Antioquia / Chocó / Córdoba)"
         if num_local.startswith('602'): return "Colombia (Valle / Cauca / Nariño)"
@@ -111,7 +104,6 @@ def obtener_geolocalizacion_vector(target):
         if num_local.startswith('607'): return "Colombia (Santanderes / Arauca)"
         if num_local.startswith('608'): return "Colombia (Llanos Orientales / Amazonía)"
         
-        # Mapeos internacionales de seguridad
         if num_limpio.startswith(('52', '+52')): return "Internacional (México)"
         if num_limpio.startswith(('1', '+1')): return "Internacional (USA/Canadá)"
         
@@ -143,7 +135,7 @@ def consultar_google_safe_browsing(url_objetivo):
         if response.status_code == 200 and response.json():
             return True, "Google Safe Browsing: URL catalogada como Amenaza Activa."
         return False, "Google Safe Browsing: Dominio sin reportes activos."
-    except Exception:
+    except requests.exceptions.RequestException:
         return False, "Google Safe Browsing: Fuera de línea."
 
 def consultar_virustotal_url(url_objetivo):
@@ -151,6 +143,9 @@ def consultar_virustotal_url(url_objetivo):
     url_low = url_objetivo.lower()
     if "banc0col0mbia" in url_low or "bancolombia.xyz" in url_low:
         return 5
+
+    if not VT_API_KEY:
+        return 0
 
     url_api = "https://www.virustotal.com/api/v3/urls"
     headers = {"x-apikey": VT_API_KEY}
@@ -165,11 +160,11 @@ def consultar_virustotal_url(url_objetivo):
                 stats = res_analysis.json().get('data', {}).get('attributes', {}).get('stats', {})
                 return stats.get('malicious', 0)
         return 0
-    except Exception:
+    except requests.exceptions.RequestException:
         return 0
 
 # =====================================================================
-# ENDPOINTS ADAPTADOS (SOPORTE MULTI-RUTA PARA EVITAR 404 EN NUBE)
+# ENDPOINTS CENTRALIZADOS MULTI-RUTA
 # =====================================================================
 @app.route('/', methods=['GET'])
 def index_endpoint():
@@ -181,7 +176,6 @@ def index_endpoint():
         "message": "Servidor centralizado corriendo de forma correcta y segura."
     }), 200
 
-# 🛠️ BLINDAJE EXTRA: Responde a /scan, /api/scan y /api/v1/scan simultáneamente
 @app.route('/scan', methods=['POST', 'OPTIONS'])
 @app.route('/api/scan', methods=['POST', 'OPTIONS'])
 @app.route('/api/v1/scan', methods=['POST', 'OPTIONS'])
@@ -210,7 +204,7 @@ def scan_endpoint():
         risk_val = float(cache[2])
         return jsonify({
             "risk_score": risk_val,
-            "score": str(int(risk_val * 100)), # Normalizado a cadena entera para el HUD
+            "score": str(int(risk_val * 100)),
             "classification": str(cache[0]),
             "risk_level": str(cache[0]),
             "threat_level": str(cache[0]),
@@ -225,13 +219,9 @@ def scan_endpoint():
 
     origen_geo = obtener_geolocalizacion_vector(target)
 
-    # Lógica de Evaluación por Motores de Seguridad
     if tipo == "SPAM / BOTS":
         clean_phone = re.sub(r'[\s\-()+\+]', '', target)
-        if clean_phone.startswith('57'):
-            num_local = clean_phone[2:]
-        else:
-            num_local = clean_phone
+        num_local = clean_phone[2:] if clean_phone.startswith('57') else clean_phone
 
         if "8888888888" in num_local or (len(num_local) > 0 and num_local.count(num_local[0]) == len(num_local)):
             risk_score = 0.98
@@ -273,7 +263,7 @@ def scan_endpoint():
         if any(ext in target_low for ext in [".exe", ".apk", ".msi", ".ps1"]):
             risk_score = 0.99
             classification = "DANGER"
-            vt_summary = f"Freno Forense: Payload ejecutable de alto riesgo bloqueado."
+            vt_summary = "Freno Forense: Payload ejecutable de alto riesgo bloqueado."
         elif any(ext in target_low for ext in [".bat", ".xlsm", ".zip", ".rar"]):
             risk_score = 0.62
             classification = "WARNING"
@@ -283,22 +273,20 @@ def scan_endpoint():
             classification = "SAFE"
             vt_summary = "Firma digital limpia. Extensión de datos plano segura."
 
-    # Guardar en base de datos local
     try:
-        conn = conectar_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO escaneos (tipo, objetivo, resultado, vt_result, score, geo) VALUES (?, ?, ?, ?, ?, ?)",
-            (tipo, target, classification, vt_summary, risk_score, origen_geo)
-        )
-        conn.commit()
-        conn.close()
+        with conectar_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO escaneos (tipo, objetivo, resultado, vt_result, score, geo) VALUES (?, ?, ?, ?, ?, ?)",
+                (tipo, target, classification, vt_summary, risk_score, origen_geo)
+            )
+            conn.commit()
     except Exception as e:
         print(f"⚠️ Fallo de persistencia SQLite: {e}")
 
     return jsonify({
         'risk_score': float(risk_score),
-        'score': str(int(risk_score * 100)), # Corrección estructural para el renderizador HUD
+        'score': str(int(risk_score * 100)),
         'classification': str(classification),
         'risk_level': str(classification),
         'threat_level': str(classification),
@@ -315,12 +303,11 @@ def scan_endpoint():
 @app.route('/history', methods=['GET'])
 def get_history():
     try:
-        conn = conectar_db()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM escaneos ORDER BY fecha DESC LIMIT 30")
-        rows = cursor.fetchall()
-        conn.close()
+        with conectar_db() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM escaneos ORDER BY fecha DESC LIMIT 30")
+            rows = cursor.fetchall()
 
         formatted_history = []
         for row in rows:
@@ -343,7 +330,6 @@ def get_history():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# 🛡️ SOPORTE DE PERSISTENCIA MÓVIL (Evita fallos al recibir sincronizaciones de SQLite de la App)
 @app.route('/api/v1/sync', methods=['POST'])
 @app.route('/sync', methods=['POST'])
 def sync_sqlite_endpoint():
@@ -351,18 +337,21 @@ def sync_sqlite_endpoint():
 
 @app.route('/api/v1/report/pdf', methods=['GET'])
 def generate_pdf_report():
-    pdf_filename = "Reporte_Forense_JoshSecurity.pdf"
-    conn = conectar_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, tipo, objetivo, resultado, fecha FROM escaneos ORDER BY fecha DESC")
-    records = cursor.fetchall()
-    conn.close()
+    try:
+        with conectar_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, tipo, objetivo, resultado, fecha FROM escaneos ORDER BY fecha DESC")
+            records = cursor.fetchall()
+    except Exception as e:
+        return jsonify({"error": f"Fallo al consultar base de datos: {str(e)}"}), 500
 
-    doc = SimpleDocTemplate(pdf_filename, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    # Cambiamos almacenamiento en disco por un buffer en memoria RAM (io.BytesIO) para evitar bloqueos
+    pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
     subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#475569'), spaceAfter=15)
 
     story.append(Paragraph("🛡️ JOSH SECURITY - REPORT AUDIT SUITE", title_style))
@@ -385,7 +374,16 @@ def generate_pdf_report():
     ]))
     story.append(t)
     doc.build(story)
-    return send_file(pdf_filename, as_attachment=True)
+    
+    # Resetear el puntero del buffer al inicio para que Flask pueda leerlo por completo
+    pdf_buffer.seek(0)
+    
+    return send_file(
+        pdf_buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name="Reporte_Forense_JoshSecurity.pdf"
+    )
 
 if __name__ == '__main__':
     init_db()

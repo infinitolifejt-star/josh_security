@@ -1,5 +1,7 @@
+// lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart'; // Requerido para debugPrint
 import 'package:http/http.dart' as http;
 
 // 🔗 Importaciones Relativas Corregidas (Apuntan al directorio interno de services)
@@ -7,13 +9,11 @@ import 'core/models.dart';
 import 'analytics/entropy_engine.dart';
 import 'reputation/reputation_engine.dart';
 import 'learning/learning_engine.dart';
-import 'security/secure_logger.dart';
 
 class ApiService {
   final EntropyEngine _entropyEngine;
   final ReputationEngine _reputationEngine;
   final LearningEngine _learningEngine;
-  final SecureLogger _logger;
   final Map<String, double> _communityMatrix;
 
   /// ⚠️ ARQUITECTURA CLOUD - INFRAESTRUCTURA UNIFICADA EN RENDER (URL CORREGIDA)
@@ -36,12 +36,10 @@ class ApiService {
     EntropyEngine? entropyEngine,
     ReputationEngine? reputationEngine,
     LearningEngine? learningEngine,
-    SecureLogger? logger,
     Map<String, double>? communityMatrix,
   })  : _entropyEngine = entropyEngine ?? EntropyEngine(),
         _reputationEngine = reputationEngine ?? ReputationEngine(),
         _learningEngine = learningEngine ?? LearningEngine(),
-        _logger = logger ?? SecureLogger(),
         _communityMatrix = communityMatrix ?? {};
 
   /// =====================================================================
@@ -73,7 +71,7 @@ class ApiService {
     final String targetEndpoint = '$_baseUrl/api/v1/scan';
     
     try {
-      print('🛰️ [RED] Centinela enviando payload a: $targetEndpoint');
+      debugPrint('🛰️ [RED] Centinela enviando payload a: $targetEndpoint');
       
       final response = await http.post(
         Uri.parse(targetEndpoint),
@@ -88,7 +86,7 @@ class ApiService {
         }),
       ).timeout(const Duration(seconds: 35));
 
-      print('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
+      debugPrint('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> data = jsonDecode(response.body);
@@ -108,13 +106,13 @@ class ApiService {
         };
       } else {
         if (response.statusCode == 404) {
-          print('⚠️ [DEBUG RUTA] 404 detectado. Intentando fallback alternativo directo...');
+          debugPrint('⚠️ [DEBUG RUTA] 404 detectado. Intentando fallback alternativo directo...');
           return await _executeAlternativeNetworkScan(target, type, '$_baseUrl/scan');
         }
         return _fallbackStaticResult(type, 'Error HTTP de pasarela en la Nube: ${response.statusCode}');
       }
     } catch (e) {
-      print('🚨 [ERROR RED] Falla al conectar con ($_baseUrl): $e');
+      debugPrint('🚨 [ERROR RED] Falla al conectar con ($_baseUrl): $e');
       return _fallbackStaticResult(type, 'Servidor CORE INALCANZABLE. Heurística de contingencia activada.');
     }
   }
@@ -167,7 +165,7 @@ class ApiService {
         return jsonDecode(response.body) as List<dynamic>;
       }
     } catch (e) {
-      print('⚠️ Error al pedir historial centralizado: $e');
+      debugPrint('⚠️ Error al pedir historial centralizado: $e');
     }
     return [];
   }
@@ -209,7 +207,7 @@ class ApiService {
   AnalysisResult analyze(String phone, List<CallRecord> history) {
     final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
     
-    print('🔍 [DEBUG HEURÍSTICO] Analizando: $cleanPhone | Historial: ${history.length} registros');
+    debugPrint('🔍 [DEBUG HEURÍSTICO] Analizando: $cleanPhone | Historial: ${history.length} registros');
 
     final double entropy = _normalize(_entropyEngine.analyzeNumberStructure(cleanPhone));
     final double frequencyRisk = _normalize(_entropyEngine.analyzeFrequency(history));
@@ -217,7 +215,7 @@ class ApiService {
     final double durationRisk = _normalize(_entropyEngine.analyzeDurationPattern(history));
     final double communityScore = _normalize(_communityMatrix[cleanPhone] ?? 0.0);
 
-    print('📊 [DEBUG VECTORES] Ent: $entropy, Freq: $frequencyRisk, Time: $timeRisk, Dur: $durationRisk');
+    debugPrint('📊 [DEBUG VECTORES] Ent: $entropy, Freq: $frequencyRisk, Time: $timeRisk, Dur: $durationRisk');
 
     double riskScore = _reputationEngine.computeRiskScore(
       entropy: entropy,
@@ -257,7 +255,7 @@ class ApiService {
     riskScore = _normalize(_learningEngine.adjustScore(riskScore));
     final String classification = _reputationEngine.classify(riskScore);
     
-    print('🏁 [DEBUG RESULTADO] Score final: $riskScore | Clasificación: $classification');
+    debugPrint('🏁 [DEBUG RESULTADO] Score final: $riskScore | Clasificación: $classification');
 
     return AnalysisResult(
       riskScore: riskScore,

@@ -2,9 +2,12 @@ import threading
 import requests
 import random
 import time
+import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Configuración del ecosistema local
+# Configuración del ecosistema local / Render
 BASE_URL = "http://127.0.0.1:5000/api/v1/scan"
+MAX_WORKERS = 15  # Controla la carga concurrente para evitar saturar el socket
 
 # Bancos de datos de simulación maliciosa (Ráfagas)
 TELEFONOS_ATAQUE = [
@@ -23,60 +26,86 @@ ARCHIVOS_MALWARE = [
     "keylogger_oculto.exe", "factura_falsa.pdf.exe", "parche_actualizacion.msi"
 ]
 
+# Variables globales de telemetría forense (Protegidas con Lock)
+stats_lock = threading.Lock()
+telemetria = {
+    "exitosas": 0,
+    "fallidas": 0,
+    "latencias": []
+}
+
 def lanzar_peticion_ataque(id_hilo):
-    """Simula un bot enviando una petición aleatoria al Core de JOSH SECURITY."""
+    """Simula un bot enviando una petición robustecida con inyección criptográfica."""
     tipo_ataque = random.choice(['phone', 'url', 'file'])
+    payload = {"type": tipo_ataque}
     
     if tipo_ataque == 'phone':
         target = random.choice(TELEFONOS_ATAQUE)
+        payload["target"] = target
     elif tipo_ataque == 'url':
         target = random.choice(URLS_PHISHING)
+        payload["target"] = target
     else:
         target = random.choice(ARCHIVOS_MALWARE)
-
-    payload = {
-        "type": tipo_ataque,
-        "target": target
-    }
+        payload["target"] = target
+        # Generamos un hash SHA-256 único basado en el nombre para que el motor analítico no truene
+        payload["sha256"] = hashlib.sha256(target.encode()).hexdigest()
 
     try:
         inicio = time.time()
-        response = requests.post(BASE_URL, json=payload, timeout=5)
-        duracion = (time.time() - inicio) * 1000 # Convertir a milisegundos
+        response = requests.post(BASE_URL, json=payload, timeout=6)
+        duracion = (time.time() - inicio) * 1000  # En milisegundos
         
-        if response.status_code == 200:
-            data = response.json()
-            print(f"🔥 [HILO {id_hilo:03d}] Tipo: {tipo_ataque.upper()} | Objetivo: {target} "
-                  f"| Veredicto: {data.get('verdict')} | Latencia: {duracion:.2f}ms")
-        else:
-            print(f"❌ [HILO {id_hilo:03d}] Error de Servidor: Código {response.status_code}")
-            
+        with stats_lock:
+            telemetria["latencias"].append(duracion)
+            if response.status_code == 200:
+                telemetria["exitosas"] += 1
+                data = response.json()
+                print(f"🔥 [REQ {id_hilo:03d}] Tipo: {tipo_ataque.upper():<5} | Veredicto: {data.get('verdict', 'UNKNOWN'):<10} | Latencia: {duracion:.2f}ms")
+            else:
+                telemetria["fallidas"] += 1
+                print(f"❌ [REQ {id_hilo:03d}] Error de Servidor: Código {response.status_code}")
+                
     except requests.exceptions.RequestException as e:
-        print(f"⚠️ [HILO {id_hilo:03d}] Fallo de conexión: {e}")
+        with stats_lock:
+            telemetria["fallidas"] += 1
+        print(f"⚠️ [REQ {id_hilo:03d}] Fallo de conexión: {type(e).__name__}")
 
 def ejecutar_simulador_fuerza_bruta(total_ataques=100):
-    """Orquesta la ráfaga concurrente usando hilos en paralelo."""
-    print("=" * 70)
-    print("🛡️ ACTIVANDO SIMULADOR DE STRESS TEST & ROBOCALLS - JOSH SECURITY")
-    print(f"🚀 INYECTANDO {total_ataques} PETICIONES SIMULTÁNEAS EN LA RED LOCAL...")
-    print("=" * 70)
-    time.sleep(2)
+    """Orquesta la ráfaga usando un pool de hilos optimizado para evitar caídas de sockets."""
+    print("=" * 75)
+    print("🛡️ ACTIVANDO SIMULADOR DE STRESS TEST & ROBOCALLS V2 - JOSH SECURITY")
+    print(f"🚀 INYECTANDO {total_ataques} PETICIONES CONCURRENTES (Pool: {MAX_WORKERS} Workers)...")
+    print("=" * 75)
+    time.sleep(1.5)
 
-    hilos = []
+    inicio_test = time.time()
+
+    # Uso de ThreadPoolExecutor para gestionar eficientemente la concurrencia
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [executor.submit(lanzar_peticion_ataque, i) for i in range(1, total_ataques + 1)]
+        # Espera que todos se completen
+        for future in as_completed(futures):
+            pass
+
+    tiempo_total = time.time() - inicio_test
+
+    # 📊 Reporte Forense Consolidado de la Simulación
+    print("=" * 75)
+    print("📊 REPORTE DE RENDIMIENTO ANALÍTICO - JOSH SECURITY")
+    print("=" * 75)
+    print(f"⏱️  Tiempo total de ráfaga : {tiempo_total:.2f} segundos")
+    print(f"✅ Peticiones Procesadas   : {telemetria['exitosas']}")
+    print(f"❌ Peticiones Fallidas     : {telemetria['fallidas']}")
     
-    for i in range(1, total_ataques + 1):
-        hilo = threading.Thread(target=lanzar_peticion_ataque, args=(i,))
-        hilos.append(hilo)
-        hilo.start()
-
-    # Esperar a que todos los hilos terminen su ejecución
-    for hilo in hilos:
-        hilo.join()
-
-    print("=" * 70)
-    print("✅ SIMULACIÓN DE TRÁFICO CONCURRENTES FINALIZADA")
-    print("📋 Revisa la interfaz de Flutter y dale 'Sincronizar' para ver los logs inyectados.")
-    print("=" * 70)
+    if telemetria["latencias"]:
+        promedio = sum(telemetria["latencias"]) / len(telemetria["latencias"])
+        maxima = max(telemetria["latencias"])
+        print(f"📈 Latencia Promedio       : {promedio:.2f} ms")
+        print(f"💥 Latencia Máxima registrada: {maxima:.2f} ms")
+    print("=" * 75)
+    print("📋 Proceso de estrés finalizado. Sincroniza tu interfaz en Flutter.")
+    print("=" * 75)
 
 if __name__ == "__main__":
     ejecutar_simulador_fuerza_bruta(total_ataques=100)

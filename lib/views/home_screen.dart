@@ -1,8 +1,8 @@
-// lib/views/home_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
+import 'widgets/cyber_shield_painter.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,11 +12,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
+// SOLUCIÓN INTEGRAL: Se cambia a TickerProviderStateMixin para dar soporte a múltiples animaciones simultáneas
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final TextEditingController _targetController = TextEditingController();
   late TabController _tabController;
+  late AnimationController _rotationController; // Controlador nativo para el Escudo 3D
   Timer? _keepAliveTimer;
 
   bool _isLoading = false;
@@ -40,6 +41,13 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    
+    // Inicialización del motor de animación para rotación en ráfaga
+    _rotationController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    );
+
     _initKeepAliveTimer();
     
     _tabController.addListener(() {
@@ -72,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     _keepAliveTimer?.cancel();
     _tabController.dispose();
+    _rotationController.dispose(); // Liberación de recursos del procesador gráfico
     _targetController.dispose();
     super.dispose();
   }
@@ -160,6 +169,9 @@ class _HomeScreenState extends State<HomeScreen>
       ];
     });
 
+    // Disparar la rotación continua del escudo en la GPU
+    _rotationController.repeat();
+
     try {
       Map<String, dynamic> result;
       String vectorKey = 'TELEFONO';
@@ -240,6 +252,8 @@ class _HomeScreenState extends State<HomeScreen>
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+        _rotationController.stop(); // Detener el giro al recibir los datos
+        _rotationController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeOutCubic);
       }
     }
   }
@@ -282,10 +296,10 @@ class _HomeScreenState extends State<HomeScreen>
       decoration: BoxDecoration(
         color: const Color(0xFF1C2541),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _hudColor.withAlpha((0.4 * 255).toInt()), width: 2),
+        border: Border.all(color: _hudColor.withValues(alpha: 0.4), width: 2),
         boxShadow: [
           BoxShadow(
-            color: _hudColor.withAlpha((0.08 * 255).toInt()),
+            color: _hudColor.withValues(alpha: 0.08),
             blurRadius: 16,
             spreadRadius: 2,
           )
@@ -298,45 +312,48 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Icon(Icons.shield_outlined, color: _hudColor, size: 18),
               const SizedBox(width: 8),
-              Theme(
-                data: ThemeData(useMaterial3: true),
-                child: Flexible(
-                  child: Text(
-                    "JOSH SECURITY • CENTINELA v4.4.0",
-                    style: TextStyle(
-                      color: Colors.blueGrey[200],
-                      letterSpacing: 2.5,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+              Flexible(
+                child: Text(
+                  "JOSH SECURITY • CENTINELA v4.4.0",
+                  style: TextStyle(
+                    color: Colors.blueGrey[200],
+                    letterSpacing: 2.5,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 24),
+          
+          // HUD DEL ESCUDO CENTRAL: Implementación limpia con vectores nativos
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: _hudColor.withAlpha((0.6 * 255).toInt()), width: 2),
+              border: Border.all(color: _hudColor.withValues(alpha: 0.4), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: _hudColor.withValues(alpha: 0.1),
+                  blurRadius: 12,
+                )
+              ],
             ),
-            child: CircleAvatar(
-              radius: 40,
-              backgroundColor: const Color(0xFF0B132B),
-              child: Text(
-                "JS",
-                style: TextStyle(
-                  color: _hudColor,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  shadows: [Shadow(color: _hudColor, blurRadius: 8)],
+            child: RotationTransition(
+              turns: _rotationController,
+              child: SizedBox(
+                width: 100,
+                height: 100,
+                child: CustomPaint(
+                  painter: CyberShieldPainter(glowColor: _hudColor),
                 ),
               ),
             ),
           ),
+          
           const SizedBox(height: 20),
           Text(
             _verdictText,
@@ -374,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen>
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           color: const Color(0xFF3A506B),
-          border: Border.all(color: Colors.blueAccent.withAlpha((0.4 * 255).toInt())),
+          border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.4)),
         ),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.blueGrey[300],
@@ -601,14 +618,14 @@ class _HomeScreenState extends State<HomeScreen>
                       decoration: BoxDecoration(
                         color: const Color(0xFF0A1128),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: alertColor.withAlpha((0.3 * 255).toInt())),
+                        border: Border.all(color: alertColor.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: alertColor.withAlpha((0.15 * 255).toInt()),
+                              color: alertColor.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
