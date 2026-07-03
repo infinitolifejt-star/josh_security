@@ -1,5 +1,3 @@
-// lib/services/reputation/reputation_engine.dart
-
 import '../core/math_utils.dart';
 
 class ReputationEngine {
@@ -22,10 +20,11 @@ class ReputationEngine {
     return MathUtils.sigmoid(rawScore * 5.0);
   }
 
-  /// Clasifica el nivel de amenaza en tres umbrales de criticidad estándar
+  /// Clasifica el nivel de amenaza en tres umbrales de criticidad adaptados a la UX Humana de Centinela
   String classify(double score) {
-    if (score < 0.3) return "SAFE";
-    if (score < 0.6) return "SUSPICIOUS";
-    return "CRITICAL";
+    // TODO: [DEUDA TÉCNICA - CENTINELA] Migrar estos umbrales estáticos a una configuración dinámica inyectada desde Render en la Fase 2 de Telemetría Táctica.
+    if (score < 0.3) return "SEGURO";
+    if (score < 0.6) return "SOSPECHOSO";
+    return "CRÍTICO";
   }
 }

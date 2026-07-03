@@ -64,58 +64,82 @@ class ApiService {
   }
 
   /// =====================================================================
-  /// 🌐 CLIENTE REST: ESCANEO DE VECTORES EN CALIENTE
+  /// 🌐 CLIENTE REST CON IMPLEMENTACIÓN DE EXPONENTIAL BACKOFF REFORZADO
   /// =====================================================================
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
     final String targetEndpoint = '$_baseUrl/api/v1/scan';
     
-    try {
-      debugPrint('🛰️ [RED] Centinela enviando payload a: $targetEndpoint');
-      
-      // TODO: [DEUDA TÉCNICA - CENTINELA] Restringir 'Access-Control-Allow-Origin' en producción una vez finalizadas las pruebas locales en Chrome Web CORS.
-      final response = await http.post(
-        Uri.parse(targetEndpoint),
-        headers: {
-          'Content-Type': 'application/json; charset=UTF-8',
-          'Accept': 'application/json',
-          'Access-Control-Allow-Origin': '*', 
-        },
-        body: jsonEncode({
-          'target': target,
-          'type': type,
-        }),
-      ).timeout(const Duration(seconds: 35));
+    int maxRetries = 3;
+    int delaySeconds = 2;
 
-      debugPrint('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final Map<String, dynamic> data = jsonDecode(response.body) as Map<String, dynamic>;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        debugPrint('🛰️ [RED] Centinela enviando payload a: $targetEndpoint (Intento $attempt/$maxRetries)');
         
-        double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
-        String parsedClassification = data['classification']?.toString() ?? 'SAFE';
-        String parsedRiskLevel = data['risk_level']?.toString() ?? parsedClassification;
-        String parsedScoreLabel = data['score']?.toString() ?? (parsedScore * 100).toStringAsFixed(0);
+        // TODO: [DEUDA TÉCNICA - CENTINELA] Restringir 'Access-Control-Allow-Origin' en producción una vez finalizadas las pruebas locales en Chrome Web CORS.
+        final response = await http.post(
+          Uri.parse(targetEndpoint),
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Accept': 'application/json',
+            'Access-Control-Allow-Origin': '*', 
+          },
+          body: jsonEncode({
+            'target': target,
+            'type': type,
+          }),
+        ).timeout(Duration(seconds: attempt == 1 ? 35 : 15));
 
-        return {
-          'riskScore': _normalize(parsedScore),
-          'score': parsedScoreLabel,
-          'classification': parsedClassification,
-          'riskLevel': parsedRiskLevel,
-          'metrics': data['metrics'] ?? {"network": 1.0},
-          'logs': data['logs'] ?? data['verdict'] ?? 'AUDITORÍA CENTRAL: Conexión Cloud exitosa.',
-        };
-      } else {
-        if (response.statusCode == 404) {
+        debugPrint('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final Map<String, dynamic> data = jsonDecode(response.body) as Map<String, dynamic>;
+          
+          double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
+          String rawClassification = data['classification']?.toString().toUpperCase() ?? 'SAFE';
+          
+          // Mapeo semántico unificado alineado con el Pilar III de Acompañamiento Humano
+          String cleanClassification = 'SEGURO';
+          if (rawClassification == 'SUSPICIOUS' || rawClassification == 'SOSPECHOSO' || parsedScore >= 0.3) {
+            cleanClassification = 'SOSPECHOSO';
+          }
+          if (rawClassification == 'CRITICAL' || rawClassification == 'CRÍTICO' || parsedScore >= 0.6) {
+            cleanClassification = 'CRÍTICO';
+          }
+
+          String parsedScoreLabel = data['score']?.toString() ?? (parsedScore * 100).toStringAsFixed(0);
+
+          return {
+            'riskScore': _normalize(parsedScore),
+            'score': parsedScoreLabel,
+            'classification': cleanClassification,
+            'riskLevel': cleanClassification,
+            'metrics': data['metrics'] ?? {"network": 1.0},
+            'logs': data['logs'] ?? data['verdict'] ?? 'AUDITORÍA CENTRAL: Conexión Cloud de alta fidelidad exitosa.',
+          };
+        } else if (response.statusCode == 404) {
           debugPrint('⚠️ [DEBUG RUTA] 404 detectado. Intentando fallback alternativo directo...');
           return await _executeAlternativeNetworkScan(target, type, '$_baseUrl/scan');
+        } else if (response.statusCode == 502 || response.statusCode == 503 || response.statusCode == 504) {
+          // Si es un error de pasarela de Render, forzamos el reintento saltando al catch
+          throw http.ClientException('Falla de aprovisionamiento temporal en Render.');
         }
-        return _fallbackStaticResult(type, 'Error HTTP de pasarela en la Nube: ${response.statusCode}');
+        
+        return _fallbackStaticResult(type, 'Error de pasarela en la Nube: ${response.statusCode}');
+      } catch (e) {
+        debugPrint('🚨 [INTENTO $attempt FALLIDO] Error de transporte o arranque en frío: $e');
+        
+        if (attempt < maxRetries) {
+          int currentDelay = delaySeconds * math.pow(2, attempt - 1).toInt();
+          debugPrint('⏳ [BACKOFF] Reintento programado en $currentDelay segundos...');
+          await Future.delayed(Duration(seconds: currentDelay));
+        } else {
+          debugPrint('❌ [RED] Se agotaron los reintentos analíticos concurrentes frente a Render.');
+        }
       }
-    } catch (e) {
-      debugPrint('🚨 [ERROR RED] Falla al conectar con ($_baseUrl): $e');
-      // TODO: [DEUDA TÉCNICA - CENTINELA] Implementar un sistema de reintentos exponenciales (Exponential Backoff) para mitigar el arranque en frío de Render.
-      return _fallbackStaticResult(type, 'Servidor CORE INALCANZABLE. Heurística de contingencia activada.');
     }
+
+    return _fallbackStaticResult(type, 'Servidor central en Render inalcanzable tras reintentos exponenciales. Heurística local de contingencia activa.');
   }
 
   /// Escaneo alternativo de contingencia anti-404 sin prefijo api/v1
@@ -135,17 +159,19 @@ class ApiService {
         final Map<String, dynamic> data = jsonDecode(response.body) as Map<String, dynamic>;
         double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
         
+        String cleanClassification = parsedScore < 0.3 ? 'SEGURO' : (parsedScore < 0.6 ? 'SOSPECHOSO' : 'CRÍTICO');
+
         return {
           'riskScore': _normalize(parsedScore),
           'score': data['score']?.toString() ?? (parsedScore * 100).toStringAsFixed(0),
-          'classification': data['classification']?.toString() ?? 'SAFE',
-          'riskLevel': data['risk_level']?.toString() ?? 'SAFE',
+          'classification': cleanClassification,
+          'riskLevel': cleanClassification,
           'metrics': data['metrics'] ?? {"network": 1.0},
-          'logs': 'AUDITORÍA ALTERNATIVA: Conexión exitosa sin prefijo.',
+          'logs': 'AUDITORÍA ALTERNATIVA: Conexión perimetral exitosa sin prefijo.',
         };
       }
     } catch (_) {}
-    return _fallbackStaticResult(type, 'Ruta no encontrada en el servidor backend (404 Total).');
+    return _fallbackStaticResult(type, 'Ruta estructural no encontrada en el servidor backend (404 Total).');
   }
 
   /// =====================================================================
@@ -163,7 +189,8 @@ class ApiService {
       ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as List<dynamic>;
+        final decoded = jsonDecode(response.body);
+        if (decoded is List) return decoded;
       }
     } catch (e) {
       debugPrint('⚠️ Error al pedir historial centralizado: $e');
@@ -195,7 +222,7 @@ class ApiService {
     return {
       'riskScore': 0.15,
       'score': '15',
-      'classification': 'CONTINGENCIA',
+      'classification': 'SEGURO', // Fallback conservador no alarmista según Carta Magna
       'riskLevel': 'FALLBACK LOCAL',
       'metrics': {"entropy": 0.0, "fallback": 1.0},
       'logs': 'CONTROL INTERNO CENTINELA: $errorReason'

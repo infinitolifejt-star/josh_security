@@ -1,5 +1,3 @@
-// lib/services/core/math_utils.dart
-
 import 'dart:math';
 
 class MathUtils {
@@ -8,7 +6,7 @@ class MathUtils {
 
   /// Calcula el logaritmo en base 2 con blindaje de seguridad contra valores de error
   static double log2(double x) {
-    if (x <= 0.0) return 0.0;
+    if (x <= 0.0 || x.isNaN || x.isInfinite) return 0.0;
     return log(x) / _log2Constant;
   }
 
@@ -32,7 +30,7 @@ class MathUtils {
       entropy -= p * log2(p);
     });
 
-    return entropy;
+    return (entropy.isNaN || entropy.isInfinite || entropy < 0.0) ? 0.0 : entropy;
   }
 
   /// Normaliza un valor dentro de un rango dinámico previniendo divisiones por cero
@@ -45,8 +43,14 @@ class MathUtils {
     return normalized.clamp(0.0, 1.0);
   }
 
-  /// Función de activación Sigmoide para la clasificación de curvas de riesgo
+  /// Función de activación Sigmoide con blindaje numérico contra sobreflujos (overflow) y valores NaN
   static double sigmoid(double x) {
+    if (x.isNaN) return 0.5;
+    
+    // Acotamiento de seguridad exponencial para proteger la pila del procesador móvil
+    if (x >= 20.0) return 1.0;
+    if (x <= -20.0) return 0.0;
+    
     return 1.0 / (1.0 + exp(-x));
   }
 }

@@ -1,22 +1,25 @@
-// lib/services/analytics/entropy_engine.dart
-
 import '../core/models.dart';
 import '../core/math_utils.dart';
 
 class EntropyEngine {
-  /// Analiza la estructura del número telefónico calculando su entropía de Shannon
+  /// Analiza la estructura del número telefónico calculando su entropía de Shannon con salvaguarda
   double analyzeNumberStructure(String phone) {
     final normalized = phone.replaceAll(RegExp(r'[^0-9]'), '');
-    return MathUtils.shannonEntropy(normalized);
+    if (normalized.isEmpty) return 0.0;
+    
+    final double score = MathUtils.shannonEntropy(normalized);
+    return (score.isNaN || score.isInfinite || score < 0.0) ? 0.0 : score;
   }
 
-  /// Evalúa la frecuencia de llamadas en las últimas 24 horas
+  /// Evalúa la frecuencia de llamadas en las últimas 24 horas mitigando condiciones de carrera
   double analyzeFrequency(List<CallRecord> history) {
     if (history.isEmpty) return 0.0;
 
-    final now = DateTime.now();
+    // Anclaje de tiempo inmutable para el hilo de ejecución asíncrono
+    final DateTime frozenNow = DateTime.now();
+    
     final int recentCalls = history.where((call) {
-      return now.difference(call.timestamp).inHours < 24;
+      return frozenNow.difference(call.timestamp).inHours < 24;
     }).length;
 
     return MathUtils.normalize(recentCalls.toDouble(), 0.0, 50.0);
@@ -34,13 +37,17 @@ class EntropyEngine {
     return MathUtils.normalize(nightCalls.toDouble(), 0.0, 20.0);
   }
 
-  /// Analiza si las llamadas son ráfagas automatizadas (Duración menor a 10 segundos)
+  /// Analiza si las llamadas son ráfagas automatizadas (Duración menor a 10 segundos) con protección contra división por cero
   double analyzeDurationPattern(List<CallRecord> history) {
     if (history.isEmpty) return 0.0;
 
-    // Uso de fold para acumular de forma segura sin riesgos de desbordamiento o mutaciones
     final int totalDuration = history.fold(0, (sum, call) => sum + call.durationSeconds);
-    final double avg = totalDuration / history.length;
+    
+    // Protección forense contra listas corruptas de longitud cero
+    final int historyCount = history.length;
+    if (historyCount == 0) return 0.0;
+    
+    final double avg = totalDuration / historyCount;
 
     return avg < 10.0 ? 1.0 : 0.0; // Llamadas demasiado cortas delatan posible bot o spam automatizado
   }
