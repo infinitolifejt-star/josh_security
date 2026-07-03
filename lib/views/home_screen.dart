@@ -12,12 +12,11 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-// SOLUCIÓN INTEGRAL: Se cambia a TickerProviderStateMixin para dar soporte a múltiples animaciones simultáneas
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final TextEditingController _targetController = TextEditingController();
   late TabController _tabController;
-  late AnimationController _rotationController; // Controlador nativo para el Escudo 3D
+  late AnimationController _rotationController; 
   Timer? _keepAliveTimer;
 
   bool _isLoading = false;
@@ -42,7 +41,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     
-    // Inicialización del motor de animación para rotación en ráfaga
     _rotationController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -80,12 +78,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void dispose() {
     _keepAliveTimer?.cancel();
     _tabController.dispose();
-    _rotationController.dispose(); // Liberación de recursos del procesador gráfico
+    _rotationController.stop();
+    _rotationController.dispose(); 
     _targetController.dispose();
     super.dispose();
   }
 
-  /// ⚙️ SISTEMA ANTI-SLEEP DE INFRAESTRUCTURA (RENDER KEEP-ALIVE)
   void _initKeepAliveTimer() {
     _sendKeepAlivePulse();
     _keepAliveTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
@@ -169,7 +167,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ];
     });
 
-    // Disparar la rotación continua del escudo en la GPU
     _rotationController.repeat();
 
     try {
@@ -252,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
-        _rotationController.stop(); // Detener el giro al recibir los datos
+        _rotationController.stop(); 
         _rotationController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeOutCubic);
       }
     }
@@ -296,10 +293,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         color: const Color(0xFF1C2541),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _hudColor.withValues(alpha: 0.4), width: 2),
+        border: Border.all(color: _hudColor.withAlpha((0.4 * 255).round()), width: 2),
         boxShadow: [
           BoxShadow(
-            color: _hudColor.withValues(alpha: 0.08),
+            color: _hudColor.withAlpha((0.08 * 255).round()),
             blurRadius: 16,
             spreadRadius: 2,
           )
@@ -328,16 +325,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 24),
           
-          // HUD DEL ESCUDO CENTRAL: Implementación limpia con vectores nativos
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: _hudColor.withValues(alpha: 0.4), width: 1.5),
+              border: Border.all(color: _hudColor.withAlpha((0.4 * 255).round()), width: 1.5),
               boxShadow: [
                 BoxShadow(
-                  color: _hudColor.withValues(alpha: 0.1),
+                  color: _hudColor.withAlpha((0.1 * 255).round()),
                   blurRadius: 12,
                 )
               ],
@@ -391,7 +387,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           color: const Color(0xFF3A506B),
-          border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.4)),
+          border: Border.all(color: Colors.blueAccent.withAlpha((0.4 * 255).round())),
         ),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.blueGrey[300],
@@ -618,14 +614,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       decoration: BoxDecoration(
                         color: const Color(0xFF0A1128),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: alertColor.withValues(alpha: 0.3)),
+                        border: Border.all(color: alertColor.withAlpha((0.3 * 255).round())),
                       ),
                       child: Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: alertColor.withValues(alpha: 0.15),
+                              color: alertColor.withAlpha((0.15 * 255).round()),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(

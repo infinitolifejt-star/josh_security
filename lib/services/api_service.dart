@@ -1,4 +1,3 @@
-// lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart'; // Requerido para debugPrint
@@ -16,7 +15,7 @@ class ApiService {
   final LearningEngine _learningEngine;
   final Map<String, double> _communityMatrix;
 
-  /// ⚠️ ARQUITECTURA CLOUD - INFRAESTRUCTURA UNIFICADA EN RENDER (URL CORREGIDA)
+  /// ⚠️ ARQUITECTURA CLOUD - INFRAESTRUCTURA UNIFICADA EN RENDER
   static const String _cloudUrl = 'https://josh-security.onrender.com';
   static String get _baseUrl => _cloudUrl;
 
@@ -73,12 +72,13 @@ class ApiService {
     try {
       debugPrint('🛰️ [RED] Centinela enviando payload a: $targetEndpoint');
       
+      // TODO: [DEUDA TÉCNICA - CENTINELA] Restringir 'Access-Control-Allow-Origin' en producción una vez finalizadas las pruebas locales en Chrome Web CORS.
       final response = await http.post(
         Uri.parse(targetEndpoint),
         headers: {
           'Content-Type': 'application/json; charset=UTF-8',
           'Accept': 'application/json',
-          'Access-Control-Allow-Origin': '*', // Bypass táctico para emuladores y Chrome Web CORS
+          'Access-Control-Allow-Origin': '*', 
         },
         body: jsonEncode({
           'target': target,
@@ -89,7 +89,7 @@ class ApiService {
       debugPrint('📡 [RED] Respuesta recibida HTTP: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final Map<String, dynamic> data = jsonDecode(response.body);
+        final Map<String, dynamic> data = jsonDecode(response.body) as Map<String, dynamic>;
         
         double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
         String parsedClassification = data['classification']?.toString() ?? 'SAFE';
@@ -113,6 +113,7 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('🚨 [ERROR RED] Falla al conectar con ($_baseUrl): $e');
+      // TODO: [DEUDA TÉCNICA - CENTINELA] Implementar un sistema de reintentos exponenciales (Exponential Backoff) para mitigar el arranque en frío de Render.
       return _fallbackStaticResult(type, 'Servidor CORE INALCANZABLE. Heurística de contingencia activada.');
     }
   }
@@ -131,7 +132,7 @@ class ApiService {
       ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final Map<String, dynamic> data = jsonDecode(response.body);
+        final Map<String, dynamic> data = jsonDecode(response.body) as Map<String, dynamic>;
         double parsedScore = double.tryParse(data['risk_score']?.toString() ?? '0.12') ?? 0.12;
         
         return {
