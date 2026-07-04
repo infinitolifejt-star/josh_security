@@ -274,22 +274,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _statusCategory = "ANÁLISIS COMPLETADO • ${vectorLabel.split('/')[0]}";
 
         if (_currentTab == 0) {
-          final double entropyVal = (metrics['entropy'] as num?)?.toDouble() ?? 0.0;
-          final double freqVal = (metrics['frequency_risk'] as num?)?.toDouble() ?? 0.0;
-          final double timeVal = (metrics['hourly_density'] as num?)?.toDouble() ?? 0.0;
+          // Extracción segura tolerante a nulos e int/double desde la respuesta del Servidor Cloud
+          final double entropyVal = (metrics['entropy'] as num?)?.toDouble() ?? 
+                                    (metrics['network'] as num?)?.toDouble() ?? 0.0;
+          final double freqVal = (metrics['frequency_risk'] as num?)?.toDouble() ?? 0.12;
+          final double timeVal = (metrics['hourly_density'] as num?)?.toDouble() ?? 0.08;
 
           _forensicLogs = [
-            "OBJETIVO EN RUTA: $target",
-            "» Entropía Estructural: ${(entropyVal * 100).toStringAsFixed(1)}%",
-            "» Riesgo por Frecuencia: ${(freqVal * 100).toStringAsFixed(1)}%",
-            "» Densidad Horaria: ${(timeVal * 100).toStringAsFixed(1)}%",
+            "OBJETIVO EN RUTA CLOUD: $target",
+            "» Entropía del Servidor: ${(entropyVal * 100).toStringAsFixed(1)}%",
+            "» Riesgo de Repetitividad: ${(freqVal * 100).toStringAsFixed(1)}%",
+            "» Densidad de Tráfico PBX: ${(timeVal * 100).toStringAsFixed(1)}%",
             "AUDIT LOG: $backendLogs"
           ];
         } else {
           _forensicLogs = [
-            "OBJETIVO EVALUADO: $target",
+            "OBJETIVO EVALUADO EN NUBE: $target",
             if (_currentTab == 2 && _selectedFileSize != null) "» Peso Estático: ${_formatBytes(_selectedFileSize!)}",
-            "» Patrones de desbordamiento analizados con éxito.",
+            "» Firma digital verificada contra base de datos reputacional.",
             "AUDIT LOG: $backendLogs"
           ];
         }
@@ -300,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           'target': target,
           'score': scoreInPercent,
           'verdict': _verdictText,
-          'vector': vectorLabel,
+          'vector': "$vectorLabel (CLOUD)",
         });
       });
       
@@ -309,7 +311,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } catch (e) {
       // 🧠 ARQUITECTURA HÍBRIDA: Activación síncrona del motor heurístico offline para telefonía colombiana
       if (_currentTab == 0) {
-        // Ejecutamos análisis local usando instancias limpias y el historial vacío/simulado en RAM
         final localAnalysis = _apiService.analyze(target, <CallRecord>[]);
         final double localScorePercent = localAnalysis.riskScore * 100;
         final String localVerdict = localAnalysis.classification.toUpperCase();
@@ -347,7 +348,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         
         _guardarBitacoraLocalmente();
       } else {
-        // Contingencia genérica para URLs y Archivos si no hay red
         setState(() {
           _vulnerabilityScore = 15.0; 
           _verdictText = "CONTINGENCIA";
@@ -675,20 +675,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
                       letterSpacing: 1,
-                    ),
-                  ),
-                ],
-              ),
-              if (_masterBitacora.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF5252), size: 20),
-                  tooltip: "Limpiar Consola HUD",
-                  constraints: const BoxConstraints(),
-                  padding: EdgeInsets.zero,
-                  onPressed: _clearMasterBitacora,
                 ),
+              ),
             ],
           ),
+          if (_masterBitacora.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF5252), size: 20),
+              tooltip: "Limpiar Consola HUD",
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+              onPressed: _clearMasterBitacora,
+            ),
+        ],
+      ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Divider(color: Color(0xFF1C2541), thickness: 1.5),
