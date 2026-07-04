@@ -34,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     "CENTINELA v4.4.0: Núcleo analítico unificado acoplado a la infraestructura Cloud en Render."
   ];
 
+  // Bitácora unificada en memoria activa para la sesión de usuario
   final List<Map<String, dynamic>> _masterBitacora = [];
 
   @override
@@ -47,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     _initKeepAliveTimer();
+    _cargarHistorialInicial(); // Inyección del pipeline de persistencia al arrancar el HUD
     
     _tabController.addListener(() {
       if (!mounted || !_tabController.indexIsChanging) return;
@@ -96,6 +98,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       await _apiService.fetchScanHistory();
       debugPrint("🛰️ [SISTEMA] Pulso keep-alive transmitido a Render para evitar suspensión.");
     } catch (_) {}
+  }
+
+  // TODO: [DEUDA TÉCNICA - CENTINELA] Migrar la persistencia local de la _masterBitacora a HydratedBLoC o SharedPreferences para resiliencia offline total.
+  Future<void> _cargarHistorialInicial() async {
+    try {
+      final logsServidor = await _apiService.fetchScanHistory();
+      if (logsServidor.isNotEmpty) {
+        setState(() {
+          _masterBitacora.clear();
+          for (var log in logsServidor) {
+            _masterBitacora.add({
+              'id': log['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+              'timestamp': log['timestamp'] ?? DateTime.now().toIso8601String().substring(11, 19),
+              'target': log['target'] ?? 'Objetivo Remoto',
+              'score': (log['score'] as num?)?.toDouble() ?? 0.0,
+              'verdict': (log['verdict'] as String? ?? 'ANALIZADO').toUpperCase(),
+              'vector': log['vector'] ?? 'HISTÓRICO',
+            });
+          }
+          _forensicLogs.add("SINCRO: Historial de amenazas recuperado exitosamente desde Render.");
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _forensicLogs.add("AVISO: No se pudo sincronizar el historial histórico remoto.");
+      });
+    }
   }
 
   String _formatBytes(int bytes) {
@@ -187,13 +216,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final rawScore = (result['riskScore'] as num?)?.toDouble() ?? 0.15;
       final scoreInPercent = rawScore <= 1.0 ? rawScore * 100 : rawScore;
       
-      final classification = result['classification'] ?? 'ANALIZADO';
+      String classification = result['classification'] ?? 'ANALIZADO';
+      if (scoreInPercent >= 70) {
+        classification = "CRÍTICO";
+      } else if (scoreInPercent >= 35) {
+        classification = "SOSPECHOSO";
+      } else {
+        classification = "SEGURO";
+      }
+
       final metrics = result['metrics'] as Map<String, dynamic>? ?? {};
       final backendLogs = result['logs'] as String? ?? 'Análisis completado.';
 
       setState(() {
         _vulnerabilityScore = scoreInPercent;
-        _verdictText = classification.toString().toUpperCase();
+        _verdictText = classification.toUpperCase();
 
         if (scoreInPercent >= 70) {
           _hudColor = const Color(0xFFFF5252);
@@ -324,7 +361,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
           const SizedBox(height: 24),
-          
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             padding: const EdgeInsets.all(4),
@@ -349,7 +385,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-          
           const SizedBox(height: 20),
           Text(
             _verdictText,
