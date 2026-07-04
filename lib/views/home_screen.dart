@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/core/models.dart'; // Requerido para mapear el historial heurístico local
 import 'widgets/cyber_shield_painter.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -34,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     "CENTINELA v4.4.0: Núcleo analítico unificado acoplado a la infraestructura Cloud en Render."
   ];
 
-  // Bitácora unificada en memoria activa para la sesión de usuario
   final List<Map<String, dynamic>> _masterBitacora = [];
 
   @override
@@ -48,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     _initKeepAliveTimer();
-    _cargarHistorialInicial(); // Inyección del pipeline de persistencia al arrancar el HUD
+    _cargarHistorialInicial();
     
     _tabController.addListener(() {
       if (!mounted || !_tabController.indexIsChanging) return;
@@ -100,30 +102,60 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } catch (_) {}
   }
 
-  // TODO: [DEUDA TÉCNICA - CENTINELA] Migrar la persistencia local de la _masterBitacora a HydratedBLoC o SharedPreferences para resiliencia offline total.
   Future<void> _cargarHistorialInicial() async {
     try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? localLogsJson = prefs.getString('josh_local_bitacora');
+      
+      if (localLogsJson != null) {
+        final List<dynamic> decodedList = jsonDecode(localLogsJson);
+        setState(() {
+          _masterBitacora.clear();
+          for (var item in decodedList) {
+            if (item is Map<String, dynamic>) {
+              _masterBitacora.add(item);
+            }
+          }
+          _forensicLogs.add("ÉXITO: Caché local persistente cargada desde el almacenamiento móvil.");
+        });
+      }
+
       final logsServidor = await _apiService.fetchScanHistory();
       if (logsServidor.isNotEmpty) {
         setState(() {
-          _masterBitacora.clear();
           for (var log in logsServidor) {
-            _masterBitacora.add({
-              'id': log['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-              'timestamp': log['timestamp'] ?? DateTime.now().toIso8601String().substring(11, 19),
-              'target': log['target'] ?? 'Objetivo Remoto',
-              'score': (log['score'] as num?)?.toDouble() ?? 0.0,
-              'verdict': (log['verdict'] as String? ?? 'ANALIZADO').toUpperCase(),
-              'vector': log['vector'] ?? 'HISTÓRICO',
-            });
+            final String targetId = log['id']?.toString() ?? '';
+            bool existe = _masterBitacora.any((element) => element['id'] == targetId);
+            
+            if (!existe) {
+              _masterBitacora.add({
+                'id': log['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                'timestamp': log['timestamp'] ?? DateTime.now().toIso8601String().substring(11, 19),
+                'target': log['target'] ?? 'Objetivo Remoto',
+                'score': (log['score'] as num?)?.toDouble() ?? 0.0,
+                'verdict': (log['verdict'] as String? ?? 'ANALIZADO').toUpperCase(),
+                'vector': log['vector'] ?? 'HISTÓRICO',
+              });
+            }
           }
-          _forensicLogs.add("SINCRO: Historial de amenazas recuperado exitosamente desde Render.");
+          _forensicLogs.add("SINCRO: Registros históricos remotos acoplados sin duplicidad.");
         });
+        _guardarBitacoraLocalmente();
       }
     } catch (e) {
       setState(() {
-        _forensicLogs.add("AVISO: No se pudo sincronizar el historial histórico remoto.");
+        _forensicLogs.add("AVISO: Inicialización híbrida activa (Modo offline listo).");
       });
+    }
+  }
+
+  Future<void> _guardarBitacoraLocalmente() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String encodedData = jsonEncode(_masterBitacora);
+      await prefs.setString('josh_local_bitacora', encodedData);
+    } catch (e) {
+      debugPrint("🚨 Error al escribir caché en disco: $e");
     }
   }
 
@@ -198,20 +230,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     _rotationController.repeat();
 
+    String vectorKey = 'TELEFONO';
+    String vectorLabel = "TELEFÓNICO";
+
+    if (_currentTab == 1) {
+      vectorKey = 'URL';
+      vectorLabel = "PHISHING/URL";
+    } else if (_currentTab == 2) {
+      vectorKey = 'MALWARE';
+      vectorLabel = "MALWARE/BIN";
+    }
+
     try {
-      Map<String, dynamic> result;
-      String vectorKey = 'TELEFONO';
-      String vectorLabel = "TELEFÓNICO";
-
-      if (_currentTab == 1) {
-        vectorKey = 'URL';
-        vectorLabel = "PHISHING/URL";
-      } else if (_currentTab == 2) {
-        vectorKey = 'MALWARE';
-        vectorLabel = "MALWARE/BIN";
-      }
-
-      result = await _apiService.scanTarget(vectorKey, target);
+      Map<String, dynamic> result = await _apiService.scanTarget(vectorKey, target);
 
       final rawScore = (result['riskScore'] as num?)?.toDouble() ?? 0.15;
       final scoreInPercent = rawScore <= 1.0 ? rawScore * 100 : rawScore;
@@ -272,17 +303,62 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           'vector': vectorLabel,
         });
       });
+      
+      await _guardarBitacoraLocalmente();
+
     } catch (e) {
-      setState(() {
-        _vulnerabilityScore = 15.0; 
-        _verdictText = "CONTINGENCIA";
-        _statusCategory = "Modo Híbrido Local";
-        _hudColor = const Color(0xFFFFD740);
-        _forensicLogs = [
-          "AVISO: Excepción de aislamiento capturada o arranque en frío.",
-          "Detalle: ${e.toString()}",
-        ];
-      });
+      // 🧠 ARQUITECTURA HÍBRIDA: Activación síncrona del motor heurístico offline para telefonía colombiana
+      if (_currentTab == 0) {
+        // Ejecutamos análisis local usando instancias limpias y el historial vacío/simulado en RAM
+        final localAnalysis = _apiService.analyze(target, <CallRecord>[]);
+        final double localScorePercent = localAnalysis.riskScore * 100;
+        final String localVerdict = localAnalysis.classification.toUpperCase();
+        final double localEntropy = (localAnalysis.metrics['entropy'] as num?)?.toDouble() ?? 0.0;
+
+        setState(() {
+          _vulnerabilityScore = localScorePercent;
+          _verdictText = localVerdict;
+          _statusCategory = "HEURÍSTICA LOCAL ACTIVA (OFFLINE)";
+          
+          if (localScorePercent >= 70) {
+            _hudColor = const Color(0xFFFF5252);
+          } else if (localScorePercent >= 35) {
+            _hudColor = const Color(0xFFFFD740);
+          } else {
+            _hudColor = const Color(0xFF00E676);
+          }
+
+          _forensicLogs = [
+            "SISTEMA HÍBRIDO: Servidor central inalcanzable. Motor local Centinela al rescate.",
+            "» Entropía Numérica: ${(localEntropy * 100).toStringAsFixed(1)}%",
+            "» Calibración de Prefijo COL: ${localAnalysis.metrics['calibrated'] == 1.0 ? 'VÁLIDO' : 'DESCONOCIDO'}",
+            "CONTROL DE SEGURIDAD: Análisis local completado de baja latencia."
+          ];
+
+          _masterBitacora.insert(0, {
+            'id': DateTime.now().millisecondsSinceEpoch.toString(),
+            'timestamp': DateTime.now().toIso8601String().substring(11, 19),
+            'target': target,
+            'score': localScorePercent,
+            'verdict': _verdictText,
+            'vector': "$vectorLabel (LOCAL)",
+          });
+        });
+        
+        _guardarBitacoraLocalmente();
+      } else {
+        // Contingencia genérica para URLs y Archivos si no hay red
+        setState(() {
+          _vulnerabilityScore = 15.0; 
+          _verdictText = "CONTINGENCIA";
+          _statusCategory = "Modo Híbrido Local";
+          _hudColor = const Color(0xFFFFD740);
+          _forensicLogs = [
+            "AVISO: Excepción de aislamiento capturada o arranque en frío.",
+            "Detalle: ${e.toString()}",
+          ];
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -292,8 +368,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _clearMasterBitacora() {
+  Future<void> _clearMasterBitacora() async {
     setState(() => _masterBitacora.clear());
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.remove('josh_local_bitacora');
+    } catch (_) {}
   }
 
   @override
@@ -496,7 +576,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5),
                   )
                 : const Text(
-                    "ANALIZAR VECTORES EN CALIENTE",
+                    "ANALIZAR VECTORES IN CALIENTE",
                     style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
                   ),
           ),
@@ -633,7 +713,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   itemCount: _masterBitacora.length,
                   itemBuilder: (context, index) {
                     final item = _masterBitacora[index];
-                    final double score = item['score'] ?? 0.0;
+                    final double score = (item['score'] as num?)?.toDouble() ?? 0.0;
                     
                     Color alertColor = const Color(0xFF00E676);
                     if (score >= 70) {
@@ -643,7 +723,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     }
 
                     return Container(
-                      key: ValueKey(item['id']),
+                      key: ValueKey(item['id'] ?? index.toString()),
                       margin: const EdgeInsets.symmetric(vertical: 6),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
