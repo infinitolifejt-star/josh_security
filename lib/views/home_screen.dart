@@ -53,28 +53,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _cargarHistorialInicial();
     
     _tabController.addListener(() {
-      if (!mounted || !_tabController.indexIsChanging) return;
-      setState(() {
-        _currentTab = _tabController.index;
-        _targetController.clear();
-        _selectedFileName = null;
-        _selectedFileSize = null;
+      if (!mounted) return;
+      if (_tabController.index != _currentTab) {
+        setState(() {
+          _currentTab = _tabController.index;
+          _targetController.clear();
+          _selectedFileName = null;
+          _selectedFileSize = null;
 
-        switch (_currentTab) {
-          case 0:
-            _statusCategory = "ESCANER HUD • TELEFONÍA";
-            _forensicLogs = ["Módulo Heurístico de llamadas telefónicas activado."];
-            break;
-          case 1:
-            _statusCategory = "ESCANER HUD • PHISHING";
-            _forensicLogs = ["Módulo de Auditoría de enlaces y URLs activado."];
-            break;
-          case 2:
-            _statusCategory = "ESCANER HUD • MALWARE";
-            _forensicLogs = ["Módulo de análisis estático de archivos preparado."];
-            break;
-        }
-      });
+          switch (_currentTab) {
+            case 0:
+              _statusCategory = "ESCANER HUD • TELEFONÍA";
+              _forensicLogs = ["Módulo Heurístico de llamadas telefónicas activado."];
+              break;
+            case 1:
+              _statusCategory = "ESCANER HUD • PHISHING";
+              _forensicLogs = ["Módulo de Auditoría de enlaces y URLs activado."];
+              break;
+            case 2:
+              _statusCategory = "ESCANER HUD • MALWARE";
+              _forensicLogs = ["Módulo de análisis estático de archivos preparado."];
+              break;
+          }
+        });
+      }
     });
   }
 
@@ -200,12 +202,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           "Carga de binario exitosa.",
           "Cripto-Nombre: ${file.name}",
           "Tamaño de carga: ${_formatBytes(file.size)}",
-          "Estado: Listo para inspección criptográfica en la nube."
+          "Estado: Listo para inspection criptográfica en la nube."
         ];
       });
     } catch (e) {
       setState(() {
-        _forensicLogs = ["Fallo crítico en subsistema de carga:", e.toString()];
+        _forensicLogs = ["Fallo crítico en subsistema de carga: ${e.toString()}"];
       });
     }
   }
@@ -274,7 +276,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _statusCategory = "ANÁLISIS COMPLETADO • ${vectorLabel.split('/')[0]}";
 
         if (_currentTab == 0) {
-          // Extracción segura tolerante a nulos e int/double desde la respuesta del Servidor Cloud
           final double entropyVal = (metrics['entropy'] as num?)?.toDouble() ?? 
                                     (metrics['network'] as num?)?.toDouble() ?? 0.0;
           final double freqVal = (metrics['frequency_risk'] as num?)?.toDouble() ?? 0.12;
@@ -309,12 +310,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       await _guardarBitacoraLocalmente();
 
     } catch (e) {
-      // 🧠 ARQUITECTURA HÍBRIDA: Activación síncrona del motor heurístico offline para telefonía colombiana
       if (_currentTab == 0) {
         final localAnalysis = _apiService.analyze(target, <CallRecord>[]);
         final double localScorePercent = localAnalysis.riskScore * 100;
         final String localVerdict = localAnalysis.classification.toUpperCase();
-        final double localEntropy = (localAnalysis.metrics['entropy'] as num?)?.toDouble() ?? 0.0;
+        
+        // CORRECCIÓN EFECTUADA: Se remueve el operador redundante '?? {}' para limpiar el warning estático
+        final Map<String, dynamic> localMetrics = localAnalysis.metrics;
+        final double localEntropy = (localMetrics['entropy'] as num?)?.toDouble() ?? 0.0;
+        final double calibratedValue = (localMetrics['calibrated'] as num?)?.toDouble() ?? 0.0;
 
         setState(() {
           _vulnerabilityScore = localScorePercent;
@@ -332,7 +336,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _forensicLogs = [
             "SISTEMA HÍBRIDO: Servidor central inalcanzable. Motor local Centinela al rescate.",
             "» Entropía Numérica: ${(localEntropy * 100).toStringAsFixed(1)}%",
-            "» Calibración de Prefijo COL: ${localAnalysis.metrics['calibrated'] == 1.0 ? 'VÁLIDO' : 'DESCONOCIDO'}",
+            "» Calibración de Prefijo COL: ${calibratedValue == 1.0 ? 'VÁLIDO / ESTRUCTURAL' : 'DESCONOCIDO'}",
             "CONTROL DE SEGURIDAD: Análisis local completado de baja latencia."
           ];
 
@@ -508,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         unselectedLabelColor: Colors.blueGrey[300],
         labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
         tabs: const [
-          Tab(text: "SPAM / BOTS"),
+          Tab(text: "SPAM / TELEFONÍA"),
           Tab(text: "PHISHING"),
           Tab(text: "MALWARE"),
         ],
@@ -675,20 +679,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
                       letterSpacing: 1,
-                ),
+                    ),
+                  ),
+                ],
               ),
+              if (_masterBitacora.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF5252), size: 20),
+                  tooltip: "Limpiar Consola HUD",
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                  onPressed: _clearMasterBitacora,
+                ),
             ],
           ),
-          if (_masterBitacora.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF5252), size: 20),
-              tooltip: "Limpiar Consola HUD",
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
-              onPressed: _clearMasterBitacora,
-            ),
-        ],
-      ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Divider(color: Color(0xFF1C2541), thickness: 1.5),
