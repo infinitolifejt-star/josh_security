@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart'; // 1. IMPORTANTE: El nuevo motor de hardware
 import 'home_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -34,9 +35,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   ];
 
-  void _finalizarOnboarding() async {
+  // 2. NUEVA FUNCIÓN: Solicita de forma transparente y secuencial los accesos nativos
+  Future<void> _solicitarPermisosYFinalizar() async {
+    // Desplegar cuadro de diálogo del sistema operativo para llamadas y logs
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.phone,
+      Permission.sms,
+    ].request();
+
+    debugPrint('🛰️ [CENTINELA] Estado de permisos otorgados: $statuses');
+
+    // Sin importar la elección del Alpha test, se guarda la bandera del Onboarding para no fastidiar
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_visto', true);
+    
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -55,7 +67,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: TextButton(
-                  onPressed: _finalizarOnboarding,
+                  onPressed: _solicitarPermisosYFinalizar, // Al saltar, también se cierra la aduana
                   child: const Text(
                     "SALTAR",
                     style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold),
@@ -131,7 +143,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ElevatedButton(
                     onPressed: () {
                       if (_currentPage == _slides.length - 1) {
-                        _finalizarOnboarding();
+                        // 3. AQUÍ ESTÁ EL CAMBIO: Llama al flujo de permisos nativos en el último slider
+                        _solicitarPermisosYFinalizar();
                       } else {
                         _pageController.nextPage(
                           duration: const Duration(milliseconds: 400),
