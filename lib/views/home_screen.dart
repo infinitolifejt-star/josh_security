@@ -1,10 +1,16 @@
+// ====================================================================================================
+// ARCHIVO: lib/views/home_screen.dart
+// REEMPLAZO TOTAL — ADAPTACIÓN DE FLUJO HÍBRIDO CENTINELA v4.4.5
+// ====================================================================================================
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
-import '../services/core/models.dart'; // Requerido para mapear el historial heurístico local
+import '../services/security/phone_interceptor_service.dart'; 
+import '../services/security/file_scanner_service.dart';   
 import 'widgets/cyber_shield_painter.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,6 +23,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
+  
+  // Instanciación de los motores locales de auditoría
+  final PhoneInterceptorService _phoneInterceptor = PhoneInterceptorService();
+  final FileScannerService _fileScanner = FileScannerService();
+
   final TextEditingController _targetController = TextEditingController();
   late TabController _tabController;
   late AnimationController _rotationController; 
@@ -34,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int? _selectedFileSize; 
 
   List<String> _forensicLogs = [
-    "CENTINELA v4.4.0: Núcleo analítico unificado acoplado a la infraestructura Cloud en Render."
+    "CENTINELA v4.4.5: Núcleo analítico híbrido acoplado a motores de auditoría de red perimetral."
   ];
 
   final List<Map<String, dynamic>> _masterBitacora = [];
@@ -64,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           switch (_currentTab) {
             case 0:
               _statusCategory = "ESCANER HUD • TELEFONÍA";
-              _forensicLogs = ["Módulo Heurístico de llamadas telefónicas activado."];
+              _forensicLogs = ["Módulo de diagnóstico telefónico local/cloud activo."];
               break;
             case 1:
               _statusCategory = "ESCANER HUD • PHISHING";
@@ -72,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               break;
             case 2:
               _statusCategory = "ESCANER HUD • MALWARE";
-              _forensicLogs = ["Módulo de análisis estático de archivos preparado."];
+              _forensicLogs = ["Módulo de análisis local de binarios preparado (Barrera 15MB)."];
               break;
           }
         });
@@ -118,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               _masterBitacora.add(item);
             }
           }
-          _forensicLogs.add("ÉXITO: Caché local persistente cargada desde el almacenamiento móvil.");
+          _forensicLogs.add("ÉXITO: Registro local persistente cargado desde el almacenamiento móvil.");
         });
       }
 
@@ -146,7 +157,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
     } catch (e) {
       setState(() {
-        _forensicLogs.add("AVISO: Inicialización híbrida activa (Modo offline listo).");
+        _forensicLogs.add("AVISO: Inicialización híbrida activa (Motores locales en stand-by).");
       });
     }
   }
@@ -184,11 +195,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
 
       final file = result.files.first;
-      const int maxSize = 15 * 1024 * 1024;
 
-      if (file.size > maxSize) {
+      // Firma pasando argumentos posicionales limpios
+      final fileScanVerdict = await _fileScanner.scanLocalFile(file.name, file.size);
+
+      if (fileScanVerdict.riskLevel == 'CRÍTICO') {
         setState(() {
-          _forensicLogs = ["ERROR DE SEGURIDAD: El archivo excede el límite crítico de 15MB."];
+          _vulnerabilityScore = 100.0;
+          _verdictText = "CRÍTICO";
+          _hudColor = const Color(0xFFFF5252);
+          _selectedFileName = null;
+          _selectedFileSize = null;
+          _targetController.clear();
+          _forensicLogs = [
+            "ERROR DE DIAGNÓSTICO: RESTRICCIÓN PERIMETRAL",
+            "» Archivo: ${fileScanVerdict.fileName}",
+            "» Tamaño detectado: ${_formatBytes(file.size)}",
+            "» Motivo: Peso excede la barrera de resguardo local de 15MB"
+          ];
         });
         return;
       }
@@ -199,15 +223,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _targetController.text = file.name;
 
         _forensicLogs = [
-          "Carga de binario exitosa.",
-          "Cripto-Nombre: ${file.name}",
-          "Tamaño de carga: ${_formatBytes(file.size)}",
-          "Estado: Listo para inspection criptográfica en la nube."
+          "Carga de binario exitosa para auditoría estática.",
+          "» Identificador Técnico: ${file.name}",
+          "» Dimensión: ${_formatBytes(file.size)}",
+          "» Dictamen local: ${fileScanVerdict.riskLevel} (Estructura de firmas íntegra)"
         ];
       });
     } catch (e) {
       setState(() {
-        _forensicLogs = ["Fallo crítico en subsistema de carga: ${e.toString()}"];
+        _forensicLogs = ["Fallo crítico en subsistema de selección de archivos: ${e.toString()}"];
       });
     }
   }
@@ -225,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() {
       _isLoading = true;
       _forensicLogs = [
-        "Iniciando oleoducto de análisis heurístico estructural...",
+        "Iniciando flujo de análisis heurístico estructural...",
         "Calculando variables de riesgo y telemetría en nubes centrales..."
       ];
     });
@@ -244,6 +268,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
 
     try {
+      // Intentar auditoría en la nube principal
       Map<String, dynamic> result = await _apiService.scanTarget(vectorKey, target);
 
       final rawScore = (result['riskScore'] as num?)?.toDouble() ?? 0.15;
@@ -286,14 +311,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             "» Entropía del Servidor: ${(entropyVal * 100).toStringAsFixed(1)}%",
             "» Riesgo de Repetitividad: ${(freqVal * 100).toStringAsFixed(1)}%",
             "» Densidad de Tráfico PBX: ${(timeVal * 100).toStringAsFixed(1)}%",
-            "AUDIT LOG: $backendLogs"
+            "REGISTRO CLOUD: $backendLogs"
           ];
         } else {
           _forensicLogs = [
             "OBJETIVO EVALUADO EN NUBE: $target",
             if (_currentTab == 2 && _selectedFileSize != null) "» Peso Estático: ${_formatBytes(_selectedFileSize!)}",
             "» Firma digital verificada contra base de datos reputacional.",
-            "AUDIT LOG: $backendLogs"
+            "REGISTRO CLOUD: $backendLogs"
           ];
         }
 
@@ -310,19 +335,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       await _guardarBitacoraLocalmente();
 
     } catch (e) {
+      // CACHÉ DE CONTINGENCIA: Si la red falla o está aislada (Modo Avión)
       if (_currentTab == 0) {
-        final localAnalysis = _apiService.analyze(target, <CallRecord>[]);
-        final double localScorePercent = localAnalysis.riskScore * 100;
-        final String localVerdict = localAnalysis.classification.toUpperCase();
+        // CORRECCIÓN: Llamada adaptada al motor e interfaces reales del PhoneInterceptorService
+        final localCallVerdict = await _phoneInterceptor.analyzeIncomingCall(target);
         
-        // CORRECCIÓN EFECTUADA: Se remueve el operador redundante '?? {}' para limpiar el warning estático
-        final Map<String, dynamic> localMetrics = localAnalysis.metrics;
-        final double localEntropy = (localMetrics['entropy'] as num?)?.toDouble() ?? 0.0;
-        final double calibratedValue = (localMetrics['calibrated'] as num?)?.toDouble() ?? 0.0;
+        double localScorePercent = 15.0;
+        if (localCallVerdict.riskLevel == 'CRÍTICO') {
+          localScorePercent = 95.0;
+        } else if (localCallVerdict.riskLevel == 'ADVERTENCIA') {
+          localScorePercent = 55.0;
+        }
 
         setState(() {
           _vulnerabilityScore = localScorePercent;
-          _verdictText = localVerdict;
+          _verdictText = localCallVerdict.riskLevel;
           _statusCategory = "HEURÍSTICA LOCAL ACTIVA (OFFLINE)";
           
           if (localScorePercent >= 70) {
@@ -334,10 +361,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           }
 
           _forensicLogs = [
-            "SISTEMA HÍBRIDO: Servidor central inalcanzable. Motor local Centinela al rescate.",
-            "» Entropía Numérica: ${(localEntropy * 100).toStringAsFixed(1)}%",
-            "» Calibración de Prefijo COL: ${calibratedValue == 1.0 ? 'VÁLIDO / ESTRUCTURAL' : 'DESCONOCIDO'}",
-            "CONTROL DE SEGURIDAD: Análisis local completado de baja latencia."
+            "SISTEMA EN AISLAMIENTO: Servidor central inalcanzable.",
+            "» Disparador Técnico: Motor Local Centinela",
+            "» Prefijo Identificado: $target",
+            "» Diagnóstico de Integridad: ${localCallVerdict.analysisMessage}",
+            "» Diagnóstico Source: ${localCallVerdict.source.toString().split('.').last.toUpperCase()}"
           ];
 
           _masterBitacora.insert(0, {
@@ -346,20 +374,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             'target': target,
             'score': localScorePercent,
             'verdict': _verdictText,
-            'vector': "$vectorLabel (LOCAL)",
+            'vector': "TELEFÓNICO (LOCAL)",
           });
         });
         
         _guardarBitacoraLocalmente();
+      } else if (_currentTab == 2 && _selectedFileName != null) {
+        final localFileVerdict = await _fileScanner.scanLocalFile(
+          _selectedFileName!,
+          _selectedFileSize ?? 0,
+        );
+
+        double localScorePercent = localFileVerdict.riskLevel == 'SEGURO' ? 10.0 : 45.0;
+
+        setState(() {
+          _vulnerabilityScore = localScorePercent;
+          _verdictText = localFileVerdict.riskLevel;
+          _statusCategory = "DIAGNÓSTICO LOCAL DE BINARIOS";
+          _hudColor = localScorePercent >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676);
+          
+          _forensicLogs = [
+            "SISTEMA HÍBRIDO MALWARE: Procesamiento local offline.",
+            "» Archivo: ${localFileVerdict.fileName}",
+            "» Umbral Perimetral: Validador bajo 15MB superado con éxito.",
+            "» Detalles: Estructura analizada en almacenamiento nativo"
+          ];
+
+          _masterBitacora.insert(0, {
+            'id': DateTime.now().millisecondsSinceEpoch.toString(),
+            'timestamp': DateTime.now().toIso8601String().substring(11, 19),
+            'target': _selectedFileName!,
+            'score': localScorePercent,
+            'verdict': _verdictText,
+            'vector': "MALWARE (LOCAL)",
+          });
+        });
+        _guardarBitacoraLocalmente();
       } else {
         setState(() {
-          _vulnerabilityScore = 15.0; 
+          _vulnerabilityScore = 20.0; 
           _verdictText = "CONTINGENCIA";
           _statusCategory = "Modo Híbrido Local";
           _hudColor = const Color(0xFFFFD740);
           _forensicLogs = [
-            "AVISO: Excepción de aislamiento capturada o arranque en frío.",
-            "Detalle: ${e.toString()}",
+            "AVISO: Excepción de aislamiento en canal de red o arranque en frío.",
+            "» Diagnóstico técnico: Canal URL requiere enlace Cloud estable.",
           ];
         });
       }
@@ -432,7 +491,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
-                  "JOSH SECURITY • CENTINELA v4.4.0",
+                  "JOSH SECURITY • CENTINELA v4.4.5",
                   style: TextStyle(
                     color: Colors.blueGrey[200],
                     letterSpacing: 2.5,

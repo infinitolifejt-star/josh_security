@@ -1,3 +1,8 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/phone_interceptor_service.dart
+// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA
+// ====================================================================================================
+
 import 'dart:async';
 import 'dart:math';
 
@@ -37,6 +42,18 @@ class PhoneInterceptorService {
     await Future.delayed(const Duration(milliseconds: 350));
     // Retornar false simula aislamiento total de red (Modo Avión activo)
     return false; 
+  }
+
+  /// MÉTODO COMPATIBILIDAD HUD: Retorna un porcentaje o indicador mapeado a partir del veredicto analítico
+  Future<double> checkNumber(String phoneNumber) async {
+    try {
+      final CallVerdict verdict = await analyzeIncomingCall(phoneNumber);
+      if (verdict.riskLevel == 'CRÍTICO') return 100.0;
+      if (verdict.riskLevel == 'ADVERTENCIA') return 50.0;
+      return 0.0;
+    } catch (_) {
+      return 0.0;
+    }
   }
 
   /// Evalúa un número telefónico entrante cruzando prefijos locales e indicadores de riesgo
