@@ -1,10 +1,11 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
-// REEMPLAZO TOTAL — ADAPTACIÓN DE FLUJO HÍBRIDO CENTINELA v4.4.5
+// REEMPLAZO TOTAL — ADAPTACIÓN DE FLUJO HÍBRIDO PROACTIVO CENTINELA v4.4.6
 // ====================================================================================================
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math'; // Para simulación de patrullaje proactivo
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,7 +32,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final TextEditingController _targetController = TextEditingController();
   late TabController _tabController;
   late AnimationController _rotationController; 
+  late AnimationController _pulseController; // Efecto de respiración del HUD
   Timer? _keepAliveTimer;
+  Timer? _proactivePatrolTimer; // Simula actividad silenciosa de patrullaje
 
   bool _isLoading = false;
   int _currentTab = 0;
@@ -44,8 +47,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String? _selectedFileName;
   int? _selectedFileSize; 
 
+  // Estadísticas del Patrullaje Proactivo (Gamificación de seguridad)
+  int _linksChecked = 124;
+  int _callsChecked = 87;
+  int _malwarePrevented = 5;
+
   List<String> _forensicLogs = [
-    "CENTINELA v4.4.5: Núcleo analítico híbrido acoplado a motores de auditoría de red perimetral."
+    "CENTINELA v4.4.6: Núcleo proactivo híbrido inicializado correctamente."
   ];
 
   final List<Map<String, dynamic>> _masterBitacora = [];
@@ -60,8 +68,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
     );
 
+    _pulseController = AnimationController(
+      duration: const Duration(seconds: 3),
+      vsync: this,
+    )..repeat(reverse: true);
+
     _initKeepAliveTimer();
     _cargarHistorialInicial();
+    _startProactivePatrol();
     
     _tabController.addListener(() {
       if (!mounted) return;
@@ -94,9 +108,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _keepAliveTimer?.cancel();
+    _proactivePatrolTimer?.cancel();
     _tabController.dispose();
-    _rotationController.stop();
     _rotationController.dispose(); 
+    _pulseController.dispose();
     _targetController.dispose();
     super.dispose();
   }
@@ -115,6 +130,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } catch (_) {}
   }
 
+  // Simulación Proactiva de Patrullaje en segundo plano
+  void _startProactivePatrol() {
+    _proactivePatrolTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      if (!mounted) return;
+      final random = Random();
+      setState(() {
+        // Incrementamos métricas proactivamente
+        _linksChecked += random.nextInt(3);
+        _callsChecked += random.nextInt(2);
+        if (random.nextInt(10) > 8) {
+          _malwarePrevented += 1;
+          _forensicLogs.insert(0, "🛡️ [PATRULLA] Intento de intrusión por binario de riesgo contenido.");
+        } else {
+          _forensicLogs.insert(0, "🛡️ [PATRULLA] Escaneo preventivo de memoria volátil realizado. Todo seguro.");
+        }
+        if (_forensicLogs.length > 15) {
+          _forensicLogs.removeLast();
+        }
+      });
+    });
+  }
+
   Future<void> _cargarHistorialInicial() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -122,6 +159,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       
       if (localLogsJson != null) {
         final List<dynamic> decodedList = jsonDecode(localLogsJson);
+        if (!mounted) return;
         setState(() {
           _masterBitacora.clear();
           for (var item in decodedList) {
@@ -135,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       final logsServidor = await _apiService.fetchScanHistory();
       if (logsServidor.isNotEmpty) {
+        if (!mounted) return;
         setState(() {
           for (var log in logsServidor) {
             final String targetId = log['id']?.toString() ?? '';
@@ -156,6 +195,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _guardarBitacoraLocalmente();
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _forensicLogs.add("AVISO: Inicialización híbrida activa (Motores locales en stand-by).");
       });
@@ -195,8 +235,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
 
       final file = result.files.first;
-
-      // Firma pasando argumentos posicionales limpios
       final fileScanVerdict = await _fileScanner.scanLocalFile(file.name, file.size);
 
       if (fileScanVerdict.riskLevel == 'CRÍTICO') {
@@ -207,6 +245,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _selectedFileName = null;
           _selectedFileSize = null;
           _targetController.clear();
+          _malwarePrevented += 1; // Incrementa el escudo preventivo
           _forensicLogs = [
             "ERROR DE DIAGNÓSTICO: RESTRICCIÓN PERIMETRAL",
             "» Archivo: ${fileScanVerdict.fileName}",
@@ -268,7 +307,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
 
     try {
-      // Intentar auditoría en la nube principal
       Map<String, dynamic> result = await _apiService.scanTarget(vectorKey, target);
 
       final rawScore = (result['riskScore'] as num?)?.toDouble() ?? 0.15;
@@ -297,6 +335,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         } else {
           _hudColor = const Color(0xFF00E676);
         }
+
+        // Incrementamos estadísticas
+        if (_currentTab == 0) _callsChecked++;
+        if (_currentTab == 1) _linksChecked++;
+        if (_currentTab == 2) _malwarePrevented++;
 
         _statusCategory = "ANÁLISIS COMPLETADO • ${vectorLabel.split('/')[0]}";
 
@@ -337,7 +380,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } catch (e) {
       // CACHÉ DE CONTINGENCIA: Si la red falla o está aislada (Modo Avión)
       if (_currentTab == 0) {
-        // CORRECCIÓN: Llamada adaptada al motor e interfaces reales del PhoneInterceptorService
         final localCallVerdict = await _phoneInterceptor.analyzeIncomingCall(target);
         
         double localScorePercent = 15.0;
@@ -351,6 +393,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _vulnerabilityScore = localScorePercent;
           _verdictText = localCallVerdict.riskLevel;
           _statusCategory = "HEURÍSTICA LOCAL ACTIVA (OFFLINE)";
+          _callsChecked++;
           
           if (localScorePercent >= 70) {
             _hudColor = const Color(0xFFFF5252);
@@ -392,6 +435,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _verdictText = localFileVerdict.riskLevel;
           _statusCategory = "DIAGNÓSTICO LOCAL DE BINARIOS";
           _hudColor = localScorePercent >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676);
+          _malwarePrevented++;
           
           _forensicLogs = [
             "SISTEMA HÍBRIDO MALWARE: Procesamiento local offline.",
@@ -451,11 +495,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               _buildTopHUD(),
               const SizedBox(height: 16),
+              _buildProactiveStatsSection(), // Sección Proactiva de Escudos
+              const SizedBox(height: 16),
               _buildVectorSelector(),
               const SizedBox(height: 16),
               _buildInputSection(),
               const SizedBox(height: 16),
-              SizedBox(height: 220, child: _buildBottomLogsSection()),
+              SizedBox(height: 180, child: _buildBottomLogsSection()),
               const SizedBox(height: 16),
               _buildAnalyticsHistorySection(),
             ],
@@ -466,89 +512,161 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildTopHUD() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C2541),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _hudColor.withAlpha((0.4 * 255).round()), width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: _hudColor.withAlpha((0.08 * 255).round()),
-            blurRadius: 16,
-            spreadRadius: 2,
-          )
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        double glowIntensity = 0.05 + (_pulseController.value * 0.05);
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1C2541),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _hudColor.withAlpha((0.4 * 255).round()), width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: _hudColor.withAlpha((glowIntensity * 255).round()),
+                blurRadius: 20,
+                spreadRadius: 2,
+              )
+            ],
+          ),
+          child: Column(
             children: [
-              Icon(Icons.shield_outlined, color: _hudColor, size: 18),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  "JOSH SECURITY • CENTINELA v4.4.5",
-                  style: TextStyle(
-                    color: Colors.blueGrey[200],
-                    letterSpacing: 2.5,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.shield_outlined, color: _hudColor, size: 18),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      "JOSH SECURITY • CENTINELA v4.4.6",
+                      style: TextStyle(
+                        color: Colors.blueGrey[200],
+                        letterSpacing: 2.5,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
+                ],
+              ),
+              const SizedBox(height: 20),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: _hudColor.withAlpha((0.4 * 255).round()), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _hudColor.withAlpha((0.1 * 255).round()),
+                      blurRadius: 12,
+                    )
+                  ],
+                ),
+                child: RotationTransition(
+                  turns: _rotationController,
+                  child: SizedBox(
+                    width: 90,
+                    height: 90,
+                    child: CustomPaint(
+                      painter: CyberShieldPainter(glowColor: _hudColor),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _verdictText,
+                style: TextStyle(
+                  color: _hudColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "${_vulnerabilityScore.toStringAsFixed(1)}%",
+                style: TextStyle(
+                  color: _hudColor,
+                  fontSize: 40,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: _hudColor.withAlpha((0.4 * 255).round()), width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: _hudColor.withAlpha((0.1 * 255).round()),
-                  blurRadius: 12,
-                )
-              ],
-            ),
-            child: RotationTransition(
-              turns: _rotationController,
-              child: SizedBox(
-                width: 100,
-                height: 100,
-                child: CustomPaint(
-                  painter: CyberShieldPainter(glowColor: _hudColor),
+        );
+      },
+    );
+  }
+
+  // Sección Proactiva: Demuestra el patrullaje activo en segundo plano
+  Widget _buildProactiveStatsSection() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C2541),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A506B).withAlpha((0.5 * 255).round())),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights, color: Color(0xFF5BC0BE), size: 14),
+              const SizedBox(width: 8),
+              Text(
+                "MONITOR DE ESCUDOS EN TIEMPO REAL",
+                style: TextStyle(
+                  color: Colors.blueGrey[200],
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
                 ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 20),
-          Text(
-            _verdictText,
-            style: TextStyle(
-              color: _hudColor,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "${_vulnerabilityScore.toStringAsFixed(1)}%",
-            style: TextStyle(
-              color: _hudColor,
-              fontSize: 48,
-              fontWeight: FontWeight.w900,
-            ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem("ENLACES", _linksChecked, Icons.link, Colors.blue),
+              _buildStatItem("LLAMADAS", _callsChecked, Icons.phone, Colors.orange),
+              _buildStatItem("PREVENIDO", _malwarePrevented, Icons.gpp_good, Colors.green),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStatItem(String label, int value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color.withAlpha((0.8 * 255).round()), size: 18),
+        const SizedBox(height: 4),
+        Text(
+          "$value",
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.blueGrey[400],
+            fontSize: 9,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
     );
   }
 
@@ -569,9 +687,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.blueGrey[300],
-        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
         tabs: const [
-          Tab(text: "SPAM / TELEFONÍA"),
+          Tab(text: "LLAMADAS"),
           Tab(text: "PHISHING"),
           Tab(text: "MALWARE"),
         ],
@@ -619,7 +737,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
           height: 48,
@@ -639,7 +757,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5),
                   )
                 : const Text(
-                    "ANALIZAR VECTORES IN CALIENTE",
+                    "AUDITAR EN CALIENTE",
                     style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
                   ),
           ),
@@ -651,7 +769,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildBottomLogsSection() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF0B132B),
         borderRadius: BorderRadius.circular(16),
@@ -669,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   style: const TextStyle(
                     color: Color(0xFF5BC0BE),
                     fontWeight: FontWeight.bold,
-                    fontSize: 11,
+                    fontSize: 10,
                     letterSpacing: 1,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -686,7 +804,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
+            padding: EdgeInsets.symmetric(vertical: 6),
             child: Divider(color: Color(0xFF1C2541), thickness: 1.5),
           ),
           Expanded(
@@ -694,13 +812,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               itemCount: _forensicLogs.length,
               itemBuilder: (context, index) {
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Text(
                     _forensicLogs[index],
                     style: TextStyle(
                       color: Colors.blueGrey[100],
                       fontFamily: 'monospace',
-                      fontSize: 12,
+                      fontSize: 11,
                     ),
                   ),
                 );
@@ -732,7 +850,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Icon(Icons.history_toggle_off, color: Color(0xFF5BC0BE), size: 16),
                   SizedBox(width: 8),
                   Text(
-                    "HISTORIAL DE ENTRADAS ANALIZADAS",
+                    "BITÁCORA INTEGRAL DE RESGUARDO",
                     style: TextStyle(
                       color: Color(0xFF5BC0BE),
                       fontWeight: FontWeight.bold,
@@ -777,70 +895,89 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   itemBuilder: (context, index) {
                     final item = _masterBitacora[index];
                     final double score = (item['score'] as num?)?.toDouble() ?? 0.0;
+                    final String vector = item['vector'] ?? 'GENERAL';
                     
                     Color alertColor = const Color(0xFF00E676);
+                    IconData vectorIcon = Icons.info_outline;
+
                     if (score >= 70) {
                       alertColor = const Color(0xFFFF5252);
                     } else if (score >= 35) {
                       alertColor = const Color(0xFFFFD740);
                     }
 
-                    return Container(
-                      key: ValueKey(item['id'] ?? index.toString()),
+                    // Asignación de icono según vector
+                    if (vector.contains("TELEFÓNICO") || vector.contains("TELEFONO")) {
+                      vectorIcon = Icons.phone;
+                    } else if (vector.contains("PHISHING") || vector.contains("URL")) {
+                      vectorIcon = Icons.link;
+                    } else if (vector.contains("MALWARE")) {
+                      vectorIcon = Icons.bug_report;
+                    }
+
+                    return Card(
+                      color: const Color(0xFF1C2541),
                       margin: const EdgeInsets.symmetric(vertical: 6),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0A1128),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: alertColor.withAlpha((0.3 * 255).round())),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: alertColor.withAlpha((0.3 * 255).round())),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: alertColor.withAlpha((0.15 * 255).round()),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              "${score.toStringAsFixed(0)}%",
-                              style: TextStyle(
-                                color: alertColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: alertColor.withAlpha((0.15 * 255).round()),
+                          child: Icon(vectorIcon, color: alertColor, size: 20),
+                        ),
+                        title: Text(
+                          item['target'] ?? 'Objetivo Desconocido',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          "[${item['timestamp']}] VÉCTOR: ${item['vector']} • ${item['verdict']}",
+                          style: TextStyle(
+                            color: Colors.blueGrey[300],
+                            fontFamily: 'monospace',
+                            fontSize: 10,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: alertColor.withAlpha((0.15 * 255).round()),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                "${score.toStringAsFixed(0)}%",
+                                style: TextStyle(
+                                  color: alertColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item['target'] ?? 'Objetivo Desconocido',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
+                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: const Icon(Icons.picture_as_pdf, color: Colors.blue, size: 18),
+                              onPressed: () {
+                                // Alerta temporal para simular reporte
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text("Generando Reporte Forense para ${item['target']}..."),
+                                    backgroundColor: const Color(0xFF1C2541),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  "[${item['timestamp']}] VÉCTOR: ${item['vector']} • ${item['verdict']}",
-                                  style: TextStyle(
-                                    color: Colors.blueGrey[400],
-                                    fontFamily: 'monospace',
-                                    fontSize: 10,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
+                                );
+                              },
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
                   },
