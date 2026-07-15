@@ -6,11 +6,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart'; // 1. Agregado para leer la memoria local
+import 'services/background_shield.dart'; // IMPORTADO: Control de segundo plano
 import 'views/home_screen.dart';
 import 'views/onboarding_screen.dart'; // 2. Agregado para enlazar la nueva vista
 
 void main() async { // 3. Se agregó 'async' para poder leer el disco antes de arrancar
   WidgetsFlutterBinding.ensureInitialized();
+
+  // INICIALIZACIÓN DEL ESCUDO ACTIVO (Segundo Plano)
+  // Inicializa la configuración de canales de notificación y el motor de fondo
+  try {
+    await BackgroundShield.initializeService();
+    debugPrint('🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.');
+  } catch (e) {
+    debugPrint('⚠️ [JOSH SHIELD] Error al inicializar el servicio de fondo: $e');
+  }
 
   // 4. LA ADUANA: Buscamos en la memoria si el usuario ya vio el onboarding
   final prefs = await SharedPreferences.getInstance();
