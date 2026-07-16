@@ -1,3 +1,8 @@
+# ====================================================================================================
+# ARCHIVO: pubspec.yaml
+# CONFIGURACIÓN: Dependencias y Assets del Proyecto - JOSH Security
+# ====================================================================================================
+
 name: josh_security
 description: "MVP Global Centinela - Aplicación de Seguridad Avanzada"
 publish_to: 'none'
@@ -27,3 +32,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env
