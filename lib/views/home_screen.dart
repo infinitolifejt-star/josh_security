@@ -63,6 +63,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  /// Helper táctico para simular llamadas sospechosas en ráfaga y probar la heurística local
+  void _simulateTacticalCall(SecurityProvider provider) {
+    final List<String> suspiciousNumbers = [
+      "+57 300 456 7890",
+      "+57 315 987 6543",
+      "+57 311 222 3333"
+    ];
+    // Tomamos un número pseudo-aleatorio basado en los segundos actuales
+    final int index = DateTime.now().second % suspiciousNumbers.length;
+    final String targetNumber = suspiciousNumbers[index];
+
+    // Colocamos el número en el controlador de texto de llamadas
+    setState(() {
+      _tabController.animateTo(0); // Forzar tab de llamadas
+      _targetController.text = targetNumber;
+    });
+
+    // Ejecutamos la auditoría de inmediato
+    provider.executeAuditoria(targetNumber, 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Escuchamos el SecurityProvider reactivamente
@@ -109,6 +130,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               _buildInputSection(securityProvider),
               const SizedBox(height: 16),
               SizedBox(height: 180, child: _buildBottomLogsSection(securityProvider)),
+              const SizedBox(height: 16),
+              // Botón táctico de inyección de telemetría / llamadas simuladas
+              _buildSimulationShortcutCard(securityProvider),
               const SizedBox(height: 16),
               // 3. La bitácora integral de resguardo histórica
               ForensicHistoryList(
@@ -287,6 +311,60 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSimulationShortcutCard(SecurityProvider securityProvider) {
+    return Card(
+      color: const Color(0xFF1C2541),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.redAccent.withAlpha((0.3 * 255).round()), width: 1),
+      ),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.bolt, color: Colors.amberAccent, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    "ENTRENAMIENTO HEURÍSTICO",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    "Simula llamadas sospechosas rápidas.",
+                    style: TextStyle(color: Colors.blueGrey, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+            ElevatedButton(
+              onPressed: securityProvider.isLoading ? null : () => _simulateTacticalCall(securityProvider),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2C3E50),
+                foregroundColor: Colors.redAccent,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text(
+                "SIMULAR",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

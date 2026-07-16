@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io'; // IMPORTANTE: Se añade para poder usar la clase File
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -23,6 +24,11 @@ class SecurityProvider with ChangeNotifier {
   // Archivos
   String? _selectedFileName;
   int? _selectedFileSize;
+  String? _selectedFilePath; // Agregado para recordar la ruta física del archivo seleccionado
+
+  // Estado del Interceptor de Llamadas (Opción 1)
+  CallVerdict? _lastCallVerdict;
+  bool _isAnalyzingCall = false;
 
   // Estadísticas del Monitor de Escudos
   int _linksChecked = 124;
@@ -47,11 +53,16 @@ class SecurityProvider with ChangeNotifier {
   String get statusCategory => _statusCategory;
   String? get selectedFileName => _selectedFileName;
   int? get selectedFileSize => _selectedFileSize;
+  String? get selectedFilePath => _selectedFilePath;
   int get linksChecked => _linksChecked;
   int get callsChecked => _callsChecked;
   int get malwarePrevented => _malwarePrevented;
   List<String> get forensicLogs => _forensicLogs;
   List<Map<String, dynamic>> get masterBitacora => _masterBitacora;
+
+  // Getters del Interceptor
+  CallVerdict? get lastCallVerdict => _lastCallVerdict;
+  bool get isAnalyzingCall => _isAnalyzingCall;
 
   void initialize() {
     _initKeepAliveTimer();
@@ -62,6 +73,7 @@ class SecurityProvider with ChangeNotifier {
   void updateTabState(int index) {
     _selectedFileName = null;
     _selectedFileSize = null;
+    _selectedFilePath = null;
 
     switch (index) {
       case 0:
@@ -176,17 +188,18 @@ class SecurityProvider with ChangeNotifier {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.any,
-        withData: true,
       );
 
-      if (result == null) {
+      if (result == null || result.files.first.path == null) {
         _forensicLogs = ["Selección de binario cancelada por el operador."];
         notifyListeners();
         return false;
       }
 
-      final file = result.files.first;
-      final fileScanVerdict = await _fileScanner.scanLocalFile(file.name, file.size);
+      final fileMetadata = result.files.first;
+      final File realFile = File(fileMetadata.path!);
+
+      final fileScanVerdict = await _fileScanner.scanLocalFile(realFile);
 
       if (fileScanVerdict.riskLevel == 'CRÍTICO') {
         _vulnerabilityScore = 100.0;
@@ -194,23 +207,25 @@ class SecurityProvider with ChangeNotifier {
         _hudColor = const Color(0xFFFF5252);
         _selectedFileName = null;
         _selectedFileSize = null;
+        _selectedFilePath = null;
         _malwarePrevented += 1;
         _forensicLogs = [
-          "ERROR DE DIAGNÓSTICO: RESTRICCIÓN PERIMETRAL",
+          "ERROR DE DIAGNÓSTICO: RIESGO DETECTADO",
           "» Archivo: ${fileScanVerdict.fileName}",
-          "» Tamaño detectado: ${_formatBytes(file.size)}",
-          "» Motivo: Peso excede la barrera de resguardo local de 15MB"
+          "» Tamaño detectado: ${_formatBytes(fileMetadata.size)}",
+          "» Dictamen: ${fileScanVerdict.analysisMessage}"
         ];
         notifyListeners();
         return false;
       }
 
-      _selectedFileName = file.name;
-      _selectedFileSize = file.size;
+      _selectedFileName = fileMetadata.name;
+      _selectedFileSize = fileMetadata.size;
+      _selectedFilePath = fileMetadata.path;
       _forensicLogs = [
         "Carga de binario exitosa para auditoría estática.",
-        "» Identificador Técnico: ${file.name}",
-        "» Dimensión: ${_formatBytes(file.size)}",
+        "» Identificador Técnico: ${fileMetadata.name}",
+        "» Dimensión: ${_formatBytes(fileMetadata.size)}",
         "» Dictamen local: ${fileScanVerdict.riskLevel} (Estructura de firmas íntegra)"
       ];
       notifyListeners();
@@ -219,6 +234,68 @@ class SecurityProvider with ChangeNotifier {
       _forensicLogs = ["Fallo crítico en subsistema de selección de archivos: $e"];
       notifyListeners();
       return false;
+    }
+  }
+
+  /// NUEVO MÉTODO INTERACTIVO (OPCIÓN 1): Simulación local de interceptación
+  Future<void> simulateIncomingCallAnalysis(String phoneNumber) async {
+    _isAnalyzingCall = true;
+    _isLoading = true;
+    _forensicLogs = [
+      "DISPARADOR: Evento de llamada entrante detectado en canal de radio.",
+      "» Consultando lista negra y reglas perimetrales de Centinela..."
+    ];
+    notifyListeners();
+
+    try {
+      // Invocamos el servicio para auditar el número telefónico
+      final verdict = await _phoneInterceptor.analyzeIncomingCall(phoneNumber);
+      _lastCallVerdict = verdict;
+
+      // Mapeamos el nivel de riesgo directamente al HUD reactivo de la UI
+      double computedScore = 0.0;
+      if (verdict.riskLevel == 'CRÍTICO') {
+        computedScore = 100.0;
+        _hudColor = const Color(0xFFFF5252); // Rojo Centinela
+      } else if (verdict.riskLevel == 'ADVERTENCIA') {
+        computedScore = 50.0;
+        _hudColor = const Color(0xFFFFD740); // Amarillo Advertencia
+      } else {
+        computedScore = 10.0;
+        _hudColor = const Color(0xFF00E676); // Verde Seguro
+      }
+
+      _vulnerabilityScore = computedScore;
+      _verdictText = verdict.riskLevel;
+      _statusCategory = "INTERCEPTOR • LLAMADA ACTIVA";
+      _callsChecked++;
+
+      // Agregamos logs forenses detallados basados en la telemetría del interceptor
+      _forensicLogs = [
+        "Llamada entrante interceptada: ${verdict.phoneNumber}",
+        "» Origen de evaluación: ${verdict.source.toString().split('.').last.toUpperCase()}",
+        "» Dictamen de riesgo: ${verdict.riskLevel}",
+        "» Mensaje analítico: ${verdict.analysisMessage}",
+        "» Token de rastreo: ${verdict.telemetryDetails['tracking_id'] ?? 'N/A'}"
+      ];
+
+      // Insertamos el evento en la Bitácora Histórica Local
+      _masterBitacora.insert(0, {
+        'id': verdict.telemetryDetails['tracking_id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        'timestamp': DateTime.now().toIso8601String().substring(11, 19),
+        'target': verdict.phoneNumber,
+        'score': computedScore,
+        'verdict': verdict.riskLevel,
+        'vector': "TELEFÓNICO (INTERCEPTADO)",
+      });
+      _guardarBitacoraLocalmente();
+
+    } catch (e) {
+      _forensicLogs = ["Fallo al interceptar/analizar llamada en tiempo real: $e"];
+    } finally {
+      _isAnalyzingCall = false;
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -340,8 +417,9 @@ class SecurityProvider with ChangeNotifier {
           'vector': "TELEFÓNICO (LOCAL)",
         });
         _guardarBitacoraLocalmente();
-      } else if (currentTab == 2 && _selectedFileName != null) {
-        final localFileVerdict = await _fileScanner.scanLocalFile(_selectedFileName!, _selectedFileSize ?? 0);
+      } else if (currentTab == 2 && _selectedFilePath != null) {
+        final File localFileToScan = File(_selectedFilePath!);
+        final localFileVerdict = await _fileScanner.scanLocalFile(localFileToScan);
         double localScorePercent = localFileVerdict.riskLevel == 'SEGURO' ? 10.0 : 45.0;
 
         _vulnerabilityScore = localScorePercent;

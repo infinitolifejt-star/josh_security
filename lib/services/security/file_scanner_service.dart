@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'phone_interceptor_service.dart'; // Importa DiagnosticSource
+import '../reputation/reputation_engine.dart'; // Importa el motor de reputación que acabamos de limpiar
 
 /// Modelo estructurado para el veredicto del análisis de malware en archivos
 class FileScanVerdict {
@@ -31,22 +35,49 @@ class FileScannerService {
   factory FileScannerService() => _instance;
   FileScannerService._internal();
 
+  // Instancia del motor de reputación real
+  final ReputationEngine _reputationEngine = ReputationEngine();
+
   // Constante estricta de restricción preventiva: 15 Megabytes en bytes
   static const int maxSafeSizeBytes = 15 * 1024 * 1024;
 
-  /// Simula la verificación de conectividad con los motores avanzados en la nube
+  /// Verifica si el dispositivo tiene conexión a internet de manera asíncrona
   Future<bool> _checkNetworkConnectivity() async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    // Simula entorno local/Modo Avión para forzar análisis heurístico local
-    return false;
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } on SocketException catch (_) {
+      return false; // Retorna falso de forma segura si no hay red (Modo Aislamiento)
+    }
   }
 
-  /// Ejecuta un escaneo perimetral defensivo sobre un archivo seleccionado
-  Future<FileScanVerdict> scanLocalFile(String name, int sizeInBytes) async {
-    // Normalización defensiva contra nulos o strings vacíos
-    final String cleanName = name.trim().isEmpty ? 'archivo_indefinido.bin' : name.trim();
-    final int cleanSize = sizeInBytes < 0 ? 0 : sizeInBytes;
+  /// Calcula el hash SHA-256 de un archivo físico de forma asíncrona
+  Future<String?> _calculateFileHash(File file) async {
+    try {
+      if (!await file.exists()) return null;
+      final bytes = await file.readAsBytes();
+      final hash = sha256.convert(bytes);
+      return hash.toString();
+    } catch (e) {
+      debugPrint("Error al calcular hash en scanner: $e");
+      return null;
+    }
+  }
 
+  /// Ejecuta un escaneo perimetral defensivo real sobre un archivo del almacenamiento
+  Future<FileScanVerdict> scanLocalFile(File file) async {
+    final String cleanName = file.path.split('/').last;
+    int sizeInBytes = 0;
+
+    try {
+      if (await file.exists()) {
+        sizeInBytes = await file.length();
+      }
+    } catch (e) {
+      debugPrint("No se pudo leer el tamaño del archivo: $e");
+    }
+
+    final int cleanSize = sizeInBytes < 0 ? 0 : sizeInBytes;
     final bool isConnected = await _checkNetworkConnectivity();
     final DiagnosticSource selectedSource = isConnected ? DiagnosticSource.cloud : DiagnosticSource.local;
     
@@ -60,7 +91,7 @@ class FileScannerService {
         fileSizeInBytes: cleanSize,
         riskLevel: 'CRÍTICO',
         analysisMessage: 'Análisis suspendido: El archivo excede el límite preventivo de 15MB. Riesgo de desbordamiento o carga masiva.',
-        source: DiagnosticSource.local, // Forzado local por política de aislamiento
+        source: DiagnosticSource.local,
         telemetryDetails: {
           'tracking_id': 'JOSH-MAL-$trackingId',
           'timestamp': timestamp,
@@ -71,12 +102,42 @@ class FileScannerService {
       );
     }
 
+    // --- OBTENCIÓN DE HASH Y VERIFICACIÓN EN NUBE (VIRUSTOTAL) ---
+    String? fileHash;
+    double cloudRiskScore = 0.0;
+
+    if (isConnected) {
+      fileHash = await _calculateFileHash(file);
+      if (fileHash != null) {
+        cloudRiskScore = await _reputationEngine.checkVirusTotal(fileHash, isUrl: false);
+      }
+    }
+
+    // Si la reputación en la nube reporta un riesgo alto (>= 0.5)
+    if (cloudRiskScore >= 0.5) {
+      return FileScanVerdict(
+        fileName: cleanName,
+        fileSizeInBytes: cleanSize,
+        riskLevel: 'CRÍTICO',
+        analysisMessage: '¡Amenaza Detectada en la Nube! Coincidencia confirmada por firmas de seguridad globales.',
+        source: selectedSource,
+        telemetryDetails: {
+          'tracking_id': 'JOSH-MAL-$trackingId',
+          'timestamp': timestamp,
+          'matched_rule': 'CLOUD_SIGNATURE_MATCH',
+          'file_hash': fileHash ?? 'N/A',
+          'risk_score': cloudRiskScore,
+          'isolation_mode': 'DESACTIVADO',
+        },
+      );
+    }
+
     // --- ESCANEO DE EXTENSIONES O COMPORTAMIENTOS SOSPECHOSOS (HEURÍSTICA LOCAL) ---
     final String lowerName = cleanName.toLowerCase();
-    bool isSuspiciousExtension = lowerName.endsWith('.apk') || 
-                                 lowerName.endsWith('.exe') || 
-                                 lowerName.endsWith('.bat') ||
-                                 lowerName.endsWith('.scr');
+    final bool isSuspiciousExtension = lowerName.endsWith('.apk') || 
+                                       lowerName.endsWith('.exe') || 
+                                       lowerName.endsWith('.bat') ||
+                                       lowerName.endsWith('.scr');
 
     if (isSuspiciousExtension) {
       return FileScanVerdict(
@@ -89,6 +150,7 @@ class FileScannerService {
           'tracking_id': 'JOSH-MAL-$trackingId',
           'timestamp': timestamp,
           'matched_rule': 'SUSPICIOUS_EXEC_EXTENSION',
+          'file_hash': fileHash ?? 'No calculado (Offline)',
           'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
         },
       );
@@ -99,12 +161,13 @@ class FileScannerService {
       fileName: cleanName,
       fileSizeInBytes: cleanSize,
       riskLevel: 'SEGURO',
-      analysisMessage: 'JOSH Security analizó el binario. No se detectaron firmas maliciosas locales.',
+      analysisMessage: 'JOSH Security analizó el binario. No se detectaron firmas maliciosas locales ni globales.',
       source: selectedSource,
       telemetryDetails: {
         'tracking_id': 'JOSH-MAL-$trackingId',
         'timestamp': timestamp,
         'matched_rule': 'HEURISTIC_CLEAN_FILE',
+        'file_hash': fileHash ?? 'No calculado (Offline)',
         'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
       },
     );
