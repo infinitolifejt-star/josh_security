@@ -1,3 +1,8 @@
+// ====================================================================================================
+// ARCHIVO: android/app/build.gradle.kts
+// CONFIGURACIÓN: Adaptación para JOSH Security (Soporte Java 8 Desugaring Habilitado - v2.1.4)
+// ====================================================================================================
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -11,12 +16,16 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        // 1. Habilitamos el desugaring para compatibilidad de APIs modernas de Android
+        isCoreLibraryDesugaringEnabled = true
+        
+        // 2. Definimos compatibilidad para compilar con Java 8
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = JavaVersion.VERSION_1_8.toString()
     }
 
     defaultConfig {
@@ -41,4 +50,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// 3. SECCIÓN NUEVA: Añadimos la librería nativa de desugaring con versión 2.1.4 solicitada
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
