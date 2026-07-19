@@ -43,9 +43,23 @@ class FileScannerService {
   factory FileScannerService() => _instance;
   FileScannerService._internal();
 
-  // Instancia del motor de reputación real y base de datos relacional
+  // Instancia del motor de reputación real
   final ReputationEngine _reputationEngine = ReputationEngine();
-  final DatabaseService _dbService = DatabaseService.instance;
+
+  /// Getter seguro para obtener la base de datos de manera perezosa (Lazy),
+  /// evitando el 'NotInitializedError' si el servicio se invoca antes de que SQLite esté listo.
+  DatabaseService get _dbService {
+    try {
+      return DatabaseService.instance;
+    } catch (e) {
+      developer.log(
+        "DatabaseService no inicializado aún. Retornando fallback perezoso.",
+        error: e,
+        name: 'josh.security.scanner',
+      );
+      rethrow;
+    }
+  }
 
   // Constante estricta de restricción preventiva: 15 Megabytes en bytes
   static const int maxSafeSizeBytes = 15 * 1024 * 1024;
@@ -209,7 +223,7 @@ class FileScannerService {
     return finalVerdict;
   }
 
-  /// Estructura y guarda el registro forense del escaneo dentro de SQLite
+  /// Estructura y guarda el registro forense del escaneo dentro de SQLite con Try-Catch de aislamiento
   Future<void> _persistScanLog(FileScanVerdict verdict, String matchedRule) async {
     try {
       final Map<String, dynamic> logEntry = {
@@ -220,10 +234,12 @@ class FileScannerService {
         'matched_rule': matchedRule,
         'extra_data': jsonEncode(verdict.telemetryDetails),
       };
+      
+      // Intentar inserción usando el getter perezoso protegido
       await _dbService.insertForensicLog(logEntry);
     } catch (e, stackTrace) {
       developer.log(
-        'ERR_DATABASE_PERSISTENCE_FILE_SCANNER',
+        'ERR_DATABASE_PERSISTENCE_FILE_SCANNER - Fallo controlado para evitar romper el hilo UI',
         error: e,
         stackTrace: stackTrace,
         name: 'josh.security.db',

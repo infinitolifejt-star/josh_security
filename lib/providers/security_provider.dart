@@ -1,5 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/providers/security_provider.dart
+// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO CENTINELA v4.5.1
 // COMPONENTE: Gestor de Estado Central (SecurityProvider) - JOSH Security
 // ====================================================================================================
 
@@ -29,7 +30,7 @@ class SecurityProvider with ChangeNotifier {
   bool _isLoading = false;
   String _statusCategory = "ESCANER HUD • TELEFONÍA";
   
-  // Estado Dinámico del Motor (Parte Crucial del Paso 2)
+  // Estado Dinámico del Motor
   bool _isEnginePatrolling = false;
 
   // Archivos
@@ -70,16 +71,22 @@ class SecurityProvider with ChangeNotifier {
   int get callsChecked => _callsChecked;
   int get malwarePrevented => _malwarePrevented;
   List<String> get forensicLogs => _forensicLogs;
+  
+  // Mapeos de Bitácoras para Consumo de la Interfaz HUD
   List<Map<String, dynamic>> get masterBitacora => _masterBitacora;
+  
+  /// ALIAS TÉCNICO COMPATIBLE: Resuelve el error undefined_getter en forensic_history_list.dart
+  List<Map<String, dynamic>> get historicalLogs => _masterBitacora;
 
   // Getters del Interceptor
   CallVerdict? get lastCallVerdict => _lastCallVerdict;
   bool get isAnalyzingCall => _isAnalyzingCall;
 
-  void initialize() {
+  /// Inicialización estructural asíncrona del Motor Centinela
+  Future<void> initialize() async {
     _initKeepAliveTimer();
     _checkEngineStatus(); // Verificación activa de credenciales del motor de reputación al iniciar
-    _cargarHistorialInicial();
+    await _cargarHistorialInicial(); // Esperamos de forma segura la lectura de SharedPreferences
     _startProactivePatrol();
   }
 
@@ -193,7 +200,7 @@ class SecurityProvider with ChangeNotifier {
         }
         _forensicLogs.add("SINCRO: Registros históricos remotos acoplados sin duplicidad.");
         notifyListeners();
-        _guardarBitacoraLocalmente();
+        await _guardarBitacoraLocalmente();
       }
     } catch (e) {
       _forensicLogs.add("AVISO: Inicialización híbrida activa (Motores locales en stand-by).");
@@ -316,7 +323,7 @@ class SecurityProvider with ChangeNotifier {
         'verdict': verdict.riskLevel,
         'vector': "TELEFÓNICO (INTERCEPTADO)",
       });
-      _guardarBitacoraLocalmente();
+      await _guardarBitacoraLocalmente();
 
     } catch (e) {
       _forensicLogs = ["Fallo al interceptar/analizar llamada en tiempo real: $e"];
@@ -412,7 +419,7 @@ class SecurityProvider with ChangeNotifier {
         'verdict': _verdictText,
         'vector': "$vectorLabel (CLOUD)",
       });
-      _guardarBitacoraLocalmente();
+      await _guardarBitacoraLocalmente();
 
     } catch (e) {
       if (currentTab == 0) {
@@ -445,7 +452,7 @@ class SecurityProvider with ChangeNotifier {
           'verdict': _verdictText,
           'vector': "TELEFÓNICO (LOCAL)",
         });
-        _guardarBitacoraLocalmente();
+        await _guardarBitacoraLocalmente();
       } else if (currentTab == 2 && _selectedFilePath != null) {
         final File localFileToScan = File(_selectedFilePath!);
         final localFileVerdict = await _fileScanner.scanLocalFile(localFileToScan);
@@ -472,7 +479,7 @@ class SecurityProvider with ChangeNotifier {
           'verdict': _verdictText,
           'vector': "MALWARE (LOCAL)",
         });
-        _guardarBitacoraLocalmente();
+        await _guardarBitacoraLocalmente();
       } else {
         _vulnerabilityScore = 20.0;
         _verdictText = "CONTINGENCIA";

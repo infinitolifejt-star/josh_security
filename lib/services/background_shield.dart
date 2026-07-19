@@ -1,3 +1,8 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/background_shield.dart
+// COMPONENTE: Servicio en Segundo Plano (Background Shield) - JOSH Security
+// ====================================================================================================
+
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -7,7 +12,9 @@ class BackgroundShield {
   static const String notificationChannelId = 'josh_shield_channel';
   static const int notificationId = 888;
 
-  /// Inicializa el servicio en segundo plano para el Escudo Activo
+  /// Inicializa el servicio en segundo plano para el Escudo Activo.
+  /// Se añade la anotación para permitir acceso desde el punto de entrada nativo en main.dart.
+  @pragma('vm:entry-point') // ◄ ¡CORRECCIÓN CRUCIAL ENCONTRADA POR LA DART VM!
   static Future<void> initializeService() async {
     final service = FlutterBackgroundService();
 

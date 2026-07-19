@@ -75,13 +75,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final int index = DateTime.now().second % suspiciousNumbers.length;
     final String targetNumber = suspiciousNumbers[index];
 
-    // Colocamos el número en el controlador de texto de llamadas
+    // Sincronizamos los índices de la UI de forma segura
     setState(() {
-      _tabController.animateTo(0); // Forzar tab de llamadas
+      _currentTab = 0; 
+      _tabController.animateTo(0); // Forzar tab de llamadas de manera segura
       _targetController.text = targetNumber;
     });
 
-    // Ejecutamos la auditoría de inmediato
+    // Notificamos explícitamente al provider el cambio de pestaña táctico antes de auditar
+    provider.updateTabState(0);
+
+    // Ejecutamos la auditoría de inmediato bajo el índice indexado
     provider.executeAuditoria(targetNumber, 0);
   }
 
@@ -317,7 +321,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // El micro-badge del feed refleja el color de patrullaje dinámico o amber en carga
               Container(
                 width: 8,
                 height: 8,

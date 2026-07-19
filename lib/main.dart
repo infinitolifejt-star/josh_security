@@ -5,22 +5,31 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart'; // ◄ AGREGADO: Importamos el gestor de estado
+import 'package:provider/provider.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/background_shield.dart';
 import 'views/home_screen.dart';
 import 'views/onboarding_screen.dart';
-import 'providers/security_provider.dart'; // ◄ AGREGADO: Importamos tu nuevo proveedor
+import 'providers/security_provider.dart'; 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // INICIALIZACIÓN DEL ESCUDO ACTIVO (Segundo Plano)
+  // 1. INICIALIZACIÓN DEL ESCUDO ACTIVO (Segundo Plano)
   try {
     await BackgroundShield.initializeService();
     debugPrint('🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.');
   } catch (e) {
     debugPrint('⚠️ [JOSH SHIELD] Error al inicializar el servicio de fondo: $e');
+  }
+
+  // 2. INICIALIZACIÓN PREVIA DEL PROVEEDOR DE SEGURIDAD (Conectado de forma asíncrona)
+  final securityProvider = SecurityProvider();
+  try {
+    await securityProvider.initialize(); // ◄ Ahora espera de forma segura a que cargue SQLite y los estados
+    debugPrint('📊 [JOSH ENGINE] Base de datos y heurística listas.');
+  } catch (e) {
+    debugPrint('⚠️ [JOSH ENGINE] Error al inicializar el motor de seguridad: $e');
   }
 
   // LA ADUANA: Buscamos en la memoria si el usuario ya vio el onboarding
@@ -38,13 +47,11 @@ void main() async {
     }
   });
 
-  // Pasamos el resultado invertido: si NO lo ha visto, se activa 'mostrarOnboarding'
   runApp(
-    // ◄ MODIFICADO: Envolvemos la app para inicializar tu proveedor globalmente
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => SecurityProvider()..initialize(), // Llama automáticamente a tu init() heurístico
+        ChangeNotifierProvider.value(
+          value: securityProvider,
         ),
       ],
       child: JoshSecurityApp(mostrarOnboarding: !onboardingVisto),
