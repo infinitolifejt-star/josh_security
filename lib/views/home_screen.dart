@@ -1,6 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
 // COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.0 (Modularizado + Provider)
+// OPERACIÓN: Sincronización del HUD con Estado Dinámico de Patrullaje (isEnginePatrolling)
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -101,6 +102,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
     }
 
+    // Configuración estética dinámica del estado de Patrullaje de la Suite Centinela
+    final bool isPatrolling = securityProvider.isEnginePatrolling;
+    final Color patrolStatusColor = isPatrolling ? const Color(0xFF2ECC71) : const Color(0xFF3498DB);
+    final String patrolStatusText = isPatrolling ? "MOTOR CENTINELA: PATRULLANDO" : "MOTOR CENTINELA: EN ESPERA";
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A1128),
       body: SafeArea(
@@ -109,6 +115,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Inyección Reactiva: Barra de Estado de Patrullaje del Núcleo Híbrido
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: patrolStatusColor.withAlpha((0.1 * 255).round()),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: patrolStatusColor.withAlpha((0.3 * 255).round())),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: patrolStatusColor,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      patrolStatusText,
+                      style: TextStyle(
+                        color: patrolStatusColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
               // 1. El HUD superior modularizado
               HudDisplay(
                 vulnerabilityScore: securityProvider.vulnerabilityScore,
@@ -129,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const SizedBox(height: 16),
               _buildInputSection(securityProvider),
               const SizedBox(height: 16),
-              SizedBox(height: 180, child: _buildBottomLogsSection(securityProvider)),
+              SizedBox(height: 180, child: _buildBottomLogsSection(securityProvider, patrolStatusColor)),
               const SizedBox(height: 16),
               // Botón táctico de inyección de telemetría / llamadas simuladas
               _buildSimulationShortcutCard(securityProvider),
@@ -251,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildBottomLogsSection(SecurityProvider securityProvider) {
+  Widget _buildBottomLogsSection(SecurityProvider securityProvider, Color patrolStatusColor) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -278,12 +318,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              // El micro-badge del feed refleja el color de patrullaje dinámico o amber en carga
               Container(
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: securityProvider.isLoading ? Colors.amber : securityProvider.hudColor,
+                  color: securityProvider.isLoading ? Colors.amber : patrolStatusColor,
                 ),
               )
             ],
@@ -332,8 +373,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
+                children: [
+                  const Text(
                     "ENTRENAMIENTO HEURÍSTICO",
                     style: TextStyle(
                       color: Colors.white,
@@ -342,10 +383,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       letterSpacing: 0.5,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     "Simula llamadas sospechosas rápidas.",
-                    style: TextStyle(color: Colors.blueGrey, fontSize: 10),
+                    style: TextStyle(color: Colors.blueGrey[400], fontSize: 10),
                   ),
                 ],
               ),
