@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
-// COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.0 (Modularizado + Provider)
-// OPERACIÓN: Sincronización del HUD con Estado Dinámico de Patrullaje (isEnginePatrolling)
+// COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.1 (Modularizado + Provider)
+// OPERACIÓN: Sincronización del HUD y Remoción de Parámetros Heredados en Bitácora Relacional
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -174,9 +174,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               // Botón táctico de inyección de telemetría / llamadas simuladas
               _buildSimulationShortcutCard(securityProvider),
               const SizedBox(height: 16),
-              // 3. La bitácora integral de resguardo histórica
+              // 3. La bitácora integral de resguardo histórica conectada de manera autónoma a la BD
               ForensicHistoryList(
-                masterBitacora: securityProvider.masterBitacora,
                 onClear: () => securityProvider.clearMasterBitacora(),
               ),
             ],

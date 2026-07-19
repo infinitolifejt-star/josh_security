@@ -1,32 +1,36 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/security/database_service.dart
+// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
+// OP-HEURÍSTICA: Persistencia Relacional Local con Capacidad de Lectura Forense
+// ====================================================================================================
+
 import 'dart:async';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 class DatabaseService {
-  static final DatabaseService instance = DatabaseService._init();
-  static Database? _database;
+  static final DatabaseService instance = DatabaseService._internal();
+  factory DatabaseService() => instance;
+  DatabaseService._internal();
 
-  DatabaseService._init();
+  static Database? _database;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('josh_security.db');
+    _database = await _initDatabase();
     return _database!;
   }
 
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
-
+  Future<Database> _initDatabase() async {
+    final String path = join(await getDatabasesPath(), 'josh_security_centinela.db');
     return await openDatabase(
       path,
       version: 1,
-      onCreate: _createDB,
+      onCreate: _onCreate,
     );
   }
 
-  Future _createDB(Database db, int version) async {
-    // Tabla para registrar eventos forenses y amenazas detectadas
+  Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE forensic_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,39 +42,24 @@ class DatabaseService {
         extra_data TEXT
       )
     ''');
-
-    // Tabla para guardar reglas de interceptación o reputación dinámicas
-    await db.execute('''
-      CREATE TABLE security_rules (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rule_key TEXT UNIQUE NOT NULL,
-        value TEXT NOT NULL,
-        is_active INTEGER NOT NULL DEFAULT 1
-      )
-    ''');
   }
 
-  // --- MÉTODOS CRUD COMPLETOS PARA LOGS FORENSES ---
-
-  Future<int> insertForensicLog(Map<String, dynamic> log) async {
-    final db = await instance.database;
-    return await db.insert('forensic_logs', log);
+  /// Inserta un log forense de forma asíncrona en la base de datos
+  Future<int> insertForensicLog(Map<String, dynamic> logEntry) async {
+    final Database db = await database;
+    return await db.insert(
+      'forensic_logs',
+      logEntry,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
-  Future<List<Map<String, dynamic>>> fetchAllLogs() async {
-    final db = await instance.database;
-    return await db.query('forensic_logs', orderBy: 'timestamp DESC');
-  }
-
-  Future<int> clearAllLogs() async {
-    final db = await instance.database;
-    return await db.delete('forensic_logs');
-  }
-
-  Future<void> close() async {
-    final db = _database;
-    if (db != null) {
-      await db.close();
-    }
+  /// SOLUCIÓN AL ERROR: Recupera todos los logs forenses ordenados cronológicamente (Últimos primero)
+  Future<List<Map<String, dynamic>>> getForensicLogs() async {
+    final Database db = await database;
+    return await db.query(
+      'forensic_logs',
+      orderBy: 'timestamp DESC',
+    );
   }
 }

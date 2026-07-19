@@ -1,5 +1,14 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/security/forensic_report_service.dart
+// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
+// OP-HEURÍSTICA: Motor de Auditoría Inmutable y Compilación de Reportes desde Base de Datos
+// ====================================================================================================
+
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math';
+import 'database_service.dart';
 import 'phone_interceptor_service.dart';
 import 'file_scanner_service.dart';
 
@@ -29,6 +38,9 @@ class ForensicReportService {
   factory ForensicReportService() => _instance;
   ForensicReportService._internal();
 
+  // Instancia del servicio de persistencia local SQLite
+  final DatabaseService _dbService = DatabaseService.instance;
+
   /// Genera una cadena SHA-256 simulada para validar la inmutabilidad del registro
   String _generateIntegrityHash() {
     const String chars = 'abcdef0123456789';
@@ -36,7 +48,23 @@ class ForensicReportService {
     return List.generate(64, (index) => chars[rand.nextInt(chars.length)]).join();
   }
 
+  /// Recupera todos los logs reales guardados en SQLite para alimentar la UI (forensic_history_list)
+  Future<List<Map<String, dynamic>>> fetchHistoricalLogs() async {
+    try {
+      return await _dbService.getForensicLogs();
+    } catch (e, stackTrace) {
+      developer.log(
+        'ERR_FETCH_HISTORICAL_LOGS_FORENSIC_SERVICE',
+        error: e,
+        stackTrace: stackTrace,
+        name: 'josh.security.forensic',
+      );
+      return [];
+    }
+  }
+
   /// Compila de forma automatizada un reporte técnico basado en los eventos del HUD
+  /// e inserta el resultado directamente en el historial forense de SQLite
   Future<ForensicReport> generateAutomatedReport({
     required CallVerdict callVerdict,
     required FileScanVerdict fileVerdict,
@@ -60,21 +88,49 @@ class ForensicReportService {
     if (callVerdict.riskLevel == 'CRÍTICO' || fileVerdict.riskLevel == 'CRÍTICO') {
       dictamen = 'AMENAZA_BLOQUEADA_PREVENTIVAMENTE';
     } else if (callVerdict.riskLevel == 'ADVERTENCIA' || fileVerdict.riskLevel == 'ADVERTENCIA') {
-      dictamen = 'Sugerencia_REVISAR_ALERTAS';
+      dictamen = 'SUGERENCIA_REVISAR_ALERTAS';
     }
 
-    return ForensicReport(
+    final Map<String, dynamic> metadata = {
+      'modulo_auditor': 'JOSH Security - Centinela Analytics Engine',
+      'estandar_seguridad': 'Estructura de Datos Inmutables',
+      'modo_aislamiento_global': (callVerdict.source == DiagnosticSource.local) ? 'ACTIVO' : 'INACTIVO',
+      'privacidad_datos': 'CERO_DATOS_REALES_HARDCODED',
+    };
+
+    final ForensicReport report = ForensicReport(
       reportId: uniqueId,
       generatedAt: timestamp,
       integrityHash: hashVerificacion,
       logsProcesados: logs,
       veredictoFinal: dictamen,
-      metadataSistema: {
-        'modulo_auditor': 'JOSH Security - Centinela Analytics Engine',
-        'estandar_seguridad': 'Estructura de Datos Inmutables',
-        'modo_aislamiento_global': (callVerdict.source == DiagnosticSource.local) ? 'ACTIVO' : 'INACTIVO',
-        'privacidad_datos': 'CERO_DATOS_REALES_HARDCODED',
-      },
+      metadataSistema: metadata,
     );
+
+    // Persistir de forma automática el reporte en la tabla forense relacional
+    try {
+      await _dbService.insertForensicLog({
+        'timestamp': timestamp,
+        'service': 'ForensicReportService',
+        'activity': 'Compilación de Reporte Automatizado $uniqueId',
+        'verdict': dictamen,
+        'matched_rule': 'AUTOMATED_REPORT_GENERATION',
+        'extra_data': jsonEncode({
+          'report_id': uniqueId,
+          'integrity_hash': hashVerificacion,
+          'logs_count': logs.length,
+          'metadata': metadata,
+        }),
+      });
+    } catch (e, stackTrace) {
+      developer.log(
+        'ERR_PERSISTING_AUTOMATED_REPORT',
+        error: e,
+        stackTrace: stackTrace,
+        name: 'josh.security.db',
+      );
+    }
+
+    return report;
   }
 }
