@@ -1,6 +1,7 @@
 // ====================================================================================================
-// ARCHIVO: lib/services/phone_interceptor_service.dart
-// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA
+// ARCHIVO: lib/services/security/phone_interceptor_service.dart
+// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
+// OP-HEURÍSTICA: Refinamiento de Zonas Grises y Acompañamiento Digital
 // ====================================================================================================
 
 import 'dart:async';
@@ -36,15 +37,17 @@ class PhoneInterceptorService {
   factory PhoneInterceptorService() => _instance;
   PhoneInterceptorService._internal();
 
-  /// Simula la verificación de conectividad de red para activar el motor híbrido
+  /// Simula la verificación de conectividad de red para activar el motor híbrido (Dispositivo-Nube)
   Future<bool> _checkNetworkConnectivity() async {
-    // Para pruebas del Modo Avión/Fase de Estrés, simulamos un ping con retraso controlado
-    await Future.delayed(const Duration(milliseconds: 350));
-    // Retornar false simula aislamiento total de red (Modo Avión activo)
-    return false; 
+    // Retardo controlado para simular la latencia de red hacia Render de forma no bloqueante
+    await Future.delayed(const Duration(milliseconds: 250));
+    
+    // Simulación híbrida balanceada: cambia dinámicamente según la hora del sistema para pruebas
+    // Devolver true evalúa vía simulada Cloud, false evalúa Heurística Local pura
+    return DateTime.now().second % 2 == 0;
   }
 
-  /// MÉTODO COMPATIBILIDAD HUD: Retorna un porcentaje o indicador mapeado a partir del veredicto analítico
+  /// MÉTODO COMPATIBILIDAD HUD: Retorna un porcentaje mapeado a partir del veredicto analítico
   Future<double> checkNumber(String phoneNumber) async {
     try {
       final CallVerdict verdict = await analyzeIncomingCall(phoneNumber);
@@ -65,25 +68,25 @@ class PhoneInterceptorService {
       return CallVerdict(
         phoneNumber: 'DESCONOCIDO',
         riskLevel: 'ADVERTENCIA',
-        analysisMessage: 'Número entrante vacío o ilegible. Proceder con precaución.',
+        analysisMessage: 'El número entrante no pudo ser leído de forma correcta. Se recomienda precaución.',
         source: DiagnosticSource.local,
         telemetryDetails: {'error': 'String vacío'},
       );
     }
 
-    // Inspección de conectividad (Garantía del comportamiento Híbrido)
+    // Inspección de conectividad (Garantía de la arquitectura híbrida dispositivo-nube)
     final bool isConnected = await _checkNetworkConnectivity();
     final DiagnosticSource selectedSource = isConnected ? DiagnosticSource.cloud : DiagnosticSource.local;
 
-    // --- MOTOR LOCAL SÍNCRONIZADO (PREFIX MATCHING COLOMBIA) ---
-    // Prefijos críticos de rangos simulados de origen extorsivo de alta recurrencia
+    // --- MOTOR HEURÍSTICO LOCAL SÍNCRONIZADO (COLOMBIA PREFIXES) ---
+    // Prefijos críticos: Números reportados con alta probabilidad de suplantación o fraude agresivo
     final List<String> criticalPrefixes = ['+57315999', '+57321000', '315999', '321000'];
-    // Prefijos de alerta (Llamadas automatizadas, Spoofing institucional corporativo)
+    // Prefijos de advertencia: Rango gris de llamadas comerciales automatizadas masivas o spam molesto
     final List<String> warningPrefixes = ['+57601', '601', '+57300000', '300000'];
 
     bool isCritical = false;
     for (String prefix in criticalPrefixes) {
-      if (cleanNumber.startsWith(prefix)) {
+      if (cleanNumber.contains(prefix)) {
         isCritical = true;
         break;
       }
@@ -92,14 +95,14 @@ class PhoneInterceptorService {
     bool isWarning = false;
     if (!isCritical) {
       for (String prefix in warningPrefixes) {
-        if (cleanNumber.startsWith(prefix)) {
+        if (cleanNumber.contains(prefix)) {
           isWarning = true;
           break;
         }
       }
     }
 
-    // Construcción del payload analítico simulado de ciberseguridad corporativa
+    // Generación del payload simulado para analítica institucional de ciberseguridad
     final String timestamp = DateTime.now().toIso8601String();
     final int trackingId = Random().nextInt(900000) + 100000;
 
@@ -107,13 +110,13 @@ class PhoneInterceptorService {
       return CallVerdict(
         phoneNumber: cleanNumber,
         riskLevel: 'CRÍTICO',
-        analysisMessage: '¡Intento de engaño frenado con éxito! Coincidencia con prefijo de riesgo penitenciario/extorsivo.',
+        analysisMessage: 'Llamada identificada con reportes de fraude previo. Te sugerimos no contestar o verificar la identidad.',
         source: selectedSource,
         telemetryDetails: {
           'tracking_id': 'JOSH-SEC-$trackingId',
           'timestamp': timestamp,
-          'matched_rule': 'CRIT_PREFIX_CO',
-          'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
+          'matched_rule': 'HEURISTIC_CRIT_CO',
+          'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
         },
       );
     }
@@ -122,28 +125,28 @@ class PhoneInterceptorService {
       return CallVerdict(
         phoneNumber: cleanNumber,
         riskLevel: 'ADVERTENCIA',
-        analysisMessage: 'Hay 1 sugerencia de seguridad. Número evasivo o spam masivo potencial.',
+        analysisMessage: 'Llamada catalogada potencialmente como spam corporativo o insistente. Es seguro responder con atención.',
         source: selectedSource,
         telemetryDetails: {
           'tracking_id': 'JOSH-SEC-$trackingId',
           'timestamp': timestamp,
-          'matched_rule': 'WARN_PREFIX_CO',
-          'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
+          'matched_rule': 'HEURISTIC_WARN_CO',
+          'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
         },
       );
     }
 
-    // Escenario Seguro por defecto
+    // Escenario Seguro por defecto: Acompañamiento didáctico y no alarmista
     return CallVerdict(
       phoneNumber: cleanNumber,
       riskLevel: 'SEGURO',
-      analysisMessage: 'JOSH Security está patrullando. Tu entorno está protegido.',
+      analysisMessage: 'JOSH Security está patrullando. Este número no presenta reportes de riesgo.',
       source: selectedSource,
       telemetryDetails: {
         'tracking_id': 'JOSH-SEC-$trackingId',
         'timestamp': timestamp,
-        'matched_rule': 'DEFAULT_CLEAN',
-        'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
+        'matched_rule': 'DEFAULT_CLEAN_CHECK',
+        'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
       },
     );
   }
