@@ -1,10 +1,18 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/security/file_scanner_service.dart
+// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
+// OP-HEURÍSTICA: Escaneo Perimetral y Persistencia de Evidencia Forense en SQLite
+// ====================================================================================================
+
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
+import 'database_service.dart';
 import 'phone_interceptor_service.dart'; // Importa DiagnosticSource
-import '../reputation/reputation_engine.dart'; // Importa el motor de reputación que acabamos de limpiar
+import '../reputation/reputation_engine.dart'; // Importa el motor de reputación
 
 /// Modelo estructurado para el veredicto del análisis de malware en archivos
 class FileScanVerdict {
@@ -35,8 +43,9 @@ class FileScannerService {
   factory FileScannerService() => _instance;
   FileScannerService._internal();
 
-  // Instancia del motor de reputación real
+  // Instancia del motor de reputación real y base de datos relacional
   final ReputationEngine _reputationEngine = ReputationEngine();
+  final DatabaseService _dbService = DatabaseService.instance;
 
   // Constante estricta de restricción preventiva: 15 Megabytes en bytes
   static const int maxSafeSizeBytes = 15 * 1024 * 1024;
@@ -58,8 +67,13 @@ class FileScannerService {
       final bytes = await file.readAsBytes();
       final hash = sha256.convert(bytes);
       return hash.toString();
-    } catch (e) {
-      debugPrint("Error al calcular hash en scanner: $e");
+    } catch (e, stackTrace) {
+      developer.log(
+        "Error al calcular hash en scanner",
+        error: e,
+        stackTrace: stackTrace,
+        name: 'josh.security.scanner',
+      );
       return null;
     }
   }
@@ -73,8 +87,13 @@ class FileScannerService {
       if (await file.exists()) {
         sizeInBytes = await file.length();
       }
-    } catch (e) {
-      debugPrint("No se pudo leer el tamaño del archivo: $e");
+    } catch (e, stackTrace) {
+      developer.log(
+        "No se pudo leer el tamaño del archivo",
+        error: e,
+        stackTrace: stackTrace,
+        name: 'josh.security.scanner',
+      );
     }
 
     final int cleanSize = sizeInBytes < 0 ? 0 : sizeInBytes;
@@ -84,9 +103,13 @@ class FileScannerService {
     final String timestamp = DateTime.now().toIso8601String();
     final int trackingId = Random().nextInt(900000) + 100000;
 
+    FileScanVerdict finalVerdict;
+    String matchedRule;
+
     // --- REGLA PERIMETRAL CRÍTICA: RESTRICCIÓN DE 15MB ---
     if (cleanSize > maxSafeSizeBytes) {
-      return FileScanVerdict(
+      matchedRule = 'PERIMETER_SIZE_LIMIT_EXCEEDED';
+      finalVerdict = FileScanVerdict(
         fileName: cleanName,
         fileSizeInBytes: cleanSize,
         riskLevel: 'CRÍTICO',
@@ -95,11 +118,14 @@ class FileScannerService {
         telemetryDetails: {
           'tracking_id': 'JOSH-MAL-$trackingId',
           'timestamp': timestamp,
-          'matched_rule': 'PERIMETER_SIZE_LIMIT_EXCEEDED',
+          'matched_rule': matchedRule,
           'max_allowed_bytes': maxSafeSizeBytes,
           'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
         },
       );
+      
+      await _persistScanLog(finalVerdict, matchedRule);
+      return finalVerdict;
     }
 
     // --- OBTENCIÓN DE HASH Y VERIFICACIÓN EN NUBE (VIRUSTOTAL) ---
@@ -115,7 +141,8 @@ class FileScannerService {
 
     // Si la reputación en la nube reporta un riesgo alto (>= 0.5)
     if (cloudRiskScore >= 0.5) {
-      return FileScanVerdict(
+      matchedRule = 'CLOUD_SIGNATURE_MATCH';
+      finalVerdict = FileScanVerdict(
         fileName: cleanName,
         fileSizeInBytes: cleanSize,
         riskLevel: 'CRÍTICO',
@@ -124,12 +151,15 @@ class FileScannerService {
         telemetryDetails: {
           'tracking_id': 'JOSH-MAL-$trackingId',
           'timestamp': timestamp,
-          'matched_rule': 'CLOUD_SIGNATURE_MATCH',
+          'matched_rule': matchedRule,
           'file_hash': fileHash ?? 'N/A',
           'risk_score': cloudRiskScore,
           'isolation_mode': 'DESACTIVADO',
         },
       );
+
+      await _persistScanLog(finalVerdict, matchedRule);
+      return finalVerdict;
     }
 
     // --- ESCANEO DE EXTENSIONES O COMPORTAMIENTOS SOSPECHOSOS (HEURÍSTICA LOCAL) ---
@@ -140,7 +170,8 @@ class FileScannerService {
                                        lowerName.endsWith('.scr');
 
     if (isSuspiciousExtension) {
-      return FileScanVerdict(
+      matchedRule = 'SUSPICIOUS_EXEC_EXTENSION';
+      finalVerdict = FileScanVerdict(
         fileName: cleanName,
         fileSizeInBytes: cleanSize,
         riskLevel: 'ADVERTENCIA',
@@ -149,27 +180,54 @@ class FileScannerService {
         telemetryDetails: {
           'tracking_id': 'JOSH-MAL-$trackingId',
           'timestamp': timestamp,
-          'matched_rule': 'SUSPICIOUS_EXEC_EXTENSION',
+          'matched_rule': matchedRule,
+          'file_hash': fileHash ?? 'No calculado (Offline)',
+          'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
+        },
+      );
+    } else {
+      // Escenario de Archivo Seguro
+      matchedRule = 'HEURISTIC_CLEAN_FILE';
+      finalVerdict = FileScanVerdict(
+        fileName: cleanName,
+        fileSizeInBytes: cleanSize,
+        riskLevel: 'SEGURO',
+        analysisMessage: 'JOSH Security analizó el binario. No se detectaron firmas maliciosas locales ni globales.',
+        source: selectedSource,
+        telemetryDetails: {
+          'tracking_id': 'JOSH-MAL-$trackingId',
+          'timestamp': timestamp,
+          'matched_rule': matchedRule,
           'file_hash': fileHash ?? 'No calculado (Offline)',
           'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
         },
       );
     }
 
-    // Escenario de Archivo Seguro
-    return FileScanVerdict(
-      fileName: cleanName,
-      fileSizeInBytes: cleanSize,
-      riskLevel: 'SEGURO',
-      analysisMessage: 'JOSH Security analizó el binario. No se detectaron firmas maliciosas locales ni globales.',
-      source: selectedSource,
-      telemetryDetails: {
-        'tracking_id': 'JOSH-MAL-$trackingId',
-        'timestamp': timestamp,
-        'matched_rule': 'HEURISTIC_CLEAN_FILE',
-        'file_hash': fileHash ?? 'No calculado (Offline)',
-        'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
-      },
-    );
+    // Guardado forense asíncrono en caliente
+    await _persistScanLog(finalVerdict, matchedRule);
+    return finalVerdict;
+  }
+
+  /// Estructura y guarda el registro forense del escaneo dentro de SQLite
+  Future<void> _persistScanLog(FileScanVerdict verdict, String matchedRule) async {
+    try {
+      final Map<String, dynamic> logEntry = {
+        'timestamp': DateTime.now().toIso8601String(),
+        'service': 'FileScannerService',
+        'activity': 'Escaneo de archivo local: ${verdict.fileName} (${verdict.fileSizeInMB.toStringAsFixed(2)} MB)',
+        'verdict': verdict.riskLevel,
+        'matched_rule': matchedRule,
+        'extra_data': jsonEncode(verdict.telemetryDetails),
+      };
+      await _dbService.insertForensicLog(logEntry);
+    } catch (e, stackTrace) {
+      developer.log(
+        'ERR_DATABASE_PERSISTENCE_FILE_SCANNER',
+        error: e,
+        stackTrace: stackTrace,
+        name: 'josh.security.db',
+      );
+    }
   }
 }

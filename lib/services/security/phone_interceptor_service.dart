@@ -1,11 +1,14 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
 // REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
-// OP-HEURÍSTICA: Refinamiento de Zonas Grises y Acompañamiento Digital
+// OP-HEURÍSTICA: Refinamiento de Zonas Grises y Acompañamiento Digital con Persistencia SQLite
 // ====================================================================================================
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math';
+import 'database_service.dart';
 
 /// Enumeración exacta para catalogar el origen del diagnóstico en el HUD (Linter clean)
 enum DiagnosticSource {
@@ -37,6 +40,9 @@ class PhoneInterceptorService {
   factory PhoneInterceptorService() => _instance;
   PhoneInterceptorService._internal();
 
+  // Instancia del servicio de persistencia local SQLite
+  final DatabaseService _dbService = DatabaseService.instance;
+
   /// Simula la verificación de conectividad de red para activar el motor híbrido (Dispositivo-Nube)
   Future<bool> _checkNetworkConnectivity() async {
     // Retardo controlado para simular la latencia de red hacia Render de forma no bloqueante
@@ -65,13 +71,17 @@ class PhoneInterceptorService {
     final String cleanNumber = rawPhoneNumber.replaceAll(RegExp(r'\s+'), '').trim();
     
     if (cleanNumber.isEmpty) {
-      return CallVerdict(
+      final CallVerdict emptyVerdict = CallVerdict(
         phoneNumber: 'DESCONOCIDO',
         riskLevel: 'ADVERTENCIA',
         analysisMessage: 'El número entrante no pudo ser leído de forma correcta. Se recomienda precaución.',
         source: DiagnosticSource.local,
         telemetryDetails: {'error': 'String vacío'},
       );
+
+      // Guardar log de error en la base de datos de forma segura
+      await _persistVerdictLog(emptyVerdict, 'HEURISTIC_EMPTY_ERR');
+      return emptyVerdict;
     }
 
     // Inspección de conectividad (Garantía de la arquitectura híbrida dispositivo-nube)
@@ -106,8 +116,12 @@ class PhoneInterceptorService {
     final String timestamp = DateTime.now().toIso8601String();
     final int trackingId = Random().nextInt(900000) + 100000;
 
+    CallVerdict finalVerdict;
+    String matchedRule;
+
     if (isCritical) {
-      return CallVerdict(
+      matchedRule = 'HEURISTIC_CRIT_CO';
+      finalVerdict = CallVerdict(
         phoneNumber: cleanNumber,
         riskLevel: 'CRÍTICO',
         analysisMessage: 'Llamada identificada con reportes de fraude previo. Te sugerimos no contestar o verificar la identidad.',
@@ -115,14 +129,13 @@ class PhoneInterceptorService {
         telemetryDetails: {
           'tracking_id': 'JOSH-SEC-$trackingId',
           'timestamp': timestamp,
-          'matched_rule': 'HEURISTIC_CRIT_CO',
+          'matched_rule': matchedRule,
           'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
         },
       );
-    }
-
-    if (isWarning) {
-      return CallVerdict(
+    } else if (isWarning) {
+      matchedRule = 'HEURISTIC_WARN_CO';
+      finalVerdict = CallVerdict(
         phoneNumber: cleanNumber,
         riskLevel: 'ADVERTENCIA',
         analysisMessage: 'Llamada catalogada potencialmente como spam corporativo o insistente. Es seguro responder con atención.',
@@ -130,24 +143,53 @@ class PhoneInterceptorService {
         telemetryDetails: {
           'tracking_id': 'JOSH-SEC-$trackingId',
           'timestamp': timestamp,
-          'matched_rule': 'HEURISTIC_WARN_CO',
+          'matched_rule': matchedRule,
+          'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
+        },
+      );
+    } else {
+      // Escenario Seguro por defecto: Acompañamiento didáctico y no alarmista
+      matchedRule = 'DEFAULT_CLEAN_CHECK';
+      finalVerdict = CallVerdict(
+        phoneNumber: cleanNumber,
+        riskLevel: 'SEGURO',
+        analysisMessage: 'JOSH Security está patrullando. Este número no presenta reportes de riesgo.',
+        source: selectedSource,
+        telemetryDetails: {
+          'tracking_id': 'JOSH-SEC-$trackingId',
+          'timestamp': timestamp,
+          'matched_rule': matchedRule,
           'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
         },
       );
     }
 
-    // Escenario Seguro por defecto: Acompañamiento didáctico y no alarmista
-    return CallVerdict(
-      phoneNumber: cleanNumber,
-      riskLevel: 'SEGURO',
-      analysisMessage: 'JOSH Security está patrullando. Este número no presenta reportes de riesgo.',
-      source: selectedSource,
-      telemetryDetails: {
-        'tracking_id': 'JOSH-SEC-$trackingId',
-        'timestamp': timestamp,
-        'matched_rule': 'DEFAULT_CLEAN_CHECK',
-        'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
-      },
-    );
+    // Persistencia asíncrona en caliente obligatoria en SQLite
+    await _persistVerdictLog(finalVerdict, matchedRule);
+
+    return finalVerdict;
+  }
+
+  /// Método auxiliar interno para estructurar y guardar el log en SQLite de forma limpia
+  Future<void> _persistVerdictLog(CallVerdict verdict, String matchedRule) async {
+    try {
+      final Map<String, dynamic> logEntry = {
+        'timestamp': DateTime.now().toIso8601String(),
+        'service': 'PhoneInterceptorService',
+        'activity': 'Análisis de número telefónico: ${verdict.phoneNumber}',
+        'verdict': verdict.riskLevel,
+        'matched_rule': matchedRule,
+        'extra_data': jsonEncode(verdict.telemetryDetails),
+      };
+      await _dbService.insertForensicLog(logEntry);
+    } catch (e, stackTrace) {
+      // Uso de developer.log conforme a las reglas de producción del linter
+      developer.log(
+        'ERR_DATABASE_PERSISTENCE_PHONE_INTERCEPTOR',
+        error: e,
+        stackTrace: stackTrace,
+        name: 'josh.security.db',
+      );
+    }
   }
 }
