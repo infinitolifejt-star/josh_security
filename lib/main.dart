@@ -1,5 +1,5 @@
 // =====================================================================
-// PROJECT CENTINELA: MAIN APPLICATION ENTRY POINT (v4.4.0)
+// PROJECT CENTINELA: MAIN APPLICATION ENTRY POINT (v4.5.0)
 // MÓDULO INTEGRADO DE PREVENCIÓN DE SUSPENSIÓN CLOUD (KEEP-ALIVE)
 // =====================================================================
 import 'dart:async';
@@ -23,20 +23,25 @@ void main() async {
     debugPrint('⚠️ [JOSH SHIELD] Error al inicializar el servicio de fondo: $e');
   }
 
-  // 2. INICIALIZACIÓN PREVIA DEL PROVEEDOR DE SEGURIDAD (Conectado de forma asíncrona)
+  // 2. INICIALIZACIÓN PREVIA DEL PROVEEDOR DE SEGURIDAD Y PREFERENCIAS
   final securityProvider = SecurityProvider();
+  bool onboardingVisto = false;
+
   try {
-    await securityProvider.initialize(); // ◄ Ahora espera de forma segura a que cargue SQLite y los estados
+    await securityProvider.initialize(); // Carga de bitácora local SharedPreferences/SQLite
     debugPrint('📊 [JOSH ENGINE] Base de datos y heurística listas.');
   } catch (e) {
     debugPrint('⚠️ [JOSH ENGINE] Error al inicializar el motor de seguridad: $e');
   }
 
-  // LA ADUANA: Buscamos en la memoria si el usuario ya vio el onboarding
-  final prefs = await SharedPreferences.getInstance();
-  final bool onboardingVisto = prefs.getBool('onboarding_visto') ?? false;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    onboardingVisto = prefs.getBool('onboarding_visto') ?? false;
+  } catch (e) {
+    debugPrint('⚠️ [JOSH MAIN] Error leyendo SharedPreferences de Onboarding: $e');
+  }
 
-  // ⏰ CRONÓMETRO DE REANIMACIÓN AUTOMÁTICA
+  // 3. CRONÓMETRO DE REANIMACIÓN AUTOMÁTICA (Render Keep-Alive)
   Timer.periodic(const Duration(minutes: 14), (timer) async {
     const String url = 'https://josh-security.onrender.com/';
     try {
@@ -50,7 +55,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider.value(
+        ChangeNotifierProvider<SecurityProvider>.value(
           value: securityProvider,
         ),
       ],

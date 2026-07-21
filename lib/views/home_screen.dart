@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
-// COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.1 (Modularizado + Provider)
-// OPERACIÓN: Sincronización del HUD y Remoción de Parámetros Heredados en Bitácora Relacional
+// COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.3 (HUD + Auto-Scroll Logs)
+// OPERACIÓN: Sincronización del HUD, Auto-Scroll en Consola y Optimización de Memoria
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -21,6 +21,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final TextEditingController _targetController = TextEditingController();
+  final ScrollController _logsScrollController = ScrollController();
+  
   late TabController _tabController;
   late AnimationController _rotationController; 
   late AnimationController _pulseController;
@@ -61,38 +63,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _rotationController.dispose(); 
     _pulseController.dispose();
     _targetController.dispose();
+    _logsScrollController.dispose();
     super.dispose();
+  }
+
+  /// Desplaza la consola de telemetría automáticamente al último log registrado
+  void _scrollToBottomLogs() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_logsScrollController.hasClients) {
+        _logsScrollController.animateTo(
+          _logsScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   /// Helper táctico para simular llamadas sospechosas en ráfaga y probar la heurística local
   void _simulateTacticalCall(SecurityProvider provider) {
+    FocusScope.of(context).unfocus(); // Ocultar teclado
     final List<String> suspiciousNumbers = [
       "+57 300 456 7890",
       "+57 315 987 6543",
       "+57 311 222 3333"
     ];
-    // Tomamos un número pseudo-aleatorio basado en los segundos actuales
+    
     final int index = DateTime.now().second % suspiciousNumbers.length;
     final String targetNumber = suspiciousNumbers[index];
 
-    // Sincronizamos los índices de la UI de forma segura
     setState(() {
       _currentTab = 0; 
-      _tabController.animateTo(0); // Forzar tab de llamadas de manera segura
+      _tabController.animateTo(0);
       _targetController.text = targetNumber;
     });
 
-    // Notificamos explícitamente al provider el cambio de pestaña táctico antes de auditar
     provider.updateTabState(0);
-
-    // Ejecutamos la auditoría de inmediato bajo el índice indexado
     provider.executeAuditoria(targetNumber, 0);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Escuchamos el SecurityProvider reactivamente
     final securityProvider = Provider.of<SecurityProvider>(context);
+
+    // Si entran nuevos logs de auditoría, hacemos auto-scroll hacia abajo
+    _scrollToBottomLogs();
 
     // Sincronizamos la animación de rotación del HUD con el estado de carga
     if (securityProvider.isLoading) {
@@ -153,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
 
-              // 1. El HUD superior modularizado
+              // 1. HUD superior modularizado
               HudDisplay(
                 vulnerabilityScore: securityProvider.vulnerabilityScore,
                 verdictText: securityProvider.verdictText,
@@ -162,23 +177,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 rotationController: _rotationController,
               ),
               const SizedBox(height: 16),
-              // 2. El monitor de escudos proactivos en tiempo real
+              
+              // 2. Monitor de escudos proactivos en tiempo real
               ProactiveShieldsMonitor(
                 linksChecked: securityProvider.linksChecked,
                 callsChecked: securityProvider.callsChecked,
                 malwarePrevented: securityProvider.malwarePrevented,
               ),
               const SizedBox(height: 16),
+              
               _buildVectorSelector(),
               const SizedBox(height: 16),
+              
               _buildInputSection(securityProvider),
               const SizedBox(height: 16),
-              SizedBox(height: 180, child: _buildBottomLogsSection(securityProvider, patrolStatusColor)),
+              
+              SizedBox(
+                height: 180, 
+                child: _buildBottomLogsSection(securityProvider, patrolStatusColor),
+              ),
               const SizedBox(height: 16),
+              
               // Botón táctico de inyección de telemetría / llamadas simuladas
               _buildSimulationShortcutCard(securityProvider),
               const SizedBox(height: 16),
-              // 3. La bitácora integral de resguardo histórica conectada de manera autónoma a la BD
+              
+              // 3. Bitácora integral de resguardo histórica conectada a la BD
               ForensicHistoryList(
                 onClear: () => securityProvider.clearMasterBitacora(),
               ),
@@ -270,7 +294,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: ElevatedButton(
             onPressed: securityProvider.isLoading
                 ? null
-                : () => securityProvider.executeAuditoria(_targetController.text.trim(), _currentTab),
+                : () {
+                    FocusScope.of(context).unfocus(); // Esconde el teclado para ver el HUD
+                    securityProvider.executeAuditoria(_targetController.text.trim(), _currentTab);
+                  },
             style: ElevatedButton.styleFrom(
               backgroundColor: securityProvider.hudColor,
               foregroundColor: Colors.black,
@@ -337,6 +364,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           Expanded(
             child: ListView.builder(
+              controller: _logsScrollController,
               itemCount: securityProvider.forensicLogs.length,
               itemBuilder: (context, index) {
                 return Padding(

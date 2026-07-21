@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/forensic_history_list.dart
-// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
+// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO CENTINELA v4.5.3 (TYPO CLEAN)
 // OP-HEURÍSTICA: Interfaz de Bitácora Conectada a Persistencia Reactiva del Provider
 // ====================================================================================================
 
@@ -17,18 +17,27 @@ class ForensicHistoryList extends StatelessWidget {
   });
 
   /// Traduce los esquemas de base de datos a los parámetros visuales del HUD
-  double _calculateHeuristicScore(String verdict) {
-    switch (verdict.toUpperCase()) {
+  double _calculateHeuristicScore(Map<String, dynamic> rawItem) {
+    if (rawItem['score'] != null) {
+      return (rawItem['score'] as num).toDouble();
+    }
+
+    final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString().toUpperCase();
+
+    switch (verdict) {
       case 'AMENAZA_BLOQUEADA_PREVENTIVAMENTE':
       case 'CRÍTICO':
+      case 'PELIGRO':
         return 85.0; // Estado crítico (Rojo)
       case 'SUGERENCIA_REVISAR_ALERTAS':
       case 'ADVERTENCIA':
+      case 'SOSPECHOSO':
         return 45.0; // Advertencia de seguridad (Amarillo)
       case 'SISTEMA_OPERATIVO_SEGURO':
       case 'CONFIABLE':
+      case 'SEGURO':
       default:
-        return 0.0;  // Sistema íntegro (Verde)
+        return 0.0; // Sistema íntegro (Verde)
     }
   }
 
@@ -36,7 +45,7 @@ class ForensicHistoryList extends StatelessWidget {
   Widget build(BuildContext context) {
     // Escuchamos los cambios del proveedor de seguridad de forma reactiva
     final securityProvider = Provider.of<SecurityProvider>(context);
-    
+
     // Obtenemos los registros históricos cacheados en el estado global
     final List<Map<String, dynamic>> dbLogs = securityProvider.historicalLogs;
 
@@ -46,7 +55,15 @@ class ForensicHistoryList extends StatelessWidget {
       return const Color(0xFF00E676);
     }
 
-    IconData getCardIcon(double score) {
+    IconData getCardIcon(double score, String vector) {
+      if (vector.contains('TEL') || vector.contains('PHONE')) {
+        return Icons.phone_in_talk_outlined;
+      } else if (vector.contains('URL') || vector.contains('LINK') || vector.contains('PHISHING')) {
+        return Icons.link_rounded;
+      } else if (vector.contains('MALWARE') || vector.contains('BIN')) {
+        return Icons.security_rounded;
+      }
+      
       if (score >= 70) return Icons.gpp_bad_outlined;
       if (score >= 35) return Icons.report_problem_outlined;
       return Icons.verified_user_outlined;
@@ -84,10 +101,13 @@ class ForensicHistoryList extends StatelessWidget {
               if (dbLogs.isNotEmpty)
                 IconButton(
                   icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF5252), size: 20),
-                  tooltip: "Limpiar Consola HUD",
+                  tooltip: "Limpiar Bitácora Local",
                   constraints: const BoxConstraints(),
                   padding: EdgeInsets.zero,
-                  onPressed: onClear,
+                  onPressed: () async {
+                    await securityProvider.clearMasterBitacora();
+                    onClear();
+                  },
                 ),
             ],
           ),
@@ -100,7 +120,7 @@ class ForensicHistoryList extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   child: Center(
                     child: Text(
-                      "No hay registros de amenazas en la persistencia local SQLite.",
+                      "No hay registros de auditoría en la bitácora local.",
                       style: TextStyle(
                         color: Colors.blueGrey[500],
                         fontSize: 12,
@@ -116,11 +136,12 @@ class ForensicHistoryList extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final rawItem = dbLogs[index];
 
-                    final String verdict = rawItem['verdict'] ?? 'CONFIABLE';
-                    final double score = _calculateHeuristicScore(verdict);
-                    final String vector = (rawItem['service'] ?? 'CENTINELA').toUpperCase();
-                    final String target = rawItem['activity'] ?? 'Análisis de perímetro';
-                    final String timestamp = rawItem['timestamp'] ?? '';
+                    // Mapeo flexible e híbrido de variables
+                    final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString();
+                    final double score = _calculateHeuristicScore(rawItem);
+                    final String vector = (rawItem['vector'] ?? rawItem['service'] ?? 'CENTINELA').toString().toUpperCase();
+                    final String target = (rawItem['target'] ?? rawItem['activity'] ?? 'Análisis de perímetro').toString();
+                    final String timestamp = (rawItem['timestamp'] ?? rawItem['scanned_at'] ?? '').toString();
                     final Color cardColor = getCardColor(score);
 
                     return Container(
@@ -135,7 +156,7 @@ class ForensicHistoryList extends StatelessWidget {
                         leading: CircleAvatar(
                           backgroundColor: cardColor.withAlpha((0.1 * 255).round()),
                           child: Icon(
-                            getCardIcon(score),
+                            getCardIcon(score, vector),
                             color: cardColor,
                             size: 20,
                           ),
@@ -152,7 +173,7 @@ class ForensicHistoryList extends StatelessWidget {
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4.0),
                           child: Text(
-                            "$vector • $timestamp",
+                            timestamp.isNotEmpty ? "$vector • $timestamp" : vector,
                             style: TextStyle(
                               color: Colors.blueGrey[300],
                               fontSize: 10,
