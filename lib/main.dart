@@ -1,6 +1,6 @@
 // =====================================================================
-// PROJECT CENTINELA: MAIN APPLICATION ENTRY POINT (v4.5.0)
-// MÓDULO INTEGRADO DE PREVENCIÓN DE SUSPENSIÓN CLOUD (KEEP-ALIVE)
+// PROJECT CENTINELA: MAIN APPLICATION ENTRY POINT (v4.5.1)
+// MÓDULO INTEGRADO DE OVERLAY Y PREVENCIÓN DE SUSPENSIÓN CLOUD
 // =====================================================================
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -10,7 +10,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'services/background_shield.dart';
 import 'views/home_screen.dart';
 import 'views/onboarding_screen.dart';
+import 'views/widgets/overlay_card.dart';
 import 'providers/security_provider.dart'; 
+
+/// Punto de entrada aislado de la máquina virtual de Dart para la ventana flotante (Overlay)
+@pragma('vm:entry-point')
+void overlayMain() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: OverlayCard(),
+    ),
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
