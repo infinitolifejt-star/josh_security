@@ -19,6 +19,10 @@
     <!-- Permiso para superposición táctica (Overlay Pop-up) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
+    <!-- PERMISOS CENTINELA: Detección de Instalación de APKs/Paquetes -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission"/>
+
     <application
         android:label="josh_security"
         android:name="${applicationName}"
@@ -48,6 +52,18 @@
             android:name="id.flutter.flutter_background_service.WatchdogReceiver"
             android:enabled="true"
             android:exported="true"/>
+
+        <!-- RECEPTOR CENTINELA: Intercepción de Instalación/Actualización de APKs -->
+        <receiver
+            android:name=".ApkInstallReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
 
         <activity
             android:name=".MainActivity"

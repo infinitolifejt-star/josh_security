@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/providers/security_provider.dart
-// REEMPLAZO TOTAL — LOGICA DE NUMERACIÓN Y HEURÍSTICA DE ESTRUCTURA MEJORADA
+// REEMPLAZO TOTAL — INTEGRACIÓN CENTINELA AUTOMÁTICA EN SEGUNDO PLANO
 // COMPONENTE: Gestor de Estado Central (SecurityProvider) - JOSH Security
 // ====================================================================================================
 
@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -22,6 +23,9 @@ class SecurityProvider with ChangeNotifier {
   final PhoneInterceptorService _phoneInterceptor = PhoneInterceptorService();
   final FileScannerService _fileScanner = FileScannerService();
   final ReputationEngine _reputationEngine = ReputationEngine();
+
+  // Canal de plataforma nativo para interceptor de instalaciones APK
+  static const MethodChannel _apkChannel = MethodChannel('josh_security/apk_centinel');
 
   // Estados del HUD
   double _vulnerabilityScore = 0.0;
@@ -78,11 +82,63 @@ class SecurityProvider with ChangeNotifier {
   bool get isAnalyzingCall => _isAnalyzingCall;
   PhoneInterceptorService get phoneInterceptor => _phoneInterceptor;
 
+  SecurityProvider() {
+    initializeApkCentinel();
+  }
+
   Future<void> initialize() async {
     _initKeepAliveTimer();
     _checkEngineStatus();
     await loadHistoricalLogs();
     _startProactivePatrol();
+  }
+
+  /// Receptor proactivo para eventos de instalación de APK detectados desde Kotlin
+  void initializeApkCentinel() {
+    _apkChannel.setMethodCallHandler((call) async {
+      if (call.method == "onApkInstalled") {
+        final Map<dynamic, dynamic> data = call.arguments;
+        final String appName = (data['appName'] ?? 'Aplicación Desconocida').toString();
+        final String apkPath = (data['apkPath'] ?? '').toString();
+        final String packageName = (data['packageName'] ?? '').toString();
+
+        _forensicLogs.insert(0, "🚨 [CENTINELA] APK instalada detectada: $appName ($packageName)");
+
+        if (apkPath.isNotEmpty) {
+          final File apkFile = File(apkPath);
+          double apkScore = 0.0;
+          String apkVerdict = "SEGURO";
+
+          if (await apkFile.exists()) {
+            final fileScanVerdict = await _fileScanner.scanLocalFile(apkFile);
+            apkVerdict = fileScanVerdict.riskLevel;
+            apkScore = apkVerdict == 'CRÍTICO' ? 95.0 : (apkVerdict == 'SOSPECHOSO' ? 50.0 : 0.0);
+          } else {
+            // Evaluación heurística por paquete
+            final localEval = _evaluateLocalHeuristics(packageName, 2);
+            apkScore = localEval['score'];
+            apkVerdict = localEval['verdict'];
+          }
+
+          if (apkScore >= 70.0) {
+            _malwarePrevented += 1;
+          }
+
+          // Inserción directa en la Bitácora Histórica de Resguardo
+          _masterBitacora.insert(0, {
+            'id': DateTime.now().millisecondsSinceEpoch.toString(),
+            'timestamp': DateTime.now().toIso8601String().substring(11, 19),
+            'target': "$appName ($packageName)",
+            'score': apkScore,
+            'verdict': apkVerdict,
+            'vector': "INSTALACIÓN APK",
+          });
+
+          await _guardarBitacoraLocalmente();
+          notifyListeners();
+        }
+      }
+    });
   }
 
   Future<void> loadHistoricalLogs() async {
@@ -299,13 +355,13 @@ class SecurityProvider with ChangeNotifier {
         return {'score': 45.0, 'verdict': 'SOSPECHOSO'};
       }
 
-      // 4. Lógica de longitud (Colombia: Celulares y Fijos = 10 dígitos)
+      // 4. Lógica de longitud (Estructura estándar)
       final len = digitsOnly.length;
       if (len == 10 && (digitsOnly.startsWith("3") || digitsOnly.startsWith("60"))) {
-        return {'score': 2.0, 'verdict': 'SEGURO'}; // Estructura válida Colombia
+        return {'score': 2.0, 'verdict': 'SEGURO'};
       }
 
-      // Números atípicos por longitud (muy cortos o desproporcionadamente largos)
+      // Números atípicos por longitud
       if (len > 0 && (len < 7 || len > 14)) {
         return {'score': 68.0, 'verdict': 'SOSPECHOSO'};
       }
