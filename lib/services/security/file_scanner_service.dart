@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/file_scanner_service.dart
-// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
+// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO CENTINELA v4.5.1
 // OP-HEURÍSTICA: Escaneo Perimetral y Persistencia de Evidencia Forense en SQLite
 // ====================================================================================================
 
@@ -239,7 +239,7 @@ class FileScannerService {
       await _dbService.insertForensicLog(logEntry);
     } catch (e, stackTrace) {
       developer.log(
-        'ERR_DATABASE_PERSISTENCE_FILE_SCANNER - Fallo controlado para evitar romper el hilo UI',
+        'ERR_DATABASE_PERSISTENCE_FILE_SCANNER - Fallo controlled para evitar romper el hilo UI',
         error: e,
         stackTrace: stackTrace,
         name: 'josh.security.db',
