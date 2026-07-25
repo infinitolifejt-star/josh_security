@@ -8,11 +8,28 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONArray
+import org.json.JSONObject
 
 class ApkInstallReceiver : BroadcastReceiver() {
 
     companion object {
         var methodChannel: MethodChannel? = null
+        private const val PREFS_NAME = "josh_security_pending_apks"
+        private const val KEY_PENDING_LIST = "pending_apks_json"
+
+        // Método auxiliar para guardar eventos cuando la app está cerrada
+        fun savePendingApk(context: Context, payload: Map<String, String>) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val currentJsonStr = prefs.getString(KEY_PENDING_LIST, "[]") ?: "[]"
+            
+            val jsonArray = JSONArray(currentJsonStr)
+            val newObject = JSONObject(payload)
+            jsonArray.put(newObject)
+
+            prefs.edit().putString(KEY_PENDING_LIST, jsonArray.toString()).apply()
+            Log.d("ApkInstallReceiver", "💾 Guardado en SharedPreferences Nativo para revisión posterior: ${payload["appName"]}")
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -34,15 +51,20 @@ class ApkInstallReceiver : BroadcastReceiver() {
 
                 Log.d("ApkInstallReceiver", "📦 App: $appName | Ruta APK: $apkPath")
 
-                // Enviar la metadata a Flutter para escaneo y persistencia
                 val payload = mapOf(
                     "packageName" to packageName,
                     "appName" to appName,
                     "apkPath" to apkPath
                 )
 
-                Handler(Looper.getMainLooper()).post {
-                    methodChannel?.invokeMethod("onApkInstalled", payload)
+                if (methodChannel != null) {
+                    // La app está abierta o en segundo plano activo
+                    Handler(Looper.getMainLooper()).post {
+                        methodChannel?.invokeMethod("onApkInstalled", payload)
+                    }
+                } else {
+                    // La app está cerrada (Killed State): Guardamos localmente
+                    savePendingApk(context, payload)
                 }
 
             } catch (e: PackageManager.NameNotFoundException) {

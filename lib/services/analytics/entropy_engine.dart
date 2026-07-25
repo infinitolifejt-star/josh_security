@@ -1,31 +1,48 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/analytics/entropy_engine.dart
+// MOTOR MATEMÁTICO DE ENTROPÍA DE SHANNON Y ANÁLISIS PATRÓN TEMPORAL v4.6
+// ====================================================================================================
+
 import '../core/models.dart';
 import '../core/math_utils.dart';
 
 class EntropyEngine {
-  /// Analiza la estructura del número telefónico calculando su entropía de Shannon con salvaguarda
-  double analyzeNumberStructure(String phone) {
-    final normalized = phone.replaceAll(RegExp(r'[^0-9]'), '');
-    if (normalized.isEmpty) return 0.0;
-    
-    final double score = MathUtils.shannonEntropy(normalized);
-    return (score.isNaN || score.isInfinite || score < 0.0) ? 0.0 : score;
+  /// Analiza la estructura entrópica de un texto (números de teléfono o URLs)
+  /// Retorna un puntaje normalizado de 0.0 a 100.0
+  double analyzeNumberStructure(String input) {
+    final cleanInput = input.trim();
+    if (cleanInput.isEmpty) return 0.0;
+
+    // Calculamos la entropía pura de Shannon mediante MathUtils
+    final double rawEntropy = MathUtils.shannonEntropy(cleanInput);
+
+    if (rawEntropy.isNaN || rawEntropy.isInfinite || rawEntropy <= 0.0) {
+      return 0.0;
+    }
+
+    // Normalizamos la entropía (donde > 3.8 suele indicar alta aleatoriedad/phishing/botnet)
+    // convirtiéndola a una escala de riesgo de 0.0 a 100.0
+    final double normalizedRisk = (rawEntropy / 4.5) * 100.0;
+    return normalizedRisk.clamp(0.0, 100.0);
   }
 
-  /// Evalúa la frecuencia de llamadas en las últimas 24 horas mitigando condiciones de carrera
+  /// Evalúa la frecuencia de llamadas o conexiones en las últimas 24 horas
   double analyzeFrequency(List<CallRecord> history) {
     if (history.isEmpty) return 0.0;
 
-    // Anclaje de tiempo inmutable para el hilo de ejecución asíncrono
+    // Anclaje inmutable de tiempo
     final DateTime frozenNow = DateTime.now();
-    
+
     final int recentCalls = history.where((call) {
       return frozenNow.difference(call.timestamp).inHours < 24;
     }).length;
 
-    return MathUtils.normalize(recentCalls.toDouble(), 0.0, 50.0);
+    // Normalización: 50 o más llamadas en 24h representa el 100% de riesgo de spam
+    final double normalized = MathUtils.normalize(recentCalls.toDouble(), 0.0, 50.0);
+    return (normalized * 100.0).clamp(0.0, 100.0);
   }
 
-  /// Mide la densidad de riesgo según llamadas entrantes en horarios no laborales o nocturnos (0-5 AM)
+  /// Mide la densidad de riesgo según eventos entrantes en horarios vulnerables/nocturnos (0-5 AM)
   double analyzeTimeRiskDensity(List<CallRecord> history) {
     if (history.isEmpty) return 0.0;
 
@@ -34,21 +51,20 @@ class EntropyEngine {
       return hour >= 0 && hour <= 5;
     }).length;
 
-    return MathUtils.normalize(nightCalls.toDouble(), 0.0, 20.0);
+    // Normalización: 20 llamadas nocturnas en el historial representan el riesgo máximo
+    final double normalized = MathUtils.normalize(nightCalls.toDouble(), 0.0, 20.0);
+    return (normalized * 100.0).clamp(0.0, 100.0);
   }
 
-  /// Analiza si las llamadas son ráfagas automatizadas (Duración menor a 10 segundos) con protección contra división por cero
+  /// Analiza si los eventos corresponden a ráfagas automatizadas (Duración < 10s)
   double analyzeDurationPattern(List<CallRecord> history) {
-    if (history.isEmpty) return 0.0;
-
-    final int totalDuration = history.fold(0, (sum, call) => sum + call.durationSeconds);
-    
-    // Protección forense contra listas corruptas de longitud cero
     final int historyCount = history.length;
     if (historyCount == 0) return 0.0;
-    
-    final double avg = totalDuration / historyCount;
 
-    return avg < 10.0 ? 1.0 : 0.0; // Llamadas demasiado cortas delatan posible bot o spam automatizado
+    final int totalDuration = history.fold(0, (sum, call) => sum + call.durationSeconds);
+    final double avgDuration = totalDuration / historyCount;
+
+    // Retorna 100.0 de riesgo si el promedio de llamada es una ráfaga perdida (< 10 seg)
+    return avgDuration < 10.0 ? 100.0 : 0.0;
   }
 }

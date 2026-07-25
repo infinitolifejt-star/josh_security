@@ -1,3 +1,8 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/learning/learning_engine.dart
+// CEREBRO HEURÍSTICO Y MOTOR DE APRENDIZAJE ADAPTATIVO EN TIEMPO REAL v4.6
+// ====================================================================================================
+
 import '../security/phone_interceptor_service.dart';
 
 /// Modelo de evento de seguridad registrado por el motor heurístico local
@@ -15,7 +20,7 @@ class HeuristicEvent {
 
 /// Cerebro heurístico local de Centinela para detectar patrones de ataque dirigidos
 class LearningEngine {
-  // Patrón Singleton para acceso global seguro
+  // Patrón Singleton para acceso global único y seguro
   static final LearningEngine _instance = LearningEngine._internal();
   factory LearningEngine() => _instance;
   LearningEngine._internal();
@@ -32,25 +37,31 @@ class LearningEngine {
     "global": 0.0,
   };
 
-  /// Ajusta el Score final calculando las desviaciones globales aprendidas con acotamiento estricto (0.0 - 1.0)
+  /// Ajusta el Score final calculando las desviaciones globales aprendidas (Escala 0.0 - 100.0)
   double adjustScore(double score) {
     final double adjusted = score + (_biases["global"] ?? 0.0);
-    return adjusted.clamp(0.0, 1.0);
+    return adjusted.clamp(0.0, 100.0);
   }
 
-  /// Actualiza dinámicamente la matriz de reputación comunitaria local según la confirmación de fraude
-  void updateCommunityScore(Map<String, double> matrix, String phone, bool isFraud) {
-    if (phone.trim().isEmpty) return;
+  /// Actualiza dinámicamente la matriz de reputación comunitaria local según confirmación de fraude
+  void updateCommunityScore(Map<String, double> matrix, String identifier, bool isFraud) {
+    final String cleanKey = identifier.trim();
+    if (cleanKey.isEmpty) return;
 
-    // NOTA: [MIGRACIÓN CENTINELA] Sincronización asíncrona con el cerebro en Render planificada para Fase 2.
-    matrix[phone] = isFraud ? 1.0 : 0.0;
+    // Asigna 100.0 para fraude confirmado o 0.0 para limpio
+    matrix[cleanKey] = isFraud ? 100.0 : 0.0;
   }
 
-  /// Registra un veredicto de llamada en el historial heurístico y retorna el score de riesgo recalculado (0.0 - 100.0)
+  /// Registra un veredicto en el historial heurístico y retorna el score de riesgo recalculado (0.0 - 100.0)
   double registerAndEvaluatePattern(CallVerdict verdict) {
-    final now = DateTime.now();
-    
-    // 1. Registrar únicamente eventos sospechosos o críticos
+    final DateTime now = DateTime.now();
+
+    // 1. Limpiar primero eventos viejos fuera de la ventana táctica de 5 minutos
+    _recentEvents.removeWhere((event) =>
+      now.difference(event.timestamp).inMinutes >= _timeWindowMinutes
+    );
+
+    // 2. Registrar el evento actual únicamente si representa sospecha o riesgo real
     if (verdict.riskLevel == 'ADVERTENCIA' || verdict.riskLevel == 'CRÍTICO') {
       _recentEvents.add(
         HeuristicEvent(
@@ -61,37 +72,32 @@ class LearningEngine {
       );
     }
 
-    // 2. Limpiar eventos antiguos fuera de la ventana de 5 minutos
-    _recentEvents.removeWhere((event) => 
-      now.difference(event.timestamp).inMinutes >= _timeWindowMinutes
-    );
-
-    // 3. Evaluar ráfagas (Análisis de Estrés)
+    // 3. Evaluar ráfagas / Ataques coordinados (Análisis de Estrés)
     double anomalyMultiplier = 1.0;
     if (_recentEvents.length >= _stressThresholdEvents) {
-      // Elevación exponencial por sospecha de campaña coordinada de extorsión
-      anomalyMultiplier = 1.5;
+      // Multiplicador de elevación por sospecha de campaña activa o extorsión masiva
+      anomalyMultiplier = 1.25;
     }
 
-    // 4. Calcular el score base (0.0 - 100.0)
+    // 4. Calcular el score base en escala 0.0 - 100.0
     double baseScore = 0.0;
     if (verdict.riskLevel == 'CRÍTICO') {
-      baseScore = 80.0;
+      baseScore = 85.0;
     } else if (verdict.riskLevel == 'ADVERTENCIA') {
-      baseScore = 40.0;
+      baseScore = 45.0;
     } else {
-      baseScore = 10.0;
+      baseScore = 5.0;
     }
 
-    // 5. Aplicar multiplicador heurístico y acotar a límites lógicos
-    double finalScore = baseScore * anomalyMultiplier;
-    return finalScore.clamp(0.0, 100.0);
+    // 5. Aplicar multiplicador y acotar estrictamente a límites de interfaz (0 - 100)
+    final double finalScore = (baseScore * anomalyMultiplier);
+    return adjustScore(finalScore);
   }
 
-  /// Retorna la cantidad de amenazas activas en la ventana de tiempo actual
+  /// Retorna la cantidad de amenazas activas registradas en la ventana móvil actual
   int get activeThreatsInWindow => _recentEvents.length;
 
-  /// Limpia la sesión de aprendizaje heurístico
+  /// Reinicia la sesión de aprendizaje heurístico en memoria
   void clearLearningSession() {
     _recentEvents.clear();
   }
