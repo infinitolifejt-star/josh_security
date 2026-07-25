@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
-// MOTOR DE INTERCEPTACIÓN TELEFÓNICA E INTEGRACIÓN HEURÍSTICA Y TELEMETRÍA DE IA v4.6
+// MOTOR DE INTERCEPTACIÓN TELEFÓNICA E INTEGRACIÓN HEURÍSTICA Y TELEMETRÍA DE IA v4.7
 // ====================================================================================================
 
 import 'dart:async';
@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:math';
 import 'database_service.dart';
+import 'security_simulator_service.dart';
 
 /// Enumeración para catalogar el origen del diagnóstico
 enum DiagnosticSource {
@@ -39,69 +40,52 @@ class PhoneInterceptorService {
   PhoneInterceptorService._internal();
 
   final DatabaseService _dbService = DatabaseService.instance;
+  final SecuritySimulatorService _simulatorService = SecuritySimulatorService();
 
   // Prefijos/Indicativos internacionales de alto riesgo (Sincronizado con matriz global)
   static final Set<String> _criticalCountryCodes = {
     '234', '254', '381', '216', '225', '233', '92', '880', '371', '370', '881', '882', '883', '870'
   };
 
-  /// Pool de escenarios tácticos para el Simulador HUD
-  final List<Map<String, dynamic>> _simulationPool = [
-    {
-      'number': '+234 812 345 6789',
-      'caller': 'Llamada Internacional Sospechosa (Nigeria)',
-      'risk': 'CRÍTICO',
-      'score': 92.0,
-      'reason': 'Prefijo internacional de alta incidencia en estafas VoIP.'
-    },
-    {
-      'number': '+57 300 222 3333',
-      'caller': 'Marcador Automático / Botnet',
-      'risk': 'CRÍTICO',
-      'score': 88.0,
-      'reason': 'Patrón de repetición de dígitos por ráfaga (Alta Entropía).'
-    },
-    {
-      'number': '+57 315 999 0000',
-      'caller': 'Posible Suplantación Bancaria (Spoofing)',
-      'risk': 'CRÍTICO',
-      'score': 95.0,
-      'reason': 'Número reportado en base comunitaria de extorsión.'
-    },
-    {
-      'number': '+57 601 987 6543',
-      'caller': 'Número Fijo Desconocido (Bogotá)',
-      'risk': 'ADVERTENCIA',
-      'score': 55.0,
-      'reason': 'Llamada comercial o fuera de lista de contactos habituales.'
-    },
-    {
-      'number': '+1 800 555 0199',
-      'caller': 'Servicio Comercial No Verificado',
-      'risk': 'ADVERTENCIA',
-      'score': 48.0,
-      'reason': 'Línea 800 internacional sin registro de reputación limpia.'
-    },
-    {
-      'number': '+57 310 456 7890',
-      'caller': 'Contacto Frecuente / Verificado',
-      'risk': 'SEGURO',
-      'score': 5.0,
-      'reason': 'Número móvil estándar con patrón de variabilidad limpia.'
-    },
-    {
-      'number': '123',
-      'caller': 'Línea de Emergencia Nacional',
-      'risk': 'SEGURO',
-      'score': 0.0,
-      'reason': 'Número oficial de servicios de emergencia verificado.'
-    }
-  ];
-
-  /// Genera una llamada simulada aleatoria para pruebas HUD
+  /// Genera una llamada simulada ALEATORIA Y DINÁMICA rotando entre Verde, Amarillo y Rojo
   Map<String, dynamic> getRandomSimulatedCall() {
-    final random = Random();
-    return _simulationPool[random.nextInt(_simulationPool.length)];
+    final dynamicVector = _simulatorService.generateDynamicPhoneVector();
+    final String generatedNumber = dynamicVector['target'];
+    final String expectedClassification = dynamicVector['expectedClassification'];
+
+    double score;
+    String callerName;
+    String reason;
+
+    switch (expectedClassification) {
+      case 'CRÍTICO': // 🔴 ROJO
+        score = 85.0 + Random().nextDouble() * 15.0; // 85% a 100%
+        callerName = 'Llamada Sospechosa / Botnet';
+        reason = 'Indicativo internacional de alto riesgo o patrón de entropía en ráfaga.';
+        break;
+
+      case 'ADVERTENCIA': // 🟡 AMARILLO
+        score = 35.0 + Random().nextDouble() * 30.0; // 35% a 65%
+        callerName = 'Número Fijo / Comercial No Verificado';
+        reason = 'Línea corporativa sin registro previo en la libreta de contactos.';
+        break;
+
+      case 'SEGURO': // 🟢 VERDE
+      default:
+        score = Random().nextDouble() * 20.0; // 0% a 20%
+        callerName = 'Contacto Limpio / Frecuente';
+        reason = 'Número con comportamiento estándar y libre de reportes de riesgo.';
+        break;
+    }
+
+    return {
+      'number': generatedNumber,
+      'caller': callerName,
+      'risk': expectedClassification,
+      'score': double.parse(score.toStringAsFixed(1)),
+      'reason': reason,
+      'timestamp': dynamicVector['timestamp'],
+    };
   }
 
   Future<bool> _checkNetworkConnectivity() async {
