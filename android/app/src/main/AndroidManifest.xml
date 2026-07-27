@@ -11,10 +11,12 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS"/>
     <uses-permission android:name="android.permission.READ_SMS"/>
 
-    <!-- Permisos para ejecución persistente y encendido del sistema -->
+    <!-- Permisos para ejecución persistente y Foreground Services (Android 14+) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     
     <!-- Permiso para superposición táctica (Overlay Pop-up) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
@@ -40,12 +42,16 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"> 
         
-        <!-- Servicio en Segundo Plano del Motor Centinela -->
+        <!-- Servicio en Segundo Plano del Motor Centinela (Acepta múltiples tipos para evitar choque con Android 14/15) -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="phoneCall"
+            android:foregroundServiceType="phoneCall|dataSync|specialUse"
             android:exported="false"
-            tools:replace="android:exported" />
+            tools:replace="android:exported,android:foregroundServiceType">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Monitoreo heurístico perimetral de llamadas y seguridad en tiempo real." />
+        </service>
 
         <!-- Receptor de eventos de encendido del dispositivo -->
         <receiver
@@ -62,7 +68,11 @@
         <receiver
             android:name="id.flutter.flutter_background_service.WatchdogReceiver"
             android:enabled="true"
-            android:exported="true"/>
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
 
         <!-- RECEPTOR CENTINELA: Intercepción de Instalación/Actualización de APKs -->
         <receiver

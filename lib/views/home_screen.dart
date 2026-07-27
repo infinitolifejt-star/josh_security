@@ -1,12 +1,14 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
-// COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.4 (Fix Duplicate Padding)
-// OPERACIÓN: Sincronización del HUD, Auto-Scroll en Consola y Borrado Visual de Bitácora
+// COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.8 (Escucha Inter-Isolate & Overlay)
+// OPERACIÓN: Sincronización del HUD, Auto-Scroll en Consola, Borrado Visual, Simulación y Recepción de Llamadas Reales
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/security_provider.dart';
+import '../services/security/overlay_service.dart';
 import 'widgets/hud_display.dart';
 import 'widgets/proactive_shields_monitor.dart';
 import 'widgets/forensic_history_list.dart';
@@ -53,6 +55,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         Provider.of<SecurityProvider>(context, listen: false).updateTabState(_currentTab);
       }
     });
+
+    // 📞 ESCUCHA DE EVENTOS DESDE EL ISOLATE DE SEGUNDO PLANO
+    FlutterBackgroundService().on('incoming_call').listen((event) {
+      if (event != null && mounted) {
+        final String number = event['number'] ?? '';
+        final String riskLevel = event['riskLevel'] ?? 'DESCONOCIDO';
+        final String message = event['message'] ?? '';
+
+        final provider = Provider.of<SecurityProvider>(context, listen: false);
+        
+        // Se ejecuta la auditoría del vector llamada para sincronizar UI y Bitácora
+        if (number.isNotEmpty) {
+          provider.executeAuditoria(number, 0);
+        }
+
+        // Se invoca el overlay en pantalla
+        OverlayService.showWarningOverlay(
+          phoneNumber: number,
+          riskLevel: riskLevel,
+          message: message,
+        );
+      }
+    });
+
+    FlutterBackgroundService().on('call_ended').listen((event) {
+      if (mounted) {
+        OverlayService.closeOverlay();
+      }
+    });
   }
 
   @override
@@ -77,7 +108,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  void _simulateTacticalCall(SecurityProvider provider) {
+  /// Ejecuta la simulación táctica y despliega el Overlay real en pantalla
+  Future<void> _simulateTacticalCall(SecurityProvider provider) async {
     FocusScope.of(context).unfocus();
     final List<String> suspiciousNumbers = [
       "+57 300 456 7890",
@@ -96,6 +128,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     provider.updateTabState(0);
     provider.executeAuditoria(targetNumber, 0);
+
+    // 🚀 Lanza la alerta flotante en pantalla (Overlay) para pruebas
+    await OverlayService.showWarningOverlay(
+      phoneNumber: targetNumber,
+      riskLevel: 'CRÍTICO',
+      message: 'Llamada no identificada con patrón de extorsión reportado.',
+    );
   }
 
   @override
@@ -417,7 +456,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    "Simula llamadas sospechosas rápidas.",
+                    "Simula llamadas sospechosas y dispara Overlay.",
                     style: TextStyle(color: Colors.blueGrey[400], fontSize: 10),
                   ),
                 ],

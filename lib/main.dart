@@ -1,5 +1,5 @@
 // =====================================================================
-// PROJECT CENTINELA: MAIN APPLICATION ENTRY POINT (v4.5.1)
+// PROJECT CENTINELA: MAIN APPLICATION ENTRY POINT (v4.5.8)
 // MÓDULO INTEGRADO DE OVERLAY Y PREVENCIÓN DE SUSPENSIÓN CLOUD
 // =====================================================================
 import 'dart:async';
