@@ -1,5 +1,5 @@
 // =====================================================================
-// PROJECT CENTINELA: MAIN APPLICATION ENTRY POINT (v4.5.8)
+// PROJECT JOSH SECURITY: MAIN APPLICATION ENTRY POINT
 // MÓDULO INTEGRADO DE OVERLAY Y PREVENCIÓN DE SUSPENSIÓN CLOUD
 // =====================================================================
 import 'dart:async';
@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'services/background_shield.dart';
 import 'views/home_screen.dart';
 import 'views/onboarding_screen.dart';
@@ -54,16 +55,8 @@ void main() async {
     debugPrint('⚠️ [JOSH MAIN] Error leyendo SharedPreferences de Onboarding: $e');
   }
 
-  // 3. CRONÓMETRO DE REANIMACIÓN AUTOMÁTICA (Render Keep-Alive)
-  Timer.periodic(const Duration(minutes: 14), (timer) async {
-    const String url = 'https://josh-security.onrender.com/';
-    try {
-      debugPrint('🛰️ [KEEP-ALIVE] Transmitiendo pulso preventivo para evitar suspensión en Render...');
-      await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
-    } catch (e) {
-      debugPrint('⚠️ [KEEP-ALIVE] Falla en transmisión de pulso (Nube despertando): $e');
-    }
-  });
+  // 3. PULSO DE PREVENCIÓN EN NUBE (Render Keep-Alive)
+  _iniciarKeepAlive();
 
   runApp(
     MultiProvider(
@@ -75,6 +68,19 @@ void main() async {
       child: JoshSecurityApp(mostrarOnboarding: !onboardingVisto),
     ),
   );
+}
+
+/// Dispara un pulso cada 14 minutos para mantener activo el backend en Render
+void _iniciarKeepAlive() {
+  Timer.periodic(const Duration(minutes: 14), (timer) async {
+    const String url = 'https://josh-security.onrender.com/';
+    try {
+      debugPrint('🛰️ [KEEP-ALIVE] Transmitiendo pulso preventivo a Render...');
+      await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
+    } catch (e) {
+      debugPrint('⚠️ [KEEP-ALIVE] Falla en transmisión de pulso (Nube despertando): $e');
+    }
+  });
 }
 
 class JoshSecurityApp extends StatelessWidget {

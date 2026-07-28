@@ -9,12 +9,17 @@ import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 class OverlayService {
   /// Solicita permisos para dibujar sobre otras aplicaciones si no están concedidos
   static Future<bool> requestPermission() async {
-    final bool isGranted = await FlutterOverlayWindow.isPermissionGranted();
-    if (!isGranted) {
-      final bool? status = await FlutterOverlayWindow.requestPermission();
-      return status ?? false;
+    try {
+      final bool isGranted = await FlutterOverlayWindow.isPermissionGranted();
+      if (!isGranted) {
+        final bool? status = await FlutterOverlayWindow.requestPermission();
+        return status ?? false;
+      }
+      return true;
+    } catch (e) {
+      developer.log('Error al verificar/solicitar permiso de Overlay', error: e, name: 'josh.security.overlay');
+      return false;
     }
-    return true;
   }
 
   /// Muestra la alerta flotante con los detalles del diagnóstico de la llamada
@@ -24,11 +29,15 @@ class OverlayService {
     required String message,
   }) async {
     try {
-      final bool hasPermission = await requestPermission();
-      if (!hasPermission) return;
+      final bool isGranted = await FlutterOverlayWindow.isPermissionGranted();
+      if (!isGranted) {
+        developer.log('Permiso de overlay no concedido. Omitiendo apertura.', name: 'josh.security.overlay');
+        return;
+      }
 
       if (await FlutterOverlayWindow.isActive()) {
         await FlutterOverlayWindow.closeOverlay();
+        await Future.delayed(const Duration(milliseconds: 100));
       }
 
       await FlutterOverlayWindow.showOverlay(
@@ -36,13 +45,16 @@ class OverlayService {
         overlayTitle: "ALERTA CENTINELA",
         overlayContent: "$riskLevel: $phoneNumber",
         flag: OverlayFlag.defaultFlag,
-        visibility: NotificationVisibility.visibilitySecret,
+        visibility: NotificationVisibility.visibilityPublic,
         positionGravity: PositionGravity.auto,
-        height: 500,
+        height: 480,
         width: WindowSize.matchParent,
       );
 
-      // Transmite los datos de la amenaza a la vista del Overlay
+      // Pequeño retardo para asegurar que la ventana de la VM Dart montó la vista antes de compartir datos
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      // Transmite los datos de la amenaza a la vista del Overlay (OverlayCard)
       await FlutterOverlayWindow.shareData({
         'phone_number': phoneNumber,
         'risk_level': riskLevel,
@@ -60,8 +72,12 @@ class OverlayService {
 
   /// Cierra la ventana emergente
   static Future<void> closeOverlay() async {
-    if (await FlutterOverlayWindow.isActive()) {
-      await FlutterOverlayWindow.closeOverlay();
+    try {
+      if (await FlutterOverlayWindow.isActive()) {
+        await FlutterOverlayWindow.closeOverlay();
+      }
+    } catch (e) {
+      developer.log('Error al cerrar Overlay', error: e, name: 'josh.security.overlay');
     }
   }
 }

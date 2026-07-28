@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
-// MOTOR DE INTERCEPTACIÓN TELEFÓNICA E INTEGRACIÓN HEURÍSTICA Y TELEMETRÍA DE IA v4.7
+// MOTOR DE INTERCEPTACIÓN TELEFÓNICA E INTEGRACIÓN HEURÍSTICA Y TELEMETRÍA DE IA
 // ====================================================================================================
 
 import 'dart:async';
@@ -42,7 +42,7 @@ class PhoneInterceptorService {
   final DatabaseService _dbService = DatabaseService.instance;
   final SecuritySimulatorService _simulatorService = SecuritySimulatorService();
 
-  // Prefijos/Indicativos internacionales de alto riesgo (Sincronizado con matriz global)
+  // Prefijos/Indicativos internacionales de alto riesgo
   static final Set<String> _criticalCountryCodes = {
     '234', '254', '381', '216', '225', '233', '92', '880', '371', '370', '881', '882', '883', '870'
   };
@@ -59,20 +59,20 @@ class PhoneInterceptorService {
 
     switch (expectedClassification) {
       case 'CRÍTICO': // 🔴 ROJO
-        score = 85.0 + Random().nextDouble() * 15.0; // 85% a 100%
+        score = 85.0 + Random().nextDouble() * 15.0;
         callerName = 'Llamada Sospechosa / Botnet';
         reason = 'Indicativo internacional de alto riesgo o patrón de entropía en ráfaga.';
         break;
 
       case 'ADVERTENCIA': // 🟡 AMARILLO
-        score = 35.0 + Random().nextDouble() * 30.0; // 35% a 65%
+        score = 35.0 + Random().nextDouble() * 30.0;
         callerName = 'Número Fijo / Comercial No Verificado';
         reason = 'Línea corporativa sin registro previo en la libreta de contactos.';
         break;
 
       case 'SEGURO': // 🟢 VERDE
       default:
-        score = Random().nextDouble() * 20.0; // 0% a 20%
+        score = Random().nextDouble() * 20.0;
         callerName = 'Contacto Limpio / Frecuente';
         reason = 'Número con comportamiento estándar y libre de reportes de riesgo.';
         break;
@@ -89,8 +89,8 @@ class PhoneInterceptorService {
   }
 
   Future<bool> _checkNetworkConnectivity() async {
-    await Future.delayed(const Duration(milliseconds: 150));
-    return DateTime.now().second % 2 == 0;
+    await Future.delayed(const Duration(milliseconds: 100));
+    return true; // Asume estado de red activo o fallback local
   }
 
   Future<double> checkNumber(String phoneNumber) async {
@@ -138,7 +138,7 @@ class PhoneInterceptorService {
       return safeVerdict;
     }
 
-    // 2. Detección por Indicativo Internacional Sospechoso (Inicio de cadena)
+    // 2. Detección por Indicativo Internacional Sospechoso
     bool isCriticalCountry = false;
     String matchedCode = '';
     for (String code in _criticalCountryCodes) {
@@ -149,7 +149,7 @@ class PhoneInterceptorService {
       }
     }
 
-    // 3. Detección de Patrón Entrópico / Repetición en Ráfaga (Ej: 222333, 88888)
+    // 3. Detección de Patrón Entrópico / Repetición en Ráfaga
     final bool hasBurstPattern = RegExp(r'(\d)\1{3,}').hasMatch(digitsOnly);
 
     final String timestamp = DateTime.now().toIso8601String();

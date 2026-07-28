@@ -37,21 +37,25 @@
     </queries>
 
     <application
-        android:label="josh_security"
+        android:label="JOSH Security"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"> 
         
-        <!-- Servicio en Segundo Plano del Motor Centinela (Acepta múltiples tipos para evitar choque con Android 14/15) -->
+        <!-- Servicio en Segundo Plano del Motor Centinela (Ajustado para sincronía con Dart) -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="phoneCall|dataSync|specialUse"
+            android:foregroundServiceType="dataSync"
             android:exported="false"
             tools:replace="android:exported,android:foregroundServiceType">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Monitoreo heurístico perimetral de llamadas y seguridad en tiempo real." />
         </service>
+
+        <!-- Servicio Interno para la Ventana Flotante (Overlay) CORREGIDO CON TIPO -->
+        <service
+            android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|specialUse"
+            tools:replace="android:exported,android:foregroundServiceType" />
 
         <!-- Receptor de eventos de encendido del dispositivo -->
         <receiver
