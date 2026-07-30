@@ -7,16 +7,17 @@ import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 
 class MainActivity: FlutterActivity() {
-    private val CHANNEL = "josh_security/apk_centinel"
+    private val APK_CHANNEL = "josh_security/apk_centinel"
+    private val CALL_CHANNEL = "josh_security/phone_interceptor"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
-        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-        ApkInstallReceiver.methodChannel = channel
+        // Canal Centinela APK
+        val apkChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APK_CHANNEL)
+        ApkInstallReceiver.methodChannel = apkChannel
 
-        // Escuchar llamadas desde Flutter
-        channel.setMethodCallHandler { call, result ->
+        apkChannel.setMethodCallHandler { call, result ->
             if (call.method == "getPendingApks") {
                 val pendingList = checkAndFlushPendingApks(applicationContext)
                 result.success(pendingList)
@@ -24,6 +25,10 @@ class MainActivity: FlutterActivity() {
                 result.notImplemented()
             }
         }
+
+        // Canal Interceptor de Llamadas
+        val callChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CALL_CHANNEL)
+        PhoneCallReceiver.methodChannel = callChannel
     }
 
     // Procesa y limpia la cola de APKs detectadas mientras la app estaba cerrada

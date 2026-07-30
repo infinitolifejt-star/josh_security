@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/background_shield.dart
-// ENTORNO SINCRO CENTINELA v4.5.8
-// OP-HEURÍSTICA: Interceptación en Segundo Plano, Transmisión IPC a UI y Disparo Directo de Overlay
+// ENTORNO SINCRO CENTINELA v4.5.9
+// OP-HEURÍSTICA: Escudo Silencioso Persistente sin Alerta Sonora + Anti-Kill ColorOS
 // ====================================================================================================
 
 import 'dart:async';
@@ -14,8 +14,9 @@ import 'package:phone_state/phone_state.dart';
 import 'security/phone_interceptor_service.dart';
 import 'security/overlay_service.dart';
 
+@pragma('vm:entry-point')
 class BackgroundShield {
-  static const String notificationChannelId = 'josh_shield_channel';
+  static const String notificationChannelId = 'josh_shield_channel_silent';
   static const int notificationId = 888;
 
   /// Inicializa el servicio en segundo plano para el Escudo Activo.
@@ -27,11 +28,14 @@ class BackgroundShield {
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
         FlutterLocalNotificationsPlugin();
 
+    // 🔇 CANAL TOTALMENTE SILENCIOSO (Sin sonido, sin vibración)
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       notificationChannelId,
       'JOSH Active Shield',
       description: 'Mantiene el motor de JOSH Security protegiendo tu dispositivo en tiempo real.',
-      importance: Importance.low,
+      importance: Importance.low, // LOW evita cualquier tono o pitido de alerta
+      playSound: false,
+      enableVibration: false,
     );
 
     await flutterLocalNotificationsPlugin
@@ -44,11 +48,11 @@ class BackgroundShield {
         autoStart: true,
         isForegroundMode: true,
         notificationChannelId: notificationChannelId,
-        initialNotificationTitle: 'Escudo Activo JOSH',
-        initialNotificationContent: 'Patrullando amenazas en tiempo real...',
+        initialNotificationTitle: 'JOSH SECURITY',
+        initialNotificationContent: 'Patrullando en tiempo real...',
         foregroundServiceNotificationId: notificationId,
         foregroundServiceTypes: [
-          AndroidForegroundType.dataSync,
+          AndroidForegroundType.dataSync, // 👈 ALINEADO CON EL MANIFEST
         ],
       ),
       iosConfiguration: IosConfiguration(
@@ -84,38 +88,27 @@ class BackgroundShield {
           final interceptor = PhoneInterceptorService();
           final CallVerdict verdict = await interceptor.analyzeIncomingCall(incomingNumber);
 
-          // 2. Transmisión de evento al isolate de la UI
+          // 2. Transmisión de evento a la UI
           service.invoke('incoming_call', {
             'number': incomingNumber,
             'riskLevel': verdict.riskLevel,
             'message': verdict.analysisMessage,
           });
 
-          // 3. Actualización de notificación de estado
-          if (service is AndroidServiceInstance) {
-            if (await service.isForegroundService()) {
-              service.setForegroundNotificationInfo(
-                title: "Alerta Centinela: ${verdict.riskLevel}",
-                content: "Número: $incomingNumber - ${verdict.analysisMessage}",
-              );
-            }
-          }
-
-          // 4. Despliegue de Ventana Emergente en Pantalla
-          if (verdict.riskLevel == 'CRÍTICO' || verdict.riskLevel == 'ADVERTENCIA' || verdict.riskLevel == 'SEGURO') {
-            try {
-              await OverlayService.showWarningOverlay(
-                phoneNumber: incomingNumber,
-                riskLevel: verdict.riskLevel,
-                message: verdict.analysisMessage,
-              );
-            } catch (e) {
-              debugPrint('⚠️ Error al lanzar overlay desde servicio: $e');
-            }
+          // 3. Ventana Emergente sobre la llamada (Overlay)
+          try {
+            await OverlayService.showWarningOverlay(
+              phoneNumber: incomingNumber,
+              riskLevel: verdict.riskLevel,
+              message: verdict.analysisMessage,
+            );
+          } catch (e) {
+            debugPrint('⚠️ Error al lanzar overlay desde servicio: $e');
           }
         }
       } else if (state.status == PhoneStateStatus.CALL_ENDED) {
         service.invoke('call_ended');
+
         try {
           await OverlayService.closeOverlay();
         } catch (e) {
@@ -124,16 +117,6 @@ class BackgroundShield {
       }
     });
 
-    // Bucle de soporte persistente
-    Timer.periodic(const Duration(seconds: 15), (timer) async {
-      if (service is AndroidServiceInstance) {
-        if (await service.isForegroundService()) {
-          service.setForegroundNotificationInfo(
-            title: "Escudo Activo JOSH",
-            content: "Protección perimetral activa. Dispositivo seguro.",
-          );
-        }
-      }
-    });
+    // 💡 REMOVIDO EL TIMER PERIODIC REPETITIVO QUE PROVOCABA RE-NOTIFICACIONES Y PITIDOS
   }
 }

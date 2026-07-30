@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/file_scanner_service.dart
-// ESCANEO PERIMETRAL Y PERSISTENCIA DE EVIDENCIA FORENSE v4.6
+// ESCANEO PERIMETRAL Y PERSISTENCIA DE EVIDENCIA FORENSE v4.6 (CONTRATO INTEGRADO)
 // ====================================================================================================
 
 import 'dart:async';
@@ -192,7 +192,7 @@ class FileScannerService {
           'tracking_id': 'JOSH-MAL-$trackingId',
           'timestamp': timestamp,
           'matched_rule': matchedRule,
-          'file_hash': fileHash ?? 'No calculado (Offline)',
+          'file_hash': fileHash ?? 'No calculated (Offline)',
           'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
         },
       );

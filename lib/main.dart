@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'services/background_shield.dart';
+import 'services/security/phone_interceptor_service.dart';
+import 'services/security/overlay_service.dart';
 import 'views/home_screen.dart';
 import 'views/onboarding_screen.dart';
 import 'views/widgets/overlay_card.dart';
@@ -37,7 +39,19 @@ void main() async {
     debugPrint('⚠️ [JOSH SHIELD] Error al inicializar el servicio de fondo: $e');
   }
 
-  // 2. INICIALIZACIÓN PREVIA DEL PROVEEDOR DE SEGURIDAD Y PREFERENCIAS
+  // 2. INICIALIZACIÓN DEL INTERCEPTOR DE LLAMADAS Y OVERLAY FLOTANTE
+  try {
+    // Solicita o confirma el permiso para dibujar sobre la pantalla en Android/ColorOS
+    await OverlayService.requestPermission();
+    
+    // Enciende la antena para escuchar a Kotlin (onCallIntercepted)
+    PhoneInterceptorService().startListening();
+    debugPrint('📞 [JOSH INTERCEPTOR] Antena de llamadas entrantes activada.');
+  } catch (e) {
+    debugPrint('⚠️ [JOSH INTERCEPTOR] Error activando interceptor: $e');
+  }
+
+  // 3. INICIALIZACIÓN PREVIA DEL PROVEEDOR DE SEGURIDAD Y PREFERENCIAS
   final securityProvider = SecurityProvider();
   bool onboardingVisto = false;
 
@@ -55,7 +69,7 @@ void main() async {
     debugPrint('⚠️ [JOSH MAIN] Error leyendo SharedPreferences de Onboarding: $e');
   }
 
-  // 3. PULSO DE PREVENCIÓN EN NUBE (Render Keep-Alive)
+  // 4. PULSO DE PREVENCIÓN EN NUBE (Render Keep-Alive)
   _iniciarKeepAlive();
 
   runApp(

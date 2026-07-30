@@ -5,13 +5,14 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- Permisos de interceptación de llamadas y SMS -->
+    <!-- Permisos de intercepción de llamadas y SMS -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.READ_CALL_LOG"/>
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
     <uses-permission android:name="android.permission.RECEIVE_SMS"/>
     <uses-permission android:name="android.permission.READ_SMS"/>
 
-    <!-- Permisos para ejecución persistente y Foreground Services (Android 14+) -->
+    <!-- Permisos para ejecución persistente y Foreground Services -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
@@ -25,7 +26,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission"/>
 
-    <!-- REGLA DE VISIBILIDAD DE PAQUETES (Android 11+) PARA PLAY STORE Y APKs EXTERNAS -->
+    <!-- REGLA DE VISIBILIDAD DE PAQUETES (Android 11+) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -42,7 +43,7 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"> 
         
-        <!-- Servicio en Segundo Plano del Motor Centinela (Ajustado para sincronía con Dart) -->
+        <!-- Servicio en Segundo Plano del Motor Centinela -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="dataSync"
@@ -50,7 +51,7 @@
             tools:replace="android:exported,android:foregroundServiceType">
         </service>
 
-        <!-- Servicio Interno para la Ventana Flotante (Overlay) CORREGIDO CON TIPO -->
+        <!-- Servicio Interno para la Ventana Flotante (Overlay) -->
         <service
             android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
             android:exported="false"
@@ -68,9 +69,9 @@
             </intent-filter>
         </receiver>
 
-        <!-- Receptor de cambio de estado de llamada (PHONE_STATE) -->
+        <!-- RECEPTOR CENTINELA: Intercepción de Llamadas Entrantes -->
         <receiver
-            android:name="id.flutter.flutter_background_service.WatchdogReceiver"
+            android:name=".PhoneCallReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>

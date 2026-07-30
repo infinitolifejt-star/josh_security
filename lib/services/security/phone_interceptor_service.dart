@@ -1,231 +1,196 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
-// MOTOR DE INTERCEPTACIÓN TELEFÓNICA E INTEGRACIÓN HEURÍSTICA Y TELEMETRÍA DE IA
+// REEMPLAZO TOTAL — SERVICIO DE INTERCEPTOR Y REPUTACIÓN TELEFÓNICA (CONTRATO UNIFICADO v4.6)
+// COMPONENTE: PhoneInterceptorService - JOSH Security
 // ====================================================================================================
 
 import 'dart:async';
-import 'dart:convert';
-import 'dart:developer' as developer;
-import 'dart:math';
-import 'database_service.dart';
-import 'security_simulator_service.dart';
+import 'package:flutter/services.dart';
+import 'overlay_service.dart';
 
-/// Enumeración para catalogar el origen del diagnóstico
+/// Enum global para identificar la fuente del diagnóstico en llamadas, archivos y red.
 enum DiagnosticSource {
-  cloud,
   local,
+  cloud,
+  localHeuristics,
+  phoneInterceptor,
+  cloudDatabase,
+  fileSystem,
 }
 
-/// Modelo de datos estructurado para el veredicto del escaneo telefónico
+/// Estructura de resultado para el dictamen de llamadas interceptadas.
 class CallVerdict {
   final String phoneNumber;
-  final String riskLevel; // 'SEGURO', 'ADVERTENCIA', 'CRÍTICO'
-  final String analysisMessage;
+  final double riskScore;
+  final String verdict;
+  final String category;
+  final String details;
   final DiagnosticSource source;
-  final Map<String, dynamic> telemetryDetails;
 
   CallVerdict({
     required this.phoneNumber,
-    required this.riskLevel,
-    required this.analysisMessage,
-    required this.source,
-    required this.telemetryDetails,
+    required this.riskScore,
+    required this.verdict,
+    required this.category,
+    required this.details,
+    this.source = DiagnosticSource.phoneInterceptor,
   });
-}
 
-/// Core del Servicio Local de Interceptación Telefónica y Análisis de Riesgo
-class PhoneInterceptorService {
-  static final PhoneInterceptorService _instance = PhoneInterceptorService._internal();
-  factory PhoneInterceptorService() => _instance;
-  PhoneInterceptorService._internal();
+  // --- Getters de compatibilidad ---
+  String get riskLevel => verdict;
+  String get analysisMessage => details;
 
-  final DatabaseService _dbService = DatabaseService.instance;
-  final SecuritySimulatorService _simulatorService = SecuritySimulatorService();
-
-  // Prefijos/Indicativos internacionales de alto riesgo
-  static final Set<String> _criticalCountryCodes = {
-    '234', '254', '381', '216', '225', '233', '92', '880', '371', '370', '881', '882', '883', '870'
-  };
-
-  /// Genera una llamada simulada ALEATORIA Y DINÁMICA rotando entre Verde, Amarillo y Rojo
-  Map<String, dynamic> getRandomSimulatedCall() {
-    final dynamicVector = _simulatorService.generateDynamicPhoneVector();
-    final String generatedNumber = dynamicVector['target'];
-    final String expectedClassification = dynamicVector['expectedClassification'];
-
-    double score;
-    String callerName;
-    String reason;
-
-    switch (expectedClassification) {
-      case 'CRÍTICO': // 🔴 ROJO
-        score = 85.0 + Random().nextDouble() * 15.0;
-        callerName = 'Llamada Sospechosa / Botnet';
-        reason = 'Indicativo internacional de alto riesgo o patrón de entropía en ráfaga.';
-        break;
-
-      case 'ADVERTENCIA': // 🟡 AMARILLO
-        score = 35.0 + Random().nextDouble() * 30.0;
-        callerName = 'Número Fijo / Comercial No Verificado';
-        reason = 'Línea corporativa sin registro previo en la libreta de contactos.';
-        break;
-
-      case 'SEGURO': // 🟢 VERDE
-      default:
-        score = Random().nextDouble() * 20.0;
-        callerName = 'Contacto Limpio / Frecuente';
-        reason = 'Número con comportamiento estándar y libre de reportes de riesgo.';
-        break;
-    }
-
+  Map<String, dynamic> toMap() {
     return {
-      'number': generatedNumber,
-      'caller': callerName,
-      'risk': expectedClassification,
-      'score': double.parse(score.toStringAsFixed(1)),
-      'reason': reason,
-      'timestamp': dynamicVector['timestamp'],
+      'phoneNumber': phoneNumber,
+      'riskScore': riskScore,
+      'verdict': verdict,
+      'riskLevel': riskLevel,
+      'category': category,
+      'details': details,
+      'analysisMessage': analysisMessage,
+      'source': source.toString(),
     };
   }
+}
 
-  Future<bool> _checkNetworkConnectivity() async {
-    await Future.delayed(const Duration(milliseconds: 100));
-    return true; // Asume estado de red activo o fallback local
+class PhoneInterceptorService {
+  static const MethodChannel _channel = MethodChannel('josh_security/phone_interceptor');
+
+  bool _isListening = false;
+  bool get isListening => _isListening;
+
+  final StreamController<CallVerdict> _callVerdictController =
+      StreamController<CallVerdict>.broadcast();
+
+  Stream<CallVerdict> get onCallIntercepted => _callVerdictController.stream;
+
+  /// Inicializa la escucha de eventos desde la capa nativa Android/Kotlin.
+  void startListening() {
+    if (_isListening) return;
+    _isListening = true;
+
+    _channel.setMethodCallHandler((call) async {
+      // 🚨 CORRECCIÓN CLAVE: Emparejado con "onCallIntercepted" enviado desde PhoneCallReceiver.kt
+      if (call.method == "onCallIntercepted") {
+        final Map<String, dynamic> args = Map<String, dynamic>.from(call.arguments);
+        final String number = (args['phoneNumber'] ?? '').toString();
+
+        if (number.isNotEmpty) {
+          // 1. Correr la heurística antifraude
+          final verdict = await analyzePhoneNumber(number);
+          
+          // 2. Transmitir el veredicto al Stream interno de la app
+          _callVerdictController.add(verdict);
+
+          // 3. 🚀 DESPLEGAR EL POP-UP FLOTANTE (OVERLAY) EN PANTALLA
+          await OverlayService.showWarningOverlay(
+            phoneNumber: verdict.phoneNumber,
+            riskLevel: verdict.verdict,
+            message: verdict.details,
+          );
+        }
+      }
+    });
   }
 
-  Future<double> checkNumber(String phoneNumber) async {
-    try {
-      final CallVerdict verdict = await analyzeIncomingCall(phoneNumber);
-      if (verdict.riskLevel == 'CRÍTICO') return 100.0;
-      if (verdict.riskLevel == 'ADVERTENCIA') return 50.0;
-      return 0.0;
-    } catch (_) {
-      return 0.0;
-    }
+  /// Detiene la escucha activa del interceptor.
+  void stopListening() {
+    _isListening = false;
+    _channel.setMethodCallHandler(null);
   }
 
-  /// Evaluador principal de números entrantes mediante detección de prefijos y patrones entrópicos
-  Future<CallVerdict> analyzeIncomingCall(String rawPhoneNumber) async {
-    final String cleanNumber = rawPhoneNumber.trim();
-    final String digitsOnly = cleanNumber.replaceAll(RegExp(r'\D'), '');
+  /// Método de compatibilidad para llamadas entrantes desde background_shield.
+  Future<CallVerdict> analyzeIncomingCall(String phoneNumber) async {
+    return await analyzePhoneNumber(phoneNumber);
+  }
 
-    if (digitsOnly.isEmpty) {
-      final CallVerdict emptyVerdict = CallVerdict(
-        phoneNumber: 'DESCONOCIDO',
-        riskLevel: 'ADVERTENCIA',
-        analysisMessage: 'El número entrante no pudo ser leído de forma correcta. Se recomienda precaución.',
-        source: DiagnosticSource.local,
-        telemetryDetails: {'error': 'Entrada vacía o inválida'},
+  /// Evalúa un número telefónico analizando indicativos de alto riesgo y patrones de entropía.
+  Future<CallVerdict> analyzePhoneNumber(String phoneNumber) async {
+    final String clean = phoneNumber.trim().toLowerCase();
+    final String digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
+
+    // 1. Números de emergencia / Líneas directas gubernamentales
+    if (digitsOnly == "123" ||
+        digitsOnly == "112" ||
+        digitsOnly == "165" ||
+        digitsOnly.startsWith("018000")) {
+      return CallVerdict(
+        phoneNumber: phoneNumber,
+        riskScore: 0.0,
+        verdict: "SEGURO",
+        category: "OFICIAL / EMERGENCIA",
+        details: "Línea oficial de asistencia o emergencia verificada.",
+        source: DiagnosticSource.localHeuristics,
       );
-
-      await _persistVerdictLog(emptyVerdict, 'HEURISTIC_EMPTY_ERR');
-      return emptyVerdict;
     }
 
-    final bool isConnected = await _checkNetworkConnectivity();
-    final DiagnosticSource selectedSource = isConnected ? DiagnosticSource.cloud : DiagnosticSource.local;
+    // 2. Prefijos internacionales de alto riesgo (VoIP masivo, Spam, Tarifa Especial)
+    final suspiciousCodes = [
+      '234', '254', '381', '216', '225', '233', '92', '880', '371', '370', '881', '882', '883', '870'
+    ];
 
-    // 1. Verificación de líneas de emergencia/servicios públicos conocidos
-    if (digitsOnly == '123' || digitsOnly == '112' || digitsOnly == '165' || digitsOnly.startsWith('018000')) {
-      final CallVerdict safeVerdict = CallVerdict(
-        phoneNumber: cleanNumber,
-        riskLevel: 'SEGURO',
-        analysisMessage: 'Línea oficial o de emergencia verificada.',
-        source: selectedSource,
-        telemetryDetails: {'matched_rule': 'WHITELIST_EMERGENCY'},
-      );
-      await _persistVerdictLog(safeVerdict, 'WHITELIST_EMERGENCY');
-      return safeVerdict;
-    }
-
-    // 2. Detección por Indicativo Internacional Sospechoso
-    bool isCriticalCountry = false;
-    String matchedCode = '';
-    for (String code in _criticalCountryCodes) {
-      if (digitsOnly.startsWith(code) || cleanNumber.startsWith('+$code')) {
-        isCriticalCountry = true;
-        matchedCode = code;
-        break;
+    for (var code in suspiciousCodes) {
+      if (digitsOnly.startsWith(code) || clean.contains("+$code")) {
+        return CallVerdict(
+          phoneNumber: phoneNumber,
+          riskScore: 92.0,
+          verdict: "CRÍTICO",
+          category: "VOIP / SPAM INTERNACIONAL",
+          details: "Número proveniente de indicativo internacional de alto riesgo (+$code).",
+          source: DiagnosticSource.phoneInterceptor,
+        );
       }
     }
 
-    // 3. Detección de Patrón Entrópico / Repetición en Ráfaga
-    final bool hasBurstPattern = RegExp(r'(\d)\1{3,}').hasMatch(digitsOnly);
-
-    final String timestamp = DateTime.now().toIso8601String();
-    final int trackingId = Random().nextInt(900000) + 100000;
-
-    CallVerdict finalVerdict;
-    String matchedRule;
-
-    if (isCriticalCountry || hasBurstPattern) {
-      matchedRule = isCriticalCountry ? 'HEURISTIC_SUSPICIOUS_COUNTRY_+$matchedCode' : 'HEURISTIC_ENTROPY_BURST_PATTERN';
-      finalVerdict = CallVerdict(
-        phoneNumber: cleanNumber,
-        riskLevel: 'CRÍTICO',
-        analysisMessage: isCriticalCountry 
-            ? 'Llamada procedente de país/indicativo ($matchedCode) con alto índice de fraude VoIP.'
-            : 'Patrón numérico anómalo detectado (Marcador automático / Botnet).',
-        source: selectedSource,
-        telemetryDetails: {
-          'tracking_id': 'JOSH-SEC-$trackingId',
-          'timestamp': timestamp,
-          'matched_rule': matchedRule,
-          'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
-        },
-      );
-    } else if (cleanNumber.startsWith('+57601') || cleanNumber.startsWith('601') || digitsOnly.length < 7) {
-      matchedRule = 'HEURISTIC_UNVERIFIED_FIXED_LINE';
-      finalVerdict = CallVerdict(
-        phoneNumber: cleanNumber,
-        riskLevel: 'ADVERTENCIA',
-        analysisMessage: 'Llamada catalogada potencialmente como spam comercial o línea no verificada.',
-        source: selectedSource,
-        telemetryDetails: {
-          'tracking_id': 'JOSH-SEC-$trackingId',
-          'timestamp': timestamp,
-          'matched_rule': matchedRule,
-          'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
-        },
-      );
-    } else {
-      matchedRule = 'DEFAULT_CLEAN_CHECK';
-      finalVerdict = CallVerdict(
-        phoneNumber: cleanNumber,
-        riskLevel: 'SEGURO',
-        analysisMessage: 'JOSH Security está patrullando. Este número no presenta reportes de riesgo.',
-        source: selectedSource,
-        telemetryDetails: {
-          'tracking_id': 'JOSH-SEC-$trackingId',
-          'timestamp': timestamp,
-          'matched_rule': matchedRule,
-          'hybrid_routing': isConnected ? 'RENDER_CLOUD' : 'LOCAL_SHIELD',
-        },
+    // 3. Patrones repetición / Entropía de dígitos (Ej: 999999, 123456)
+    if (RegExp(r'(\d)\1{4,}').hasMatch(digitsOnly)) {
+      return CallVerdict(
+        phoneNumber: phoneNumber,
+        riskScore: 85.0,
+        verdict: "CRÍTICO",
+        category: "MÁSCARA / SPOOFING",
+        details: "Secuencia repetitiva anómala en el número telefónico.",
+        source: DiagnosticSource.phoneInterceptor,
       );
     }
 
-    await _persistVerdictLog(finalVerdict, matchedRule);
-    return finalVerdict;
+    // 4. Formato Estándar Móvil o Fijo Colombia (+57 3xx / 60x)
+    if (digitsOnly.length == 10 && (digitsOnly.startsWith("3") || digitsOnly.startsWith("60"))) {
+      return CallVerdict(
+        phoneNumber: phoneNumber,
+        riskScore: 5.0,
+        verdict: "SEGURO",
+        category: "LÍNEA NACIONAL CONFIABLE",
+        details: "Número con estructura válida de operador local.",
+        source: DiagnosticSource.localHeuristics,
+      );
+    }
+
+    // 5. Longitud inusual (Líneas recortadas o sobreextendidas)
+    if (digitsOnly.isNotEmpty && (digitsOnly.length < 7 || digitsOnly.length > 14)) {
+      return CallVerdict(
+        phoneNumber: phoneNumber,
+        riskScore: 65.0,
+        verdict: "SOSPECHOSO",
+        category: "ESTRUCTURA ANÓMALA",
+        details: "Longitud no estándar para tráfico telefónico convencional.",
+        source: DiagnosticSource.phoneInterceptor,
+      );
+    }
+
+    return CallVerdict(
+      phoneNumber: phoneNumber,
+      riskScore: 10.0,
+      verdict: "SEGURO",
+      category: "DESCONOCIDO ESTÁNDAR",
+      details: "Sin patrones maliciosos evidentes.",
+      source: DiagnosticSource.localHeuristics,
+    );
   }
 
-  Future<void> _persistVerdictLog(CallVerdict verdict, String matchedRule) async {
-    try {
-      final Map<String, dynamic> logEntry = {
-        'timestamp': DateTime.now().toIso8601String(),
-        'service': 'PhoneInterceptorService',
-        'activity': 'Análisis de número telefónico: ${verdict.phoneNumber}',
-        'verdict': verdict.riskLevel,
-        'matched_rule': matchedRule,
-        'extra_data': jsonEncode(verdict.telemetryDetails),
-      };
-      await _dbService.insertForensicLog(logEntry);
-    } catch (e, stackTrace) {
-      developer.log(
-        'ERR_DATABASE_PERSISTENCE_PHONE_INTERCEPTOR',
-        error: e,
-        stackTrace: stackTrace,
-        name: 'josh.security.db',
-      );
-    }
+  void dispose() {
+    stopListening();
+    _callVerdictController.close();
   }
 }

@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/providers/security_provider.dart
-// REEMPLAZO TOTAL — MOTOR HEURÍSTICO AVANZADO (TYPOSQUATTING, ENTROPÍA Y LISTAS EXTENDIDAS)
-// COMPONENTE: Gestor de Estado Central (SecurityProvider) - JOSH Security
+// REEMPLAZO TOTAL — GESTOR DE ESTADO CENTRAL CON MOTOR HEURÍSTICO AVANZADO E INTEGRACIÓN TOTAL
+// COMPONENTE: SecurityProvider - JOSH Security
 // ====================================================================================================
 
 import 'dart:async';
@@ -115,7 +115,7 @@ class SecurityProvider with ChangeNotifier {
 
   // Interceptor
   CallVerdict? _lastCallVerdict;
-  final bool _isAnalyzingCall = false;
+  bool _isAnalyzingCall = false;
 
   // Estadísticas
   int _linksChecked = 124;
@@ -128,9 +128,10 @@ class SecurityProvider with ChangeNotifier {
   ];
   final List<Map<String, dynamic>> _masterBitacora = [];
 
-  // Timers
+  // Timers y Subscripciones
   Timer? _keepAliveTimer;
   Timer? _proactivePatrolTimer;
+  StreamSubscription<CallVerdict>? _phoneInterceptorSubscription;
 
   // Getters
   double get vulnerabilityScore => _vulnerabilityScore;
@@ -157,6 +158,7 @@ class SecurityProvider with ChangeNotifier {
 
   SecurityProvider() {
     initializeApkCentinel();
+    _initPhoneInterceptorListener();
   }
 
   Future<void> initialize() async {
@@ -167,12 +169,44 @@ class SecurityProvider with ChangeNotifier {
     _startProactivePatrol();
   }
 
+  /// Conecta el listener del interceptor telefónico nativo con el estado del Provider
+  void _initPhoneInterceptorListener() {
+    _phoneInterceptor.startListening();
+    _phoneInterceptorSubscription = _phoneInterceptor.onCallIntercepted.listen((verdict) async {
+      _isAnalyzingCall = true;
+      _lastCallVerdict = verdict;
+      _callsChecked++;
+
+      _forensicLogs.insert(
+        0,
+        "📞 [TELEFONÍA] Llamada analizada: ${verdict.phoneNumber} -> ${verdict.verdict} (${verdict.category})",
+      );
+
+      if (verdict.riskScore >= 70.0) {
+        _malwarePrevented++;
+      }
+
+      _masterBitacora.insert(0, {
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'timestamp': DateTime.now().toIso8601String().substring(11, 19),
+        'target': verdict.phoneNumber,
+        'score': verdict.riskScore,
+        'verdict': verdict.verdict,
+        'vector': "TELEFÓNICO (INTERCEPTOR)",
+      });
+
+      await _guardarBitacoraLocalmente();
+      _isAnalyzingCall = false;
+      notifyListeners();
+    });
+  }
+
   /// Receptor proactivo para eventos de instalación de APK detectados desde Kotlin
   Future<void> initializeApkCentinel() async {
     _apkChannel.setMethodCallHandler((call) async {
       if (call.method == "onApkInstalled") {
-        final Map<dynamic, dynamic> data = call.arguments;
-        await _procesarApkDetectada(Map<String, dynamic>.from(data));
+        final Map<String, dynamic> data = Map<String, dynamic>.from(call.arguments as Map);
+        await _procesarApkDetectada(data);
       }
     });
 
@@ -196,8 +230,7 @@ class SecurityProvider with ChangeNotifier {
     final String apkPath = (data['apkPath'] ?? '').toString();
     final String packageName = (data['packageName'] ?? '').toString();
 
-    final logEntry = "🚨 [CENTINELA] APK instalada detectada: $appName ($packageName)";
-    _forensicLogs.insert(0, logEntry);
+    _forensicLogs.insert(0, "🚨 [CENTINELA] APK instalada detectada: $appName ($packageName)");
 
     double apkScore = 0.0;
     String apkVerdict = "SEGURO";
@@ -207,7 +240,7 @@ class SecurityProvider with ChangeNotifier {
       if (await apkFile.exists()) {
         final fileScanVerdict = await _fileScanner.scanLocalFile(apkFile);
         apkVerdict = fileScanVerdict.riskLevel;
-        apkScore = apkVerdict == 'CRÍTICO' ? 95.0 : (apkVerdict == 'SOSPECHOSO' ? 50.0 : 0.0);
+        apkScore = apkVerdict == 'CRÍTICO' ? 95.0 : (apkVerdict == 'ADVERTENCIA' ? 50.0 : 0.0);
       } else {
         final localEval = _evaluateLocalHeuristics(packageName, 2);
         apkScore = localEval['score'];
@@ -327,7 +360,6 @@ class SecurityProvider with ChangeNotifier {
   // PERSISTENCIA Y SINCRONIZACIÓN DE LISTAS DINÁMICAS
   // ==================================================================================================
 
-  /// Carga extensiones de lista blanca o indicativos desde el almacenamiento local
   Future<void> _cargarListasDinamicasGuardadas() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -345,7 +377,6 @@ class SecurityProvider with ChangeNotifier {
     }
   }
 
-  /// Método público para sincronizar nuevas listas descargadas de la Nube/API
   Future<void> syncSecurityListsFromCloud(List<String> newDomains, List<String> newCountryCodes) async {
     try {
       _officialWhitelist.addAll(newDomains.map((d) => d.toLowerCase().trim()));
@@ -362,7 +393,6 @@ class SecurityProvider with ChangeNotifier {
     }
   }
 
-  /// Carga el historial desde SharedPreferences y reconstruye _masterBitacora y _forensicLogs
   Future<void> _cargarHistorialInicial() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -424,6 +454,7 @@ class SecurityProvider with ChangeNotifier {
     return "${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB";
   }
 
+  /// Selecciona y escanea un archivo binario conectando con FileScannerService
   Future<bool> pickLocalFile() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
@@ -441,34 +472,26 @@ class SecurityProvider with ChangeNotifier {
       _selectedFileSize = fileMetadata.size;
       _selectedFilePath = fileMetadata.path;
 
-      final fileScanVerdict = await _fileScanner.scanLocalFile(realFile);
-      final String nameLower = _selectedFileName!.toLowerCase();
-
-      bool isDanger = fileScanVerdict.riskLevel == 'CRÍTICO' ||
-          nameLower.endsWith('.apk') ||
-          nameLower.endsWith('.exe') ||
-          nameLower.endsWith('.vbs');
-
+      // Integración directa con el motor perimetral FileScannerService (SHA-256 + VirusTotal)
+      final FileScanVerdict scanVerdict = await _fileScanner.scanLocalFile(realFile);
       final String formattedSize = _formatBytes(_selectedFileSize ?? 0);
 
-      if (isDanger) {
-        _vulnerabilityScore = 92.0;
-        _verdictText = "CRÍTICO";
+      _verdictText = scanVerdict.riskLevel;
+      if (scanVerdict.riskLevel == 'CRÍTICO') {
+        _vulnerabilityScore = 95.0;
         _hudColor = const Color(0xFFFF5252);
         _malwarePrevented += 1;
-
-        _forensicLogs.insert(0, "ALERTA: BINARIO SOSPECHOSO DETECTADO");
-        _forensicLogs.insert(1, "» Archivo: $_selectedFileName ($formattedSize)");
-        _forensicLogs.insert(2, "» Extensión o firma no confiable aislada.");
+      } else if (scanVerdict.riskLevel == 'ADVERTENCIA' || scanVerdict.riskLevel == 'SOSPECHOSO') {
+        _vulnerabilityScore = 55.0;
+        _hudColor = const Color(0xFFFFD740);
       } else {
         _vulnerabilityScore = 5.0;
-        _verdictText = "SEGURO";
         _hudColor = const Color(0xFF00E676);
-
-        _forensicLogs.insert(0, "Archivo auditado correctamente.");
-        _forensicLogs.insert(1, "» Archivo: $_selectedFileName ($formattedSize)");
-        _forensicLogs.insert(2, "» Estructura limpia.");
       }
+
+      _forensicLogs.insert(0, "ANÁLISIS PERIMETRAL: $_selectedFileName ($formattedSize)");
+      _forensicLogs.insert(1, "» Dictamen: $_verdictText (${_vulnerabilityScore.toStringAsFixed(1)}%)");
+      _forensicLogs.insert(2, "» Detalle: ${scanVerdict.analysisMessage}");
 
       _masterBitacora.insert(0, {
         'id': DateTime.now().millisecondsSinceEpoch.toString(),
@@ -476,7 +499,7 @@ class SecurityProvider with ChangeNotifier {
         'target': "$_selectedFileName ($formattedSize)",
         'score': _vulnerabilityScore,
         'verdict': _verdictText,
-        'vector': "MALWARE (LOCAL)",
+        'vector': "MALWARE (LOCAL_PERIMETER)",
       });
 
       await _guardarBitacoraLocalmente();
@@ -635,57 +658,37 @@ class SecurityProvider with ChangeNotifier {
     };
   }
 
-  /// Evaluador Avanzado de Telefonía / Entropía de Dígitos
-  Map<String, dynamic> _evaluatePhoneHeuristics(String inputPhone) {
-    final clean = inputPhone.trim().toLowerCase();
-    final digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
-
-    if (clean.contains("extorsion") || clean.contains("fraude")) {
-      return {'score': 95.0, 'verdict': 'CRÍTICO'};
-    }
-
-    // 1. Detección por código de país/redes sospechosas (Búsqueda en Set)
-    for (var code in _suspiciousCountryCodes) {
-      if (digitsOnly.startsWith(code) || clean.contains("+$code")) {
-        return {'score': 90.0, 'verdict': 'CRÍTICO'};
-      }
-    }
-
-    // 2. Análisis de Entropía / Patrones en Ráfaga (Ej: 2223333, 888888)
-    final hasRepeatedPattern = RegExp(r'(\d)\1{3,}').hasMatch(digitsOnly);
-    if (hasRepeatedPattern) {
-      return {'score': 85.0, 'verdict': 'CRÍTICO'};
-    }
-
-    // 3. Verificación de líneas gubernamentales o de emergencia conocidas (Colombia / Latam)
-    if (digitsOnly == "123" ||
-        digitsOnly == "112" ||
-        digitsOnly == "165" ||
-        digitsOnly.startsWith("018000")) {
-      return {'score': 0.0, 'verdict': 'SEGURO'};
-    }
-
-    // 4. Formato Estándar Móvil / Fijo Colombia
-    final len = digitsOnly.length;
-    if (len == 10 && (digitsOnly.startsWith("3") || digitsOnly.startsWith("60"))) {
-      return {'score': 5.0, 'verdict': 'SEGURO'};
-    }
-
-    if (len > 0 && (len < 7 || len > 14)) {
-      return {'score': 70.0, 'verdict': 'SOSPECHOSO'};
-    }
-
-    return {'score': 15.0, 'verdict': 'SEGURO'};
+  /// Evaluador Avanzado de Telefonía delegando en PhoneInterceptorService
+  Future<Map<String, dynamic>> _evaluatePhoneHeuristicsAsync(String inputPhone) async {
+    final verdict = await _phoneInterceptor.analyzePhoneNumber(inputPhone);
+    return {
+      'score': verdict.riskScore,
+      'verdict': verdict.verdict,
+      'reason': '${verdict.category}: ${verdict.details}'
+    };
   }
 
-  /// EVALUADOR HEURÍSTICO CENTRAL
+  /// EVALUADOR HEURÍSTICO CENTRAL (Sincrónico con fallback para llamadas)
   Map<String, dynamic> _evaluateLocalHeuristics(String target, int currentTab) {
     if (currentTab == 1) { // PHISHING / URL
       return _evaluatePhishingHeuristics(target);
     }
 
     if (currentTab == 0) { // TELEFONÍA
-      return _evaluatePhoneHeuristics(target);
+      final clean = target.trim().toLowerCase();
+      final digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
+
+      for (var code in _suspiciousCountryCodes) {
+        if (digitsOnly.startsWith(code) || clean.contains("+$code")) {
+          return {'score': 90.0, 'verdict': 'CRÍTICO', 'reason': 'Indicativo de alto riesgo'};
+        }
+      }
+
+      if (RegExp(r'(\d)\1{3,}').hasMatch(digitsOnly)) {
+        return {'score': 85.0, 'verdict': 'CRÍTICO', 'reason': 'Patrón numérico repetitivo'};
+      }
+
+      return {'score': 10.0, 'verdict': 'SEGURO', 'reason': 'Línea o formato estándar'};
     }
 
     // MALWARE
@@ -694,9 +697,9 @@ class SecurityProvider with ChangeNotifier {
         clean.endsWith(".exe") ||
         clean.endsWith(".vbs") ||
         clean.contains("malware")) {
-      return {'score': 95.0, 'verdict': 'CRÍTICO'};
+      return {'score': 95.0, 'verdict': 'CRÍTICO', 'reason': 'Firma o extensión potencialmente destructiva.'};
     }
-    return {'score': 5.0, 'verdict': 'SEGURO'};
+    return {'score': 5.0, 'verdict': 'SEGURO', 'reason': 'Estructura o extensión binaria estándar.'};
   }
 
   Future<void> executeAuditoria(String target, int currentTab) async {
@@ -715,7 +718,12 @@ class SecurityProvider with ChangeNotifier {
         ? "PHISHING/URL"
         : (currentTab == 2 ? "MALWARE/BIN" : "TELEFÓNICO");
 
-    final localResult = _evaluateLocalHeuristics(targetToAudit, currentTab);
+    Map<String, dynamic> localResult;
+    if (currentTab == 0) {
+      localResult = await _evaluatePhoneHeuristicsAsync(targetToAudit);
+    } else {
+      localResult = _evaluateLocalHeuristics(targetToAudit, currentTab);
+    }
 
     _vulnerabilityScore = localResult['score'];
     _verdictText = localResult['verdict'];
@@ -725,7 +733,7 @@ class SecurityProvider with ChangeNotifier {
 
     if (currentTab == 0) _callsChecked++;
     if (currentTab == 1) _linksChecked++;
-    if (currentTab == 2) _malwarePrevented++;
+    if (currentTab == 2 && _vulnerabilityScore >= 70) _malwarePrevented++;
 
     _forensicLogs.insert(0, "ANÁLISIS COMPLETADO: $targetToAudit");
     _forensicLogs.insert(1, "» Dictamen: $_verdictText (${_vulnerabilityScore.toStringAsFixed(1)}%)");
@@ -774,6 +782,8 @@ class SecurityProvider with ChangeNotifier {
   void dispose() {
     _keepAliveTimer?.cancel();
     _proactivePatrolTimer?.cancel();
+    _phoneInterceptorSubscription?.cancel();
+    _phoneInterceptor.dispose();
     super.dispose();
   }
 }
