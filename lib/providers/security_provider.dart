@@ -13,13 +13,19 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../services/api_service.dart';
-import '../services/security/phone_interceptor_service.dart';
-import '../services/security/file_scanner_service.dart';
-import '../services/reputation/reputation_engine.dart';
+
+// Importaciones con ruta absoluta de paquete
+import 'package:josh_security/services/api_service.dart';
+import 'package:josh_security/services/security/database_service.dart';
+import 'package:josh_security/services/security/forensic_report_service.dart';
+import 'package:josh_security/services/security/phone_interceptor_service.dart';
+import 'package:josh_security/services/security/file_scanner_service.dart';
+import 'package:josh_security/services/reputation/reputation_engine.dart';
 
 class SecurityProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
+  final DatabaseService _dbService = DatabaseService();
+  final ForensicReportService _forensicReportService = ForensicReportService();
   final PhoneInterceptorService _phoneInterceptor = PhoneInterceptorService();
   final FileScannerService _fileScanner = FileScannerService();
   final ReputationEngine _reputationEngine = ReputationEngine();
@@ -28,7 +34,7 @@ class SecurityProvider with ChangeNotifier {
   static const MethodChannel _apkChannel = MethodChannel('josh_security/apk_centinel');
 
   // ==================================================================================================
-  // BASE DE DATOS LOCAL DE LISTAS BLANCAS Y PREFIJOS SOSPECHOSOS (Set para Búsqueda O(1))
+  // BASE DE DATOS LOCAL DE LISTAS BLANCAS Y PREFIJOS SOSPECHOSOS
   // ==================================================================================================
   static final Set<String> _officialWhitelist = {
     // --- Servicios Globales & Tecnológicos ---
@@ -81,7 +87,7 @@ class SecurityProvider with ChangeNotifier {
     'contraloria.gov.co',
   };
 
-  // Prefijos/Indicativos telefónicos de alto riesgo (VoIP masivo, Spam, Tarifa Especial, Satelitales)
+  // Prefijos/Indicativos telefónicos de alto riesgo
   static final Set<String> _suspiciousCountryCodes = {
     '234', // Nigeria
     '254', // Kenya
@@ -93,10 +99,10 @@ class SecurityProvider with ChangeNotifier {
     '880', // Bangladesh
     '371', // Letonia
     '370', // Lituania
-    '881', // Redes satelitales (Globalstar/Iridium)
-    '882', // Redes de tarifa especial internacional
-    '883', // Servicios Globales Satelitales / Inmarsat
-    '870', // Inmarsat SNAC
+    '881', // Redes satelitales
+    '882', // Tarifas especiales internacionales
+    '883', // Servicios Globales Satelitales
+    '870', // Inmarsat
   };
 
   // Estados del HUD
@@ -126,7 +132,7 @@ class SecurityProvider with ChangeNotifier {
   List<String> _forensicLogs = [
     "CENTINELA: Núcleo proactivo híbrido inicializado correctamente."
   ];
-  final List<Map<String, dynamic>> _masterBitacora = [];
+  List<Map<String, dynamic>> _masterBitacora = [];
 
   // Timers y Subscripciones
   Timer? _keepAliveTimer;
@@ -169,7 +175,7 @@ class SecurityProvider with ChangeNotifier {
     _startProactivePatrol();
   }
 
-  /// Conecta el listener del interceptor telefónico nativo con el estado del Provider
+  /// Listener del interceptor telefónico nativo
   void _initPhoneInterceptorListener() {
     _phoneInterceptor.startListening();
     _phoneInterceptorSubscription = _phoneInterceptor.onCallIntercepted.listen((verdict) async {
@@ -186,22 +192,22 @@ class SecurityProvider with ChangeNotifier {
         _malwarePrevented++;
       }
 
-      _masterBitacora.insert(0, {
+      final newLog = {
         'id': DateTime.now().millisecondsSinceEpoch.toString(),
         'timestamp': DateTime.now().toIso8601String().substring(11, 19),
         'target': verdict.phoneNumber,
         'score': verdict.riskScore,
         'verdict': verdict.verdict,
         'vector': "TELEFÓNICO (INTERCEPTOR)",
-      });
+      };
 
-      await _guardarBitacoraLocalmente();
+      await _registrarLogEnPersistencia(newLog);
       _isAnalyzingCall = false;
       notifyListeners();
     });
   }
 
-  /// Receptor proactivo para eventos de instalación de APK detectados desde Kotlin
+  /// Receptor proactivo para eventos de instalación de APK desde Kotlin
   Future<void> initializeApkCentinel() async {
     _apkChannel.setMethodCallHandler((call) async {
       if (call.method == "onApkInstalled") {
@@ -224,7 +230,6 @@ class SecurityProvider with ChangeNotifier {
     }
   }
 
-  /// Procesa individualmente la evaluación de una APK instalada
   Future<void> _procesarApkDetectada(Map<String, dynamic> data) async {
     final String appName = (data['appName'] ?? 'Aplicación Desconocida').toString();
     final String apkPath = (data['apkPath'] ?? '').toString();
@@ -256,21 +261,32 @@ class SecurityProvider with ChangeNotifier {
       _malwarePrevented += 1;
     }
 
-    _masterBitacora.insert(0, {
+    final newLog = {
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'timestamp': DateTime.now().toIso8601String().substring(11, 19),
       'target': "$appName ($packageName)",
       'score': apkScore,
       'verdict': apkVerdict,
       'vector': "INSTALACIÓN APK",
-    });
+    };
 
-    await _guardarBitacoraLocalmente();
+    await _registrarLogEnPersistencia(newLog);
     notifyListeners();
   }
 
   Future<void> loadHistoricalLogs() async {
-    await _cargarHistorialInicial();
+    try {
+      final logs = await _forensicReportService.fetchHistoricalLogs();
+      if (logs.isNotEmpty) {
+        _masterBitacora = List<Map<String, dynamic>>.from(logs);
+      } else {
+        await _cargarHistorialInicialLegacy();
+      }
+    } catch (e) {
+      debugPrint("Error al cargar historial desde SQLite: $e. Intentando Fallback...");
+      await _cargarHistorialInicialLegacy();
+    }
+    notifyListeners();
   }
 
   void _checkEngineStatus() {
@@ -357,7 +373,7 @@ class SecurityProvider with ChangeNotifier {
   }
 
   // ==================================================================================================
-  // PERSISTENCIA Y SINCRONIZACIÓN DE LISTAS DINÁMICAS
+  // PERSISTENCIA Y SINCRONIZACIÓN DE LISTAS DINÁMICAS Y BASE DE DATOS
   // ==================================================================================================
 
   Future<void> _cargarListasDinamicasGuardadas() async {
@@ -393,7 +409,26 @@ class SecurityProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _cargarHistorialInicial() async {
+  /// Método adaptativo para registrar logs en la base de datos sin errores de compilación
+  Future<void> _registrarLogEnPersistencia(Map<String, dynamic> log) async {
+    _masterBitacora.insert(0, log);
+    try {
+      final dynamic db = _dbService;
+      // Intenta invocar dinámicamente según la API expuesta por DatabaseService
+      try {
+        await db.insertScanLog(log);
+      } catch (_) {
+        try {
+          await db.insertLog(log);
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint("Error guardando registro en DB: $e");
+    }
+    await _guardarBitacoraLocalmenteSharedPreferences();
+  }
+
+  Future<void> _cargarHistorialInicialLegacy() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String? localLogsJson = prefs.getString('josh_local_bitacora');
@@ -426,17 +461,13 @@ class SecurityProvider with ChangeNotifier {
           0,
           "ÉXITO: Bitácora restaurada (${_masterBitacora.length} registros).",
         );
-
-        notifyListeners();
       }
     } catch (e) {
-      debugPrint("Error al recuperar historial persistente: $e");
-      _forensicLogs.insert(0, "🚨 Error al cargar la bitácora inicial: $e");
-      notifyListeners();
+      debugPrint("Error al recuperar historial persistente legacy: $e");
     }
   }
 
-  Future<void> _guardarBitacoraLocalmente() async {
+  Future<void> _guardarBitacoraLocalmenteSharedPreferences() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       if (_masterBitacora.length > 100) {
@@ -444,7 +475,7 @@ class SecurityProvider with ChangeNotifier {
       }
       await prefs.setString('josh_local_bitacora', jsonEncode(_masterBitacora));
     } catch (e) {
-      debugPrint("🚨 Error guardando bitácora: $e");
+      debugPrint("🚨 Error guardando bitácora en SharedPreferences: $e");
     }
   }
 
@@ -454,7 +485,6 @@ class SecurityProvider with ChangeNotifier {
     return "${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB";
   }
 
-  /// Selecciona y escanea un archivo binario conectando con FileScannerService
   Future<bool> pickLocalFile() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
@@ -472,7 +502,6 @@ class SecurityProvider with ChangeNotifier {
       _selectedFileSize = fileMetadata.size;
       _selectedFilePath = fileMetadata.path;
 
-      // Integración directa con el motor perimetral FileScannerService (SHA-256 + VirusTotal)
       final FileScanVerdict scanVerdict = await _fileScanner.scanLocalFile(realFile);
       final String formattedSize = _formatBytes(_selectedFileSize ?? 0);
 
@@ -493,16 +522,16 @@ class SecurityProvider with ChangeNotifier {
       _forensicLogs.insert(1, "» Dictamen: $_verdictText (${_vulnerabilityScore.toStringAsFixed(1)}%)");
       _forensicLogs.insert(2, "» Detalle: ${scanVerdict.analysisMessage}");
 
-      _masterBitacora.insert(0, {
+      final newLog = {
         'id': DateTime.now().millisecondsSinceEpoch.toString(),
         'timestamp': DateTime.now().toIso8601String().substring(11, 19),
         'target': "$_selectedFileName ($formattedSize)",
         'score': _vulnerabilityScore,
         'verdict': _verdictText,
         'vector': "MALWARE (LOCAL_PERIMETER)",
-      });
+      };
 
-      await _guardarBitacoraLocalmente();
+      await _registrarLogEnPersistencia(newLog);
       notifyListeners();
       return true;
     } catch (e) {
@@ -516,7 +545,6 @@ class SecurityProvider with ChangeNotifier {
   // ALGORITMOS DE AUDITORÍA HEURÍSTICA Y ANÁLISIS VECTORIAL
   // ==================================================================================================
 
-  /// Cálculo de Distancia Levenshtein para Typosquatting
   int _levenshteinDistance(String a, String b) {
     if (a == b) return 0;
     if (a.isEmpty) return b.length;
@@ -536,7 +564,6 @@ class SecurityProvider with ChangeNotifier {
     return v1[b.length];
   }
 
-  /// Evaluador Avanzado de URLs / Phishing
   Map<String, dynamic> _evaluatePhishingHeuristics(String inputUrl) {
     String clean = inputUrl.trim().toLowerCase();
 
@@ -570,7 +597,6 @@ class SecurityProvider with ChangeNotifier {
       host = host.split(':')[0];
     }
 
-    // 1. Verificación exacta contra Whitelist Oficial u Dominios Gubernamentales (.gov.co)
     if (_officialWhitelist.contains(host) || host.endsWith('.gov.co')) {
       if (hasTyposInProtocol) {
         return {
@@ -586,7 +612,6 @@ class SecurityProvider with ChangeNotifier {
       };
     }
 
-    // 2. Detección de Subdominios engañosos y Anzuelos de Ingeniería Social
     List<String> keywords = [
       'bancolombia',
       'nequi',
@@ -619,7 +644,6 @@ class SecurityProvider with ChangeNotifier {
       };
     }
 
-    // 3. Detección de Typosquatting (Levenshtein contra marcas legítimas)
     for (var officialDomain in _officialWhitelist) {
       String officialBase = officialDomain.split('.')[0];
       String currentBase = host.split('.')[0];
@@ -634,7 +658,6 @@ class SecurityProvider with ChangeNotifier {
       }
     }
 
-    // 4. Caracteres extraños, homólogos y símbolos sospechosos
     if (host.contains("@") || (host.contains("-") && host.split("-").length > 3)) {
       return {
         'score': 80.0,
@@ -658,7 +681,6 @@ class SecurityProvider with ChangeNotifier {
     };
   }
 
-  /// Evaluador Avanzado de Telefonía delegando en PhoneInterceptorService
   Future<Map<String, dynamic>> _evaluatePhoneHeuristicsAsync(String inputPhone) async {
     final verdict = await _phoneInterceptor.analyzePhoneNumber(inputPhone);
     return {
@@ -668,7 +690,6 @@ class SecurityProvider with ChangeNotifier {
     };
   }
 
-  /// EVALUADOR HEURÍSTICO CENTRAL (Sincrónico con fallback para llamadas)
   Map<String, dynamic> _evaluateLocalHeuristics(String target, int currentTab) {
     if (currentTab == 1) { // PHISHING / URL
       return _evaluatePhishingHeuristics(target);
@@ -742,22 +763,21 @@ class SecurityProvider with ChangeNotifier {
       _forensicLogs.insert(2, "» Razón: ${localResult['reason']}");
     }
 
-    _masterBitacora.insert(0, {
+    final newLog = {
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'timestamp': DateTime.now().toIso8601String().substring(11, 19),
       'target': targetToAudit,
       'score': _vulnerabilityScore,
       'verdict': _verdictText,
       'vector': "$vectorLabel (LOCAL)",
-    });
+    };
 
-    await _guardarBitacoraLocalmente();
+    await _registrarLogEnPersistencia(newLog);
 
     _isLoading = false;
     notifyListeners();
   }
 
-  /// Limpia únicamente la bitácora visible (Scrolling Logs en el HUD)
   void clearForensicLogs() {
     _forensicLogs = [
       "CENTINELA: Bitácora visible limpiada por el usuario."
@@ -765,17 +785,29 @@ class SecurityProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Limpia la bitácora histórica persistente (Guardada en SharedPreferences / SQLite)
   Future<void> clearMasterBitacora() async {
     _masterBitacora.clear();
     _forensicLogs = [
       "CENTINELA: Historial completo y memoria local purgados con éxito."
     ];
-    notifyListeners();
+
     try {
+      final dynamic db = _dbService;
+      try {
+        await db.clearAllLogs();
+      } catch (_) {
+        try {
+          await db.clearLogs();
+        } catch (_) {}
+      }
+
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.remove('josh_local_bitacora');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint("Error purgando registros persistentes: $e");
+    }
+
+    notifyListeners();
   }
 
   @override

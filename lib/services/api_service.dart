@@ -1,18 +1,21 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/api_service.dart
-// PUENTE DE CONEXIÓN Y MOTOR HEURÍSTICO DE ANÁLISIS DE TELEMETRÍA v4.6
+// PUENTE DE CONEXIÓN, CLIENTE SSL PINNING Y MOTOR HEURÍSTICO DE ANÁLISIS DE TELEMETRÍA v4.8
 // ====================================================================================================
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:http/io_client.dart';
 import 'package:http/http.dart' as http;
 
-// 🔗 Importaciones Relativas Corregidas (Mismo nivel dentro de lib/services/)
 import 'core/models.dart';
 import 'analytics/entropy_engine.dart';
 import 'reputation/reputation_engine.dart';
 import 'learning/learning_engine.dart';
+import 'security/database_service.dart';
 
 class ApiService {
   final EntropyEngine _entropyEngine;
@@ -20,11 +23,10 @@ class ApiService {
   final LearningEngine _learningEngine;
   final Map<String, double> _communityMatrix;
 
-  /// INFRAESTRUCTURA UNIFICADA EN RENDER
+  static http.Client? _secureClient;
   static const String _cloudUrl = 'https://josh-security.onrender.com';
   static String get _baseUrl => _cloudUrl;
 
-  /// MATRIZ EXTENDIDA DE OPERADORES MÓVILES Y FIJOS (COLOMBIA)
   final List<String> _validColombianPrefixes = [
     '300', '301', '302', '303', '304', '305', '310', '311', '312', '313', '314', 
     '315', '316', '317', '318', '319', '320', '321', '322', '323', '324', '325', 
@@ -45,7 +47,33 @@ class ApiService {
         _learningEngine = learningEngine ?? LearningEngine(),
         _communityMatrix = communityMatrix ?? {};
 
-  /// Ejecuta el análisis perimetral combinando Nube + Heurística Local
+  static Future<http.Client> _getHttpClient() async {
+    if (_secureClient != null) return _secureClient!;
+
+    try {
+      ByteData certData = await rootBundle.load('assets/certificates/api_cert.pem');
+      List<int> certBytes = certData.buffer.asUint8List();
+
+      SecurityContext context = SecurityContext(withTrustedRoots: true);
+
+      if (certBytes.isNotEmpty) {
+        context.setTrustedCertificatesBytes(certBytes);
+      }
+
+      HttpClient httpClient = HttpClient(context: context)
+        ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+          return false;
+        };
+
+      _secureClient = IOClient(httpClient);
+      return _secureClient!;
+    } catch (e) {
+      debugPrint('⚠️ [SSL] Error al cargar api_cert.pem: $e. Usando cliente fallback.');
+      _secureClient = http.Client();
+      return _secureClient!;
+    }
+  }
+
   Future<Map<String, dynamic>> scanTarget(String type, String target) async {
     String normalizedType = type.toUpperCase();
     if (normalizedType == 'TELEFONO' || normalizedType == 'CELLULAR' || normalizedType == 'SPAM') {
@@ -57,28 +85,25 @@ class ApiService {
     }
 
     final Map<String, dynamic> resultData = await _executeNetworkScan(target, normalizedType);
-    _syncWithSqlite(target, normalizedType, resultData);
+    await _syncWithSqlite(target, normalizedType, resultData);
 
     return resultData;
   }
 
-  /// Cliente REST con Exponential Backoff
   Future<Map<String, dynamic>> _executeNetworkScan(String target, String type) async {
     final String targetEndpoint = '$_baseUrl/api/v1/scan';
+    final client = await _getHttpClient();
     
     int maxRetries = 3;
     int delaySeconds = 2;
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        debugPrint('🛰️ [RED] Enviando payload a: $targetEndpoint (Intento $attempt/$maxRetries)');
-        
-        final response = await http.post(
+        final response = await client.post(
           Uri.parse(targetEndpoint),
           headers: {
             'Content-Type': 'application/json; charset=UTF-8',
             'Accept': 'application/json',
-            'Access-Control-Allow-Origin': '*', 
           },
           body: jsonEncode({
             'target': target,
@@ -118,7 +143,6 @@ class ApiService {
         
         return _fallbackStaticResult(type, 'Error de respuesta en la Nube: ${response.statusCode}');
       } catch (e) {
-        debugPrint('🚨 [INTENTO $attempt FALLIDO] Error: $e');
         if (attempt < maxRetries) {
           int currentDelay = delaySeconds * math.pow(2, attempt - 1).toInt();
           await Future.delayed(Duration(seconds: currentDelay));
@@ -131,12 +155,12 @@ class ApiService {
 
   Future<Map<String, dynamic>> _executeAlternativeNetworkScan(String target, String type, String altEndpoint) async {
     try {
-      final response = await http.post(
+      final client = await _getHttpClient();
+      final response = await client.post(
         Uri.parse(altEndpoint),
         headers: {
           'Content-Type': 'application/json; charset=UTF-8',
           'Accept': 'application/json',
-          'Access-Control-Allow-Origin': '*',
         },
         body: jsonEncode({'target': target, 'type': type}),
       ).timeout(const Duration(seconds: 15));
@@ -164,7 +188,8 @@ class ApiService {
   Future<List<dynamic>> fetchScanHistory() async {
     final String historyEndpoint = '$_baseUrl/api/v1/history';
     try {
-      final response = await http.get(
+      final client = await _getHttpClient();
+      final response = await client.get(
         Uri.parse(historyEndpoint),
         headers: {'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 10));
@@ -173,16 +198,34 @@ class ApiService {
         final decoded = jsonDecode(response.body);
         if (decoded is List) return decoded;
       }
-    } catch (e) {
-      debugPrint('⚠️ Error al solicitar historial: $e');
-    }
+    } catch (_) {}
     return [];
   }
 
   Future<void> _syncWithSqlite(String target, String type, Map<String, dynamic> localResult) async {
+    try {
+      final double score = (localResult['riskScore'] as num?)?.toDouble() ?? 0.0;
+      final String classification = localResult['classification']?.toString() ?? 'SEGURO';
+
+      await DatabaseService.instance.insertForensicLog({
+        'timestamp': DateTime.now().toIso8601String(),
+        'service': type,
+        'activity': target,
+        'verdict': classification,
+        'matched_rule': 'HEURISTICA_CENTINELA',
+        'extra_data': jsonEncode({
+          'score': score,
+          'risk_level': classification,
+          'vector': type,
+          'logs': localResult['logs'] ?? 'Auditoría registrada.'
+        }),
+      });
+    } catch (_) {}
+
     final String syncEndpoint = '$_baseUrl/api/v1/sync';
     try {
-      await http.post(
+      final client = await _getHttpClient();
+      await client.post(
         Uri.parse(syncEndpoint), 
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -207,7 +250,6 @@ class ApiService {
     };
   }
 
-  /// Análisis Heurístico Local (Escala 0.0 - 100.0)
   AnalysisResult analyze(String phone, List<CallRecord> history) {
     final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
 
@@ -242,7 +284,6 @@ class ApiService {
       }
     }
 
-    // Calibración de procedencia
     if (isKnownColombianOrigin && riskScore > 10.0 && entropy < 55.0) {
       riskScore = math.max(0.0, riskScore - 15.0); 
     } else if (!isKnownColombianOrigin && riskScore < 80.0) {

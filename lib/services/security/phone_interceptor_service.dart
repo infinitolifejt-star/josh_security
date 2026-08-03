@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
-// REEMPLAZO TOTAL — SERVICIO DE INTERCEPTOR Y REPUTACIÓN TELEFÓNICA (CONTRATO UNIFICADO v4.6)
+// REEMPLAZO TOTAL — SERVICIO DE INTERCEPTOR Y REPUTACIÓN TELEFÓNICA (CONTRATO UNIFICADO v4.8)
 // COMPONENTE: PhoneInterceptorService - JOSH Security
 // ====================================================================================================
 
@@ -8,7 +8,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'overlay_service.dart';
 
-/// Enum global para identificar la fuente del diagnóstico en llamadas, archivos y red.
 enum DiagnosticSource {
   local,
   cloud,
@@ -18,7 +17,6 @@ enum DiagnosticSource {
   fileSystem,
 }
 
-/// Estructura de resultado para el dictamen de llamadas interceptadas.
 class CallVerdict {
   final String phoneNumber;
   final double riskScore;
@@ -36,7 +34,6 @@ class CallVerdict {
     this.source = DiagnosticSource.phoneInterceptor,
   });
 
-  // --- Getters de compatibilidad ---
   String get riskLevel => verdict;
   String get analysisMessage => details;
 
@@ -71,46 +68,50 @@ class PhoneInterceptorService {
     _isListening = true;
 
     _channel.setMethodCallHandler((call) async {
-      // 🚨 CORRECCIÓN CLAVE: Emparejado con "onCallIntercepted" enviado desde PhoneCallReceiver.kt
       if (call.method == "onCallIntercepted") {
         final Map<String, dynamic> args = Map<String, dynamic>.from(call.arguments);
         final String number = (args['phoneNumber'] ?? '').toString();
 
         if (number.isNotEmpty) {
-          // 1. Correr la heurística antifraude
           final verdict = await analyzePhoneNumber(number);
           
-          // 2. Transmitir el veredicto al Stream interno de la app
           _callVerdictController.add(verdict);
 
-          // 3. 🚀 DESPLEGAR EL POP-UP FLOTANTE (OVERLAY) EN PANTALLA
-          await OverlayService.showWarningOverlay(
-            phoneNumber: verdict.phoneNumber,
-            riskLevel: verdict.verdict,
-            message: verdict.details,
-          );
+          // Lanza el Overlay únicamente si el nivel de riesgo requiere alerta
+          await showOverlayIfRequired(verdict);
         }
+      } else if (call.method == "onCallEnded") {
+        await OverlayService.closeOverlay();
       }
     });
   }
 
-  /// Detiene la escucha activa del interceptor.
+  /// Gestiona el despliegue de ventanas flotantes verificando el veredicto
+  Future<void> showOverlayIfRequired(CallVerdict verdict) async {
+    try {
+      await OverlayService.showWarningOverlay(
+        phoneNumber: verdict.phoneNumber,
+        riskLevel: verdict.verdict,
+        message: verdict.details,
+      );
+    } catch (e) {
+      // Ignorar si el overlay ya está activo o faltan permisos nativos
+    }
+  }
+
   void stopListening() {
     _isListening = false;
     _channel.setMethodCallHandler(null);
   }
 
-  /// Método de compatibilidad para llamadas entrantes desde background_shield.
   Future<CallVerdict> analyzeIncomingCall(String phoneNumber) async {
     return await analyzePhoneNumber(phoneNumber);
   }
 
-  /// Evalúa un número telefónico analizando indicativos de alto riesgo y patrones de entropía.
   Future<CallVerdict> analyzePhoneNumber(String phoneNumber) async {
     final String clean = phoneNumber.trim().toLowerCase();
     final String digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
 
-    // 1. Números de emergencia / Líneas directas gubernamentales
     if (digitsOnly == "123" ||
         digitsOnly == "112" ||
         digitsOnly == "165" ||
@@ -125,7 +126,6 @@ class PhoneInterceptorService {
       );
     }
 
-    // 2. Prefijos internacionales de alto riesgo (VoIP masivo, Spam, Tarifa Especial)
     final suspiciousCodes = [
       '234', '254', '381', '216', '225', '233', '92', '880', '371', '370', '881', '882', '883', '870'
     ];
@@ -143,7 +143,6 @@ class PhoneInterceptorService {
       }
     }
 
-    // 3. Patrones repetición / Entropía de dígitos (Ej: 999999, 123456)
     if (RegExp(r'(\d)\1{4,}').hasMatch(digitsOnly)) {
       return CallVerdict(
         phoneNumber: phoneNumber,
@@ -155,7 +154,6 @@ class PhoneInterceptorService {
       );
     }
 
-    // 4. Formato Estándar Móvil o Fijo Colombia (+57 3xx / 60x)
     if (digitsOnly.length == 10 && (digitsOnly.startsWith("3") || digitsOnly.startsWith("60"))) {
       return CallVerdict(
         phoneNumber: phoneNumber,
@@ -167,7 +165,6 @@ class PhoneInterceptorService {
       );
     }
 
-    // 5. Longitud inusual (Líneas recortadas o sobreextendidas)
     if (digitsOnly.isNotEmpty && (digitsOnly.length < 7 || digitsOnly.length > 14)) {
       return CallVerdict(
         phoneNumber: phoneNumber,

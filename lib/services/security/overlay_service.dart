@@ -47,7 +47,7 @@ class OverlayService {
         flag: OverlayFlag.defaultFlag,
         visibility: NotificationVisibility.visibilityPublic,
         positionGravity: PositionGravity.auto,
-        height: 480,
+        height: 600, // <-- Aumentado de 480 a 600 para dar espacio exacto al botón ENTENDIDO y evitar overflow
         width: WindowSize.matchParent,
       );
 
