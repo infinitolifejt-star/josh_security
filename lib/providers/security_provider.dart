@@ -1,821 +1,278 @@
 // ====================================================================================================
 // ARCHIVO: lib/providers/security_provider.dart
-// REEMPLAZO TOTAL — GESTOR DE ESTADO CENTRAL CON MOTOR HEURÍSTICO AVANZADO E INTEGRACIÓN TOTAL
-// COMPONENTE: SecurityProvider - JOSH Security
+// JOSH SECURITY v6.0 - PROVIDER ORQUESTADOR LIGERO
 // ====================================================================================================
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
 import 'package:file_picker/file_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/material.dart';
 
-// Importaciones con ruta absoluta de paquete
-import 'package:josh_security/services/api_service.dart';
-import 'package:josh_security/services/security/database_service.dart';
-import 'package:josh_security/services/security/forensic_report_service.dart';
-import 'package:josh_security/services/security/phone_interceptor_service.dart';
-import 'package:josh_security/services/security/file_scanner_service.dart';
-import 'package:josh_security/services/reputation/reputation_engine.dart';
+import '../services/api_service.dart';
+import '../services/security/database_service.dart';
+import '../services/security/file_scanner_service.dart';
+import '../services/security/phone_interceptor_service.dart';
 
-class SecurityProvider with ChangeNotifier {
+class SecurityProvider extends ChangeNotifier {
+  //============================================================================
+  // SERVICIOS
+  //============================================================================
   final ApiService _apiService = ApiService();
-  final DatabaseService _dbService = DatabaseService();
-  final ForensicReportService _forensicReportService = ForensicReportService();
-  final PhoneInterceptorService _phoneInterceptor = PhoneInterceptorService();
-  final FileScannerService _fileScanner = FileScannerService();
-  final ReputationEngine _reputationEngine = ReputationEngine();
+  final DatabaseService _database = DatabaseService.instance;
+  final PhoneInterceptorService _phoneService = PhoneInterceptorService();
+  final FileScannerService _fileScanner = FileScannerService.instance;
 
-  // Canal de plataforma nativo para interceptor de instalaciones APK
-  static const MethodChannel _apkChannel = MethodChannel('josh_security/apk_centinel');
-
-  // ==================================================================================================
-  // BASE DE DATOS LOCAL DE LISTAS BLANCAS Y PREFIJOS SOSPECHOSOS
-  // ==================================================================================================
-  static final Set<String> _officialWhitelist = {
-    // --- Servicios Globales & Tecnológicos ---
-    'google.com',
-    'youtube.com',
-    'github.com',
-    'facebook.com',
-    'instagram.com',
-    'microsoft.com',
-    'apple.com',
-    'amazon.com',
-    'paypal.com',
-    'whatsapp.com',
-    'netflix.com',
-    'spotify.com',
-    'live.com',
-    'outlook.com',
-    'mercadolibre.com.co',
-    'mercadopago.com.co',
-
-    // --- Entidades Financieras & Pasarelas (Colombia / LATAM) ---
-    'bancolombia.com',
-    'nequi.com.co',
-    'davivienda.com',
-    'daviplata.com',
-    'bbva.com.co',
-    'bancodebogota.com',
-    'bancopopular.com.co',
-    'bancodeoccidente.com.co',
-    'avvillas.com.co',
-    'scotiabankcolpatria.com.co',
-    'itau.co',
-    'lulobank.com',
-    'nu.com.co',
-    'bold.co',
-    'pse.com.co',
-    'tuya.com.co',
-    'dale.com.co',
-    'movii.com.co',
-
-    // --- Entidades Gubernamentales & Judiciales ---
-    'gov.co',
-    'dian.gov.co',
-    'ramajudicial.gov.co',
-    'policia.gov.co',
-    'fiscalia.gov.co',
-    'presidencia.gov.co',
-    'mintic.gov.co',
-    'procuraduria.gov.co',
-    'contraloria.gov.co',
-  };
-
-  // Prefijos/Indicativos telefónicos de alto riesgo
-  static final Set<String> _suspiciousCountryCodes = {
-    '234', // Nigeria
-    '254', // Kenya
-    '381', // Serbia (Spam VoIP)
-    '216', // Túnez
-    '225', // Costa de Marfil
-    '233', // Ghana
-    '92',  // Pakistán
-    '880', // Bangladesh
-    '371', // Letonia
-    '370', // Lituania
-    '881', // Redes satelitales
-    '882', // Tarifas especiales internacionales
-    '883', // Servicios Globales Satelitales
-    '870', // Inmarsat
-  };
-
-  // Estados del HUD
-  double _vulnerabilityScore = 0.0;
-  String _verdictText = "SISTEMA LISTO";
-  Color _hudColor = const Color(0xFF00E676);
+  //============================================================================
+  // ESTADO GENERAL & HUD
+  //============================================================================
+  bool _initialized = false;
   bool _isLoading = false;
-  String _statusCategory = "ESCANER HUD • TELEFONÍA";
-
   bool _isEnginePatrolling = false;
+  final bool _cloudAvailable = false;
+  int _currentVector = 0;
 
-  // Archivos
+  double _vulnerabilityScore = 0;
+  Color _hudColor = Colors.green;
+  String _verdictText = "SISTEMA OPERATIVO SEGURO";
+  String _statusCategory = "CENTINELA INICIALIZANDO...";
+
   String? _selectedFileName;
-  int? _selectedFileSize;
-  String? _selectedFilePath;
+  File? _selectedFile;
 
-  // Interceptor
-  CallVerdict? _lastCallVerdict;
-  bool _isAnalyzingCall = false;
+  //============================================================================
+  // METRICAS Y CONSOLAS
+  //============================================================================
+  int _linksChecked = 0;
+  int _callsChecked = 0;
+  int _malwarePrevented = 0;
 
-  // Estadísticas
-  int _linksChecked = 124;
-  int _callsChecked = 87;
-  int _malwarePrevented = 5;
+  final List<String> _forensicLogs = [];
+  List<Map<String, dynamic>> _historicalLogs = [];
 
-  // Bitácoras
-  List<String> _forensicLogs = [
-    "CENTINELA: Núcleo proactivo híbrido inicializado correctamente."
-  ];
-  List<Map<String, dynamic>> _masterBitacora = [];
-
-  // Timers y Subscripciones
-  Timer? _keepAliveTimer;
-  Timer? _proactivePatrolTimer;
-  StreamSubscription<CallVerdict>? _phoneInterceptorSubscription;
-
-  // Getters
-  double get vulnerabilityScore => _vulnerabilityScore;
-  String get verdictText => _verdictText;
-  Color get hudColor => _hudColor;
+  //============================================================================
+  // GETTERS
+  //============================================================================
+  bool get initialized => _initialized;
   bool get isLoading => _isLoading;
-  String get statusCategory => _statusCategory;
   bool get isEnginePatrolling => _isEnginePatrolling;
-  String? get selectedFileName => _selectedFileName;
-  int? get selectedFileSize => _selectedFileSize;
-  String? get selectedFilePath => _selectedFilePath;
+  bool get cloudAvailable => _cloudAvailable;
+  int get currentVector => _currentVector;
+  double get vulnerabilityScore => _vulnerabilityScore;
+  Color get hudColor => _hudColor;
+  String get verdictText => _verdictText;
+  String get statusCategory => _statusCategory;
   int get linksChecked => _linksChecked;
   int get callsChecked => _callsChecked;
   int get malwarePrevented => _malwarePrevented;
-  List<String> get forensicLogs => _forensicLogs;
+  String? get selectedFileName => _selectedFileName;
+  List<String> get forensicLogs => List.unmodifiable(_forensicLogs);
+  List<Map<String, dynamic>> get historicalLogs => List.unmodifiable(_historicalLogs);
 
-  List<Map<String, dynamic>> get masterBitacora => _masterBitacora;
-  List<Map<String, dynamic>> get historicalLogs => _masterBitacora;
-
-  CallVerdict? get lastCallVerdict => _lastCallVerdict;
-  bool get isAnalyzingCall => _isAnalyzingCall;
-  PhoneInterceptorService get phoneInterceptor => _phoneInterceptor;
-  ReputationEngine get reputationEngine => _reputationEngine;
-
-  SecurityProvider() {
-    initializeApkCentinel();
-    _initPhoneInterceptorListener();
-  }
-
+  //============================================================================
+  // INICIALIZACIÓN Y CONTROL
+  //============================================================================
   Future<void> initialize() async {
-    _initKeepAliveTimer();
-    _checkEngineStatus();
-    await loadHistoricalLogs();
-    await _cargarListasDinamicasGuardadas();
-    _startProactivePatrol();
-  }
-
-  /// Listener del interceptor telefónico nativo
-  void _initPhoneInterceptorListener() {
-    _phoneInterceptor.startListening();
-    _phoneInterceptorSubscription = _phoneInterceptor.onCallIntercepted.listen((verdict) async {
-      _isAnalyzingCall = true;
-      _lastCallVerdict = verdict;
-      _callsChecked++;
-
-      _forensicLogs.insert(
-        0,
-        "📞 [TELEFONÍA] Llamada analizada: ${verdict.phoneNumber} -> ${verdict.verdict} (${verdict.category})",
-      );
-
-      if (verdict.riskScore >= 70.0) {
-        _malwarePrevented++;
-      }
-
-      final newLog = {
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
-        'timestamp': DateTime.now().toIso8601String().substring(11, 19),
-        'target': verdict.phoneNumber,
-        'score': verdict.riskScore,
-        'verdict': verdict.verdict,
-        'vector': "TELEFÓNICO (INTERCEPTOR)",
-      };
-
-      await _registrarLogEnPersistencia(newLog);
-      _isAnalyzingCall = false;
-      notifyListeners();
-    });
-  }
-
-  /// Receptor proactivo para eventos de instalación de APK desde Kotlin
-  Future<void> initializeApkCentinel() async {
-    _apkChannel.setMethodCallHandler((call) async {
-      if (call.method == "onApkInstalled") {
-        final Map<String, dynamic> data = Map<String, dynamic>.from(call.arguments as Map);
-        await _procesarApkDetectada(data);
-      }
-    });
+    if (_initialized) return;
+    _setLoadingState(true);
 
     try {
-      final List<dynamic>? pendingApks = await _apkChannel.invokeMethod('getPendingApks');
-      if (pendingApks != null && pendingApks.isNotEmpty) {
-        for (var apkData in pendingApks) {
-          if (apkData is Map) {
-            await _procesarApkDetectada(Map<String, dynamic>.from(apkData));
-          }
-        }
-      }
+      await _database.database;
+      _phoneService.startListening();
+      await _loadHistoricalLogs();
+      _statusCategory = "CENTINELA OPERATIVO";
+      _initialized = true;
     } catch (e) {
-      debugPrint("Error al recuperar APKs pendientes desde nativo: $e");
+      _appendLog("ERROR INICIALIZANDO: $e");
+    } finally {
+      _setLoadingState(false);
     }
   }
 
-  Future<void> _procesarApkDetectada(Map<String, dynamic> data) async {
-    final String appName = (data['appName'] ?? 'Aplicación Desconocida').toString();
-    final String apkPath = (data['apkPath'] ?? '').toString();
-    final String packageName = (data['packageName'] ?? '').toString();
-
-    _forensicLogs.insert(0, "🚨 [CENTINELA] APK instalada detectada: $appName ($packageName)");
-
-    double apkScore = 0.0;
-    String apkVerdict = "SEGURO";
-
-    if (apkPath.isNotEmpty) {
-      final File apkFile = File(apkPath);
-      if (await apkFile.exists()) {
-        final fileScanVerdict = await _fileScanner.scanLocalFile(apkFile);
-        apkVerdict = fileScanVerdict.riskLevel;
-        apkScore = apkVerdict == 'CRÍTICO' ? 95.0 : (apkVerdict == 'ADVERTENCIA' ? 50.0 : 0.0);
-      } else {
-        final localEval = _evaluateLocalHeuristics(packageName, 2);
-        apkScore = localEval['score'];
-        apkVerdict = localEval['verdict'];
-      }
-    } else {
-      final localEval = _evaluateLocalHeuristics(packageName, 2);
-      apkScore = localEval['score'];
-      apkVerdict = localEval['verdict'];
-    }
-
-    if (apkScore >= 70.0) {
-      _malwarePrevented += 1;
-    }
-
-    final newLog = {
-      'id': DateTime.now().millisecondsSinceEpoch.toString(),
-      'timestamp': DateTime.now().toIso8601String().substring(11, 19),
-      'target': "$appName ($packageName)",
-      'score': apkScore,
-      'verdict': apkVerdict,
-      'vector': "INSTALACIÓN APK",
-    };
-
-    await _registrarLogEnPersistencia(newLog);
-    notifyListeners();
-  }
-
-  Future<void> loadHistoricalLogs() async {
-    try {
-      final logs = await _forensicReportService.fetchHistoricalLogs();
-      if (logs.isNotEmpty) {
-        _masterBitacora = List<Map<String, dynamic>>.from(logs);
-      } else {
-        await _cargarHistorialInicialLegacy();
-      }
-    } catch (e) {
-      debugPrint("Error al cargar historial desde SQLite: $e. Intentando Fallback...");
-      await _cargarHistorialInicialLegacy();
+  void updateTabState(int tab) {
+    _currentVector = tab;
+    final categories = ["ANÁLISIS TELEFÓNICO", "ANÁLISIS PHISHING", "ANÁLISIS MALWARE"];
+    if (tab >= 0 && tab < categories.length) {
+      _statusCategory = categories[tab];
     }
     notifyListeners();
-  }
-
-  void _checkEngineStatus() {
-    final hasGoogleKey = dotenv.env['GOOGLE_SAFE_BROWSING_API_KEY']?.isNotEmpty ?? false;
-    final hasVirusTotalKey = dotenv.env['VIRUSTOTAL_API_KEY']?.isNotEmpty ?? false;
-
-    if (hasGoogleKey || hasVirusTotalKey) {
-      _isEnginePatrolling = true;
-      _forensicLogs.insert(0, "🛡️ [MOTOR] Conexión establecida. Estado: PATRULLANDO - PROTECCIÓN ACTIVA.");
-    } else {
-      _isEnginePatrolling = true;
-      _forensicLogs.insert(0, "🛡️ [MOTOR] Modo Heurístico Local Autónomo Activo (${_officialWhitelist.length} dominios oficiales en Whitelist).");
-    }
-    notifyListeners();
-  }
-
-  void updateTabState(int index) {
-    _selectedFileName = null;
-    _selectedFileSize = null;
-    _selectedFilePath = null;
-
-    final String enginePrefix = _isEnginePatrolling ? "PATRULLANDO" : "EN ESPERA";
-
-    switch (index) {
-      case 0:
-        _statusCategory = "ESCANER HUD • TELEFONÍA [$enginePrefix]";
-        _forensicLogs.insert(0, "ℹ️ [HUD] Módulo Telefónico activo.");
-        break;
-      case 1:
-        _statusCategory = "ESCANER HUD • PHISHING [$enginePrefix]";
-        _forensicLogs.insert(0, "ℹ️ [HUD] Módulo Phishing activo.");
-        break;
-      case 2:
-        _statusCategory = "ESCANER HUD • MALWARE [$enginePrefix]";
-        _forensicLogs.insert(0, "ℹ️ [HUD] Módulo Malware activo.");
-        break;
-    }
-    notifyListeners();
-  }
-
-  void _initKeepAliveTimer() {
-    _sendKeepAlivePulse();
-    _keepAliveTimer?.cancel();
-    _keepAliveTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
-      _sendKeepAlivePulse();
-    });
-  }
-
-  Future<void> _sendKeepAlivePulse() async {
-    try {
-      await _apiService.fetchScanHistory();
-    } catch (_) {}
-  }
-
-  void _startProactivePatrol() {
-    _proactivePatrolTimer?.cancel();
-    _proactivePatrolTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      final random = Random();
-      _linksChecked += random.nextInt(2);
-      _callsChecked += random.nextInt(2);
-
-      final String prefix = (random.nextBool()) ? "300" : "310";
-      final String randomDigits = List.generate(7, (_) => random.nextInt(10)).join();
-      final String simulatedPhone = "+57 $prefix $randomDigits";
-
-      if (random.nextInt(10) > 7) {
-        _malwarePrevented += 1;
-        _forensicLogs.insert(
-          0,
-          "🛡️ [PATRULLA] Intento de intrusión o spam interceptado ($simulatedPhone).",
-        );
-      } else {
-        _forensicLogs.insert(
-          0,
-          "🛡️ [PATRULLA] Escaneo preventivo de red y VoIP realizado. Todo seguro.",
-        );
-      }
-
-      if (_forensicLogs.length > 25) {
-        _forensicLogs.removeLast();
-      }
-      notifyListeners();
-    });
-  }
-
-  // ==================================================================================================
-  // PERSISTENCIA Y SINCRONIZACIÓN DE LISTAS DINÁMICAS Y BASE DE DATOS
-  // ==================================================================================================
-
-  Future<void> _cargarListasDinamicasGuardadas() async {
-    try {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      final List<String>? dynamicWhitelist = prefs.getStringList('josh_dynamic_whitelist');
-      final List<String>? dynamicCodes = prefs.getStringList('josh_dynamic_country_codes');
-
-      if (dynamicWhitelist != null && dynamicWhitelist.isNotEmpty) {
-        _officialWhitelist.addAll(dynamicWhitelist);
-      }
-      if (dynamicCodes != null && dynamicCodes.isNotEmpty) {
-        _suspiciousCountryCodes.addAll(dynamicCodes);
-      }
-    } catch (e) {
-      debugPrint("Error cargando listas dinámicas locales: $e");
-    }
-  }
-
-  Future<void> syncSecurityListsFromCloud(List<String> newDomains, List<String> newCountryCodes) async {
-    try {
-      _officialWhitelist.addAll(newDomains.map((d) => d.toLowerCase().trim()));
-      _suspiciousCountryCodes.addAll(newCountryCodes.map((c) => c.trim()));
-
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('josh_dynamic_whitelist', _officialWhitelist.toList());
-      await prefs.setStringList('josh_dynamic_country_codes', _suspiciousCountryCodes.toList());
-
-      _forensicLogs.insert(0, "🔄 [SISTEMA] Base de datos de seguridad actualizada desde la nube.");
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Error al guardar sincronización de listas: $e");
-    }
-  }
-
-  /// Método adaptativo para registrar logs en la base de datos sin errores de compilación
-  Future<void> _registrarLogEnPersistencia(Map<String, dynamic> log) async {
-    _masterBitacora.insert(0, log);
-    try {
-      final dynamic db = _dbService;
-      // Intenta invocar dinámicamente según la API expuesta por DatabaseService
-      try {
-        await db.insertScanLog(log);
-      } catch (_) {
-        try {
-          await db.insertLog(log);
-        } catch (_) {}
-      }
-    } catch (e) {
-      debugPrint("Error guardando registro en DB: $e");
-    }
-    await _guardarBitacoraLocalmenteSharedPreferences();
-  }
-
-  Future<void> _cargarHistorialInicialLegacy() async {
-    try {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      final String? localLogsJson = prefs.getString('josh_local_bitacora');
-
-      if (localLogsJson != null && localLogsJson.isNotEmpty) {
-        final List<dynamic> decodedList = jsonDecode(localLogsJson);
-
-        _masterBitacora.clear();
-        _forensicLogs.clear();
-
-        for (var item in decodedList) {
-          if (item is Map<String, dynamic>) {
-            _masterBitacora.add(Map<String, dynamic>.from(item));
-          }
-        }
-
-        for (var entry in _masterBitacora.reversed) {
-          final String timestamp = entry['timestamp'] ?? '--:--:--';
-          final String vector = entry['vector'] ?? 'DESCONOCIDO';
-          final String target = entry['target'] ?? 'OBJETIVO';
-          final String verdict = entry['verdict'] ?? 'S/D';
-
-          _forensicLogs.insert(
-            0,
-            "📋 [REGISTRO] $timestamp - $vector: $target [$verdict]",
-          );
-        }
-
-        _forensicLogs.insert(
-          0,
-          "ÉXITO: Bitácora restaurada (${_masterBitacora.length} registros).",
-        );
-      }
-    } catch (e) {
-      debugPrint("Error al recuperar historial persistente legacy: $e");
-    }
-  }
-
-  Future<void> _guardarBitacoraLocalmenteSharedPreferences() async {
-    try {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      if (_masterBitacora.length > 100) {
-        _masterBitacora.removeRange(100, _masterBitacora.length);
-      }
-      await prefs.setString('josh_local_bitacora', jsonEncode(_masterBitacora));
-    } catch (e) {
-      debugPrint("🚨 Error guardando bitácora en SharedPreferences: $e");
-    }
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return "$bytes B";
-    if (bytes < 1024 * 1024) return "${(bytes / 1024).toStringAsFixed(1)} KB";
-    return "${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB";
   }
 
   Future<bool> pickLocalFile() async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+      final result = await FilePicker.platform.pickFiles();
+      if (result?.files.single.path == null) return false;
 
-      if (result == null || result.files.first.path == null) {
-        _forensicLogs.insert(0, "Selección cancelada.");
-        notifyListeners();
-        return false;
-      }
-
-      final fileMetadata = result.files.first;
-      final File realFile = File(fileMetadata.path!);
-
-      _selectedFileName = fileMetadata.name;
-      _selectedFileSize = fileMetadata.size;
-      _selectedFilePath = fileMetadata.path;
-
-      final FileScanVerdict scanVerdict = await _fileScanner.scanLocalFile(realFile);
-      final String formattedSize = _formatBytes(_selectedFileSize ?? 0);
-
-      _verdictText = scanVerdict.riskLevel;
-      if (scanVerdict.riskLevel == 'CRÍTICO') {
-        _vulnerabilityScore = 95.0;
-        _hudColor = const Color(0xFFFF5252);
-        _malwarePrevented += 1;
-      } else if (scanVerdict.riskLevel == 'ADVERTENCIA' || scanVerdict.riskLevel == 'SOSPECHOSO') {
-        _vulnerabilityScore = 55.0;
-        _hudColor = const Color(0xFFFFD740);
-      } else {
-        _vulnerabilityScore = 5.0;
-        _hudColor = const Color(0xFF00E676);
-      }
-
-      _forensicLogs.insert(0, "ANÁLISIS PERIMETRAL: $_selectedFileName ($formattedSize)");
-      _forensicLogs.insert(1, "» Dictamen: $_verdictText (${_vulnerabilityScore.toStringAsFixed(1)}%)");
-      _forensicLogs.insert(2, "» Detalle: ${scanVerdict.analysisMessage}");
-
-      final newLog = {
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
-        'timestamp': DateTime.now().toIso8601String().substring(11, 19),
-        'target': "$_selectedFileName ($formattedSize)",
-        'score': _vulnerabilityScore,
-        'verdict': _verdictText,
-        'vector': "MALWARE (LOCAL_PERIMETER)",
-      };
-
-      await _registrarLogEnPersistencia(newLog);
+      _selectedFile = File(result!.files.single.path!);
+      _selectedFileName = result.files.single.name;
       notifyListeners();
       return true;
     } catch (e) {
-      _forensicLogs.insert(0, "Error en selección de archivo: $e");
-      notifyListeners();
+      _appendLog("FILE PICKER ERROR: $e");
       return false;
     }
   }
 
-  // ==================================================================================================
-  // ALGORITMOS DE AUDITORÍA HEURÍSTICA Y ANÁLISIS VECTORIAL
-  // ==================================================================================================
+  //============================================================================
+  // AUDITORÍA CENTRALIZADA
+  //============================================================================
+  Future<void> executeAuditoria(String target, int vector) async {
+    if (target.trim().isEmpty && vector != 2) return;
 
-  int _levenshteinDistance(String a, String b) {
-    if (a == b) return 0;
-    if (a.isEmpty) return b.length;
-    if (b.isEmpty) return a.length;
+    _isEnginePatrolling = true;
+    _setLoadingState(true);
 
-    List<int> v0 = List<int>.generate(b.length + 1, (i) => i);
-    List<int> v1 = List<int>.filled(b.length + 1, 0);
+    _appendLog("===================================================");
+    _appendLog("CENTINELA INICIANDO AUDITORÍA | OBJ: $target | VEC: $vector");
 
-    for (int i = 0; i < a.length; i++) {
-      v1[0] = i + 1;
-      for (int j = 0; j < b.length; j++) {
-        int cost = (a[i] == b[j]) ? 0 : 1;
-        v1[j + 1] = [v1[j] + 1, v0[j + 1] + 1, v0[j] + cost].reduce(min);
-      }
-      v0 = List.from(v1);
-    }
-    return v1[b.length];
-  }
-
-  Map<String, dynamic> _evaluatePhishingHeuristics(String inputUrl) {
-    String clean = inputUrl.trim().toLowerCase();
-
-    bool hasTyposInProtocol = false;
-    if (clean.startsWith("hht.") ||
-        clean.startsWith("hht://") ||
-        clean.startsWith("htps://") ||
-        clean.startsWith("http//")) {
-      hasTyposInProtocol = true;
-    }
-
-    String processableUrl = clean;
-    if (!processableUrl.contains("://")) {
-      processableUrl = "https://$processableUrl";
-    }
-
-    Uri? parsedUri;
     try {
-      parsedUri = Uri.parse(processableUrl);
-    } catch (_) {
-      return {
-        'score': 85.0,
-        'verdict': 'CRÍTICO',
-        'reason': 'URL malformada o inválida'
-      };
-    }
-
-    String host = parsedUri.host.isEmpty ? clean.split('/')[0] : parsedUri.host;
-
-    if (host.contains(':')) {
-      host = host.split(':')[0];
-    }
-
-    if (_officialWhitelist.contains(host) || host.endsWith('.gov.co')) {
-      if (hasTyposInProtocol) {
-        return {
-          'score': 40.0,
-          'verdict': 'SOSPECHOSO',
-          'reason': 'Dominio oficial pero con error en protocolo.'
-        };
+      switch (vector) {
+        case 0:
+          await _processScan("SPAM", target, "PHONE", () => _callsChecked++);
+          break;
+        case 1:
+          await _processScan("PHISHING", target, "URL", () => _linksChecked++);
+          break;
+        case 2:
+          await _auditFile();
+          break;
       }
-      return {
-        'score': 2.0,
-        'verdict': 'SEGURO',
-        'reason': 'Dominio verificado en Lista Blanca Oficial.'
-      };
+      await _loadHistoricalLogs();
+    } catch (e) {
+      _appendLog("ERROR GENERAL: $e");
+    } finally {
+      _isEnginePatrolling = false;
+      _setLoadingState(false);
     }
-
-    List<String> keywords = [
-      'bancolombia',
-      'nequi',
-      'davivienda',
-      'daviplata',
-      'lulobank',
-      'google',
-      'facebook',
-      'login',
-      'seguro',
-      'verificacion',
-      'soporte',
-      'cuenta'
-    ];
-
-    String matchedKeyword = '';
-    for (var kw in keywords) {
-      if (host.contains(kw) && !host.endsWith("$kw.com") && !host.endsWith("$kw.co")) {
-        matchedKeyword = kw;
-        break;
-      }
-    }
-
-    if (matchedKeyword.isNotEmpty) {
-      return {
-        'score': 95.0,
-        'verdict': 'CRÍTICO',
-        'reason':
-            'Ingeniería Social: Usa marca/palabra clave "$matchedKeyword" como anzuelo en subdominio o dominio falso.'
-      };
-    }
-
-    for (var officialDomain in _officialWhitelist) {
-      String officialBase = officialDomain.split('.')[0];
-      String currentBase = host.split('.')[0];
-
-      int dist = _levenshteinDistance(currentBase, officialBase);
-      if (dist > 0 && dist <= 2 && currentBase.length >= 4) {
-        return {
-          'score': 98.0,
-          'verdict': 'CRÍTICO',
-          'reason': 'Typosquatting detectado: Dominio "$host" imita a "$officialDomain".'
-        };
-      }
-    }
-
-    if (host.contains("@") || (host.contains("-") && host.split("-").length > 3)) {
-      return {
-        'score': 80.0,
-        'verdict': 'CRÍTICO',
-        'reason': 'Uso de guiones/símbolos sospechosos en el host.'
-      };
-    }
-
-    if (hasTyposInProtocol) {
-      return {
-        'score': 75.0,
-        'verdict': 'SOSPECHOSO',
-        'reason': 'Error ortográfico en el protocolo o entrada.'
-      };
-    }
-
-    return {
-      'score': 50.0,
-      'verdict': 'SOSPECHOSO',
-      'reason': 'Dominio desconocido, no presente en la lista blanca.'
-    };
   }
 
-  Future<Map<String, dynamic>> _evaluatePhoneHeuristicsAsync(String inputPhone) async {
-    final verdict = await _phoneInterceptor.analyzePhoneNumber(inputPhone);
-    return {
-      'score': verdict.riskScore,
-      'verdict': verdict.verdict,
-      'reason': '${verdict.category}: ${verdict.details}'
-    };
+  //============================================================================
+  // MÉTODOS DE AUDITORÍA INTERNOS (HELPER GENÉRICO)
+  //============================================================================
+  Future<void> _processScan(String scanType, String target, String vectorTag, VoidCallback incrementCounter) async {
+    _appendLog("Analizando vector $vectorTag...");
+    final result = await _apiService.scanTarget(scanType, target);
+    final double score = (result["riskScore"] ?? 0).toDouble();
+
+    _updateHud(score);
+    incrementCounter();
+
+    _appendLog("RIESGO: ${score.toStringAsFixed(1)}% | VEREDICTO: ${result["classification"]}");
+    await _persistAudit(target, score, result["classification"] ?? "DESCONOCIDO", vectorTag, result.toString());
   }
 
-  Map<String, dynamic> _evaluateLocalHeuristics(String target, int currentTab) {
-    if (currentTab == 1) { // PHISHING / URL
-      return _evaluatePhishingHeuristics(target);
-    }
-
-    if (currentTab == 0) { // TELEFONÍA
-      final clean = target.trim().toLowerCase();
-      final digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
-
-      for (var code in _suspiciousCountryCodes) {
-        if (digitsOnly.startsWith(code) || clean.contains("+$code")) {
-          return {'score': 90.0, 'verdict': 'CRÍTICO', 'reason': 'Indicativo de alto riesgo'};
-        }
-      }
-
-      if (RegExp(r'(\d)\1{3,}').hasMatch(digitsOnly)) {
-        return {'score': 85.0, 'verdict': 'CRÍTICO', 'reason': 'Patrón numérico repetitivo'};
-      }
-
-      return {'score': 10.0, 'verdict': 'SEGURO', 'reason': 'Línea o formato estándar'};
-    }
-
-    // MALWARE
-    final clean = target.toLowerCase();
-    if (clean.endsWith(".apk") ||
-        clean.endsWith(".exe") ||
-        clean.endsWith(".vbs") ||
-        clean.contains("malware")) {
-      return {'score': 95.0, 'verdict': 'CRÍTICO', 'reason': 'Firma o extensión potencialmente destructiva.'};
-    }
-    return {'score': 5.0, 'verdict': 'SEGURO', 'reason': 'Estructura o extensión binaria estándar.'};
-  }
-
-  Future<void> executeAuditoria(String target, int currentTab) async {
-    if (target.isEmpty && _selectedFileName == null) {
-      _forensicLogs.insert(0, "Ingrese un objetivo para analizar.");
-      notifyListeners();
+  Future<void> _auditFile() async {
+    if (_selectedFile == null) {
+      _appendLog("No existe archivo seleccionado.");
       return;
     }
 
-    final String targetToAudit = _selectedFileName ?? target;
-    _isLoading = true;
-    _forensicLogs.insert(0, "Analizando objetivo en motor heurístico...");
-    notifyListeners();
+    _appendLog("Escaneando archivo local...");
+    final verdict = await _fileScanner.scanLocalFile(_selectedFile!);
+    final double score = verdict.isCritical ? 100 : (verdict.isWarning ? 60 : 5);
 
-    String vectorLabel = currentTab == 1
-        ? "PHISHING/URL"
-        : (currentTab == 2 ? "MALWARE/BIN" : "TELEFÓNICO");
+    _malwarePrevented++;
+    _updateHud(score);
+    _appendLog("Resultado: ${verdict.riskLevel}");
 
-    Map<String, dynamic> localResult;
-    if (currentTab == 0) {
-      localResult = await _evaluatePhoneHeuristicsAsync(targetToAudit);
+    await _persistAudit(_selectedFileName ?? "APK_DESCONOCIDO", score, verdict.riskLevel, "MALWARE", verdict.toString());
+  }
+
+  Future<void> _persistAudit(String target, double score, String verdict, String vector, String rawDetails) async {
+    final nowIso = DateTime.now().toIso8601String();
+    await _database.insertScanLog({
+      "id": DateTime.now().millisecondsSinceEpoch.toString(),
+      "timestamp": nowIso,
+      "target": target,
+      "score": score,
+      "verdict": verdict,
+      "vector": vector,
+    });
+    await _database.insertForensicLog({
+      "timestamp": nowIso,
+      "service": vector,
+      "activity": target,
+      "verdict": verdict,
+      "matched_rule": "CENTINELA_$vector",
+      "extra_data": rawDetails,
+    });
+  }
+
+  //============================================================================
+  // GESTIÓN DE ESTADO Y RESET
+  //============================================================================
+  void _updateHud(double score) {
+    _vulnerabilityScore = score;
+    if (score >= 70) {
+      _hudColor = Colors.red;
+      _verdictText = "AMENAZA BLOQUEADA";
+    } else if (score >= 35) {
+      _hudColor = Colors.orange;
+      _verdictText = "RIESGO MODERADO";
     } else {
-      localResult = _evaluateLocalHeuristics(targetToAudit, currentTab);
+      _hudColor = Colors.green;
+      _verdictText = "SISTEMA OPERATIVO SEGURO";
     }
+  }
 
-    _vulnerabilityScore = localResult['score'];
-    _verdictText = localResult['verdict'];
-    _hudColor = _vulnerabilityScore >= 70
-        ? const Color(0xFFFF5252)
-        : (_vulnerabilityScore >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676));
-
-    if (currentTab == 0) _callsChecked++;
-    if (currentTab == 1) _linksChecked++;
-    if (currentTab == 2 && _vulnerabilityScore >= 70) _malwarePrevented++;
-
-    _forensicLogs.insert(0, "ANÁLISIS COMPLETADO: $targetToAudit");
-    _forensicLogs.insert(1, "» Dictamen: $_verdictText (${_vulnerabilityScore.toStringAsFixed(1)}%)");
-
-    if (localResult.containsKey('reason')) {
-      _forensicLogs.insert(2, "» Razón: ${localResult['reason']}");
+  Future<void> clearMasterBitacora() async {
+    try {
+      _appendLog("Eliminando registros locales...");
+      await _database.clearAllLogs();
+      _historicalLogs.clear();
+      _forensicLogs.clear();
+      _linksChecked = 0;
+      _callsChecked = 0;
+      _malwarePrevented = 0;
+      resetHud();
+      _statusCategory = "BITÁCORA LIMPIA";
+    } catch (e) {
+      _appendLog("ERROR LIMPIANDO: $e");
     }
+    notifyListeners();
+  }
 
-    final newLog = {
-      'id': DateTime.now().millisecondsSinceEpoch.toString(),
-      'timestamp': DateTime.now().toIso8601String().substring(11, 19),
-      'target': targetToAudit,
-      'score': _vulnerabilityScore,
-      'verdict': _verdictText,
-      'vector': "$vectorLabel (LOCAL)",
-    };
-
-    await _registrarLogEnPersistencia(newLog);
-
-    _isLoading = false;
+  void resetHud() {
+    _vulnerabilityScore = 0;
+    _hudColor = Colors.green;
+    _verdictText = "SISTEMA OPERATIVO SEGURO";
+    _statusCategory = "CENTINELA OPERATIVO";
     notifyListeners();
   }
 
   void clearForensicLogs() {
-    _forensicLogs = [
-      "CENTINELA: Bitácora visible limpiada por el usuario."
-    ];
+    _forensicLogs.clear();
     notifyListeners();
   }
 
-  Future<void> clearMasterBitacora() async {
-    _masterBitacora.clear();
-    _forensicLogs = [
-      "CENTINELA: Historial completo y memoria local purgados con éxito."
-    ];
-
-    try {
-      final dynamic db = _dbService;
-      try {
-        await db.clearAllLogs();
-      } catch (_) {
-        try {
-          await db.clearLogs();
-        } catch (_) {}
-      }
-
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.remove('josh_local_bitacora');
-    } catch (e) {
-      debugPrint("Error purgando registros persistentes: $e");
-    }
-
+  void _appendLog(String text) {
+    final now = DateTime.now();
+    final timeStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}";
+    _forensicLogs.add("[$timeStr]  $text");
+    if (_forensicLogs.length > 500) _forensicLogs.removeAt(0);
     notifyListeners();
   }
+
+  Future<void> _loadHistoricalLogs() async {
+    _historicalLogs = await _database.getScanHistory();
+    notifyListeners();
+  }
+
+  void _setLoadingState(bool value) {
+    _isLoading = value;
+    notifyListeners();
+  }
+
+  void setLoading(bool value) => _setLoadingState(value);
+  void setStatus(String status) {
+    _statusCategory = status;
+    notifyListeners();
+  }
+  Future<void> reloadHistory() async => await _loadHistoricalLogs();
 
   @override
   void dispose() {
-    _keepAliveTimer?.cancel();
-    _proactivePatrolTimer?.cancel();
-    _phoneInterceptorSubscription?.cancel();
-    _phoneInterceptor.dispose();
+    _phoneService.dispose();
     super.dispose();
   }
 }

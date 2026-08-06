@@ -1,11 +1,16 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
-// REEMPLAZO TOTAL — SERVICIO DE INTERCEPTOR Y REPUTACIÓN TELEFÓNICA (CONTRATO UNIFICADO v4.8)
-// COMPONENTE: PhoneInterceptorService - JOSH Security
+// JOSH SECURITY v5.0
+// MOTOR DE INTERCEPTOR TELEFÓNICO + REPUTACIÓN + PERSISTENCIA LOCAL
+// PARTE 1/2
 // ====================================================================================================
 
 import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:flutter/services.dart';
+
+import 'database_service.dart';
 import 'overlay_service.dart';
 
 enum DiagnosticSource {
@@ -25,7 +30,7 @@ class CallVerdict {
   final String details;
   final DiagnosticSource source;
 
-  CallVerdict({
+  const CallVerdict({
     required this.phoneNumber,
     required this.riskScore,
     required this.verdict,
@@ -35,159 +40,373 @@ class CallVerdict {
   });
 
   String get riskLevel => verdict;
+
   String get analysisMessage => details;
 
   Map<String, dynamic> toMap() {
     return {
-      'phoneNumber': phoneNumber,
-      'riskScore': riskScore,
-      'verdict': verdict,
-      'riskLevel': riskLevel,
-      'category': category,
-      'details': details,
-      'analysisMessage': analysisMessage,
-      'source': source.toString(),
+      "phoneNumber": phoneNumber,
+      "riskScore": riskScore,
+      "verdict": verdict,
+      "category": category,
+      "details": details,
+      "source": source.name,
     };
   }
 }
 
 class PhoneInterceptorService {
-  static const MethodChannel _channel = MethodChannel('josh_security/phone_interceptor');
 
-  bool _isListening = false;
-  bool get isListening => _isListening;
+  PhoneInterceptorService();
 
-  final StreamController<CallVerdict> _callVerdictController =
+  static const MethodChannel _channel =
+      MethodChannel("josh_security/phone_interceptor");
+
+  final DatabaseService _database = DatabaseService();
+
+  final StreamController<CallVerdict> _controller =
       StreamController<CallVerdict>.broadcast();
 
-  Stream<CallVerdict> get onCallIntercepted => _callVerdictController.stream;
+  Stream<CallVerdict> get onCallIntercepted => _controller.stream;
 
-  /// Inicializa la escucha de eventos desde la capa nativa Android/Kotlin.
+  bool _isListening = false;
+
+  bool get isListening => _isListening;
+
+  static const List<String> _suspiciousCodes = [
+
+    "234",
+    "254",
+    "381",
+    "216",
+    "225",
+    "233",
+    "92",
+    "880",
+    "371",
+    "370",
+    "881",
+    "882",
+    "883",
+    "870",
+
+  ];
+
+  // ===========================================================================================
+  // INICIALIZACIÓN
+  // ===========================================================================================
+
   void startListening() {
-    if (_isListening) return;
+
+    if (_isListening) {
+      return;
+    }
+
     _isListening = true;
 
     _channel.setMethodCallHandler((call) async {
-      if (call.method == "onCallIntercepted") {
-        final Map<String, dynamic> args = Map<String, dynamic>.from(call.arguments);
-        final String number = (args['phoneNumber'] ?? '').toString();
 
-        if (number.isNotEmpty) {
-          final verdict = await analyzePhoneNumber(number);
-          
-          _callVerdictController.add(verdict);
+      switch (call.method) {
 
-          // Lanza el Overlay únicamente si el nivel de riesgo requiere alerta
+        case "onCallIntercepted":
+
+          final Map<String, dynamic> args =
+              Map<String, dynamic>.from(call.arguments);
+
+          final String phone =
+              (args["phoneNumber"] ?? "").toString();
+
+          if (phone.isEmpty) {
+            return;
+          }
+
+          final CallVerdict verdict =
+              await analyzePhoneNumber(phone);
+
+          await _saveCall(verdict);
+
+          _controller.add(verdict);
+
           await showOverlayIfRequired(verdict);
-        }
-      } else if (call.method == "onCallEnded") {
-        await OverlayService.closeOverlay();
-      }
-    });
-  }
 
-  /// Gestiona el despliegue de ventanas flotantes verificando el veredicto
-  Future<void> showOverlayIfRequired(CallVerdict verdict) async {
-    try {
-      await OverlayService.showWarningOverlay(
-        phoneNumber: verdict.phoneNumber,
-        riskLevel: verdict.verdict,
-        message: verdict.details,
-      );
-    } catch (e) {
-      // Ignorar si el overlay ya está activo o faltan permisos nativos
-    }
+          break;
+
+        case "onCallEnded":
+
+          try {
+
+            await OverlayService.closeOverlay();
+
+          } catch (_) {}
+
+          break;
+
+      }
+
+    });
+
   }
 
   void stopListening() {
+
     _isListening = false;
+
     _channel.setMethodCallHandler(null);
+
   }
 
-  Future<CallVerdict> analyzeIncomingCall(String phoneNumber) async {
-    return await analyzePhoneNumber(phoneNumber);
+  // ===========================================================================================
+  // OVERLAY
+  // ===========================================================================================
+
+  Future<void> showOverlayIfRequired(
+      CallVerdict verdict,
+      ) async {
+
+    try {
+
+      await OverlayService.showWarningOverlay(
+
+        phoneNumber: verdict.phoneNumber,
+        riskLevel: verdict.verdict,
+        message: verdict.details,
+
+      );
+
+    } catch (e) {
+
+      developer.log(
+
+        "Overlay no disponible",
+        name: "PhoneInterceptor",
+        error: e,
+
+      );
+
+    }
+
   }
 
-  Future<CallVerdict> analyzePhoneNumber(String phoneNumber) async {
-    final String clean = phoneNumber.trim().toLowerCase();
-    final String digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
+  // ===========================================================================================
+  // PERSISTENCIA
+  // ===========================================================================================
 
-    if (digitsOnly == "123" ||
-        digitsOnly == "112" ||
-        digitsOnly == "165" ||
-        digitsOnly.startsWith("018000")) {
-      return CallVerdict(
-        phoneNumber: phoneNumber,
-        riskScore: 0.0,
-        verdict: "SEGURO",
-        category: "OFICIAL / EMERGENCIA",
-        details: "Línea oficial de asistencia o emergencia verificada.",
-        source: DiagnosticSource.localHeuristics,
+  Future<void> _saveCall(
+      CallVerdict verdict,
+      ) async {
+
+    try {
+
+      await _database.insertCallHistory(
+
+        phoneNumber: verdict.phoneNumber,
+        riskScore: verdict.riskScore,
+        verdict: verdict.verdict,
+        category: verdict.category,
+        details: verdict.details,
+        source: verdict.source.name,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+
       );
-    }
 
-    final suspiciousCodes = [
-      '234', '254', '381', '216', '225', '233', '92', '880', '371', '370', '881', '882', '883', '870'
-    ];
+    } catch (e) {
 
-    for (var code in suspiciousCodes) {
-      if (digitsOnly.startsWith(code) || clean.contains("+$code")) {
-        return CallVerdict(
-          phoneNumber: phoneNumber,
-          riskScore: 92.0,
-          verdict: "CRÍTICO",
-          category: "VOIP / SPAM INTERNACIONAL",
-          details: "Número proveniente de indicativo internacional de alto riesgo (+$code).",
-          source: DiagnosticSource.phoneInterceptor,
-        );
-      }
-    }
+      developer.log(
 
-    if (RegExp(r'(\d)\1{4,}').hasMatch(digitsOnly)) {
-      return CallVerdict(
-        phoneNumber: phoneNumber,
-        riskScore: 85.0,
-        verdict: "CRÍTICO",
-        category: "MÁSCARA / SPOOFING",
-        details: "Secuencia repetitiva anómala en el número telefónico.",
-        source: DiagnosticSource.phoneInterceptor,
+        "No fue posible guardar historial telefónico",
+        name: "PhoneInterceptor",
+        error: e,
+
       );
+
     }
 
-    if (digitsOnly.length == 10 && (digitsOnly.startsWith("3") || digitsOnly.startsWith("60"))) {
-      return CallVerdict(
-        phoneNumber: phoneNumber,
-        riskScore: 5.0,
-        verdict: "SEGURO",
-        category: "LÍNEA NACIONAL CONFIABLE",
-        details: "Número con estructura válida de operador local.",
-        source: DiagnosticSource.localHeuristics,
-      );
-    }
+  }
 
-    if (digitsOnly.isNotEmpty && (digitsOnly.length < 7 || digitsOnly.length > 14)) {
-      return CallVerdict(
-        phoneNumber: phoneNumber,
-        riskScore: 65.0,
+  Future<CallVerdict> analyzeIncomingCall(
+      String phoneNumber,
+      ) async {
+
+    return analyzePhoneNumber(phoneNumber);
+
+  }
+
+  // ===========================================================================================
+  // MOTOR HEURÍSTICO
+  // ===========================================================================================
+
+  Future<CallVerdict> analyzePhoneNumber(
+      String phoneNumber,
+      ) async {
+
+    final clean =
+        phoneNumber.trim().toLowerCase();
+
+    final digits =
+        clean.replaceAll(RegExp(r"\D"), "");
+
+    if (digits.isEmpty) {
+
+      return const CallVerdict(
+
+        phoneNumber: "",
+        riskScore: 50,
         verdict: "SOSPECHOSO",
-        category: "ESTRUCTURA ANÓMALA",
-        details: "Longitud no estándar para tráfico telefónico convencional.",
-        source: DiagnosticSource.phoneInterceptor,
+        category: "NÚMERO INVÁLIDO",
+        details: "No fue posible obtener el número.",
+
       );
+
+    }
+
+    if (digits == "123" ||
+        digits == "112" ||
+        digits == "165" ||
+        digits.startsWith("018000")) {
+
+      return CallVerdict(
+
+        phoneNumber: phoneNumber,
+        riskScore: 0,
+        verdict: "SEGURO",
+        category: "EMERGENCIA",
+        details:
+            "Número oficial o línea de asistencia.",
+
+        source: DiagnosticSource.localHeuristics,
+
+      );
+
+    }
+
+    for (final code in _suspiciousCodes) {
+
+      if (digits.startsWith(code) ||
+          clean.contains("+$code")) {
+
+        return CallVerdict(
+
+          phoneNumber: phoneNumber,
+          riskScore: 92,
+          verdict: "CRÍTICO",
+          category: "SPAM INTERNACIONAL",
+          details:
+              "Indicativo internacional considerado de alto riesgo (+$code).",
+
+          source: DiagnosticSource.phoneInterceptor,
+
+        );
+
+      }
+
+    }
+    if (RegExp(r'(\d)\1{4,}').hasMatch(digits)) {
+
+      return CallVerdict(
+
+        phoneNumber: phoneNumber,
+        riskScore: 85,
+        verdict: "CRÍTICO",
+        category: "SPOOFING",
+
+        details:
+            "Patrón repetitivo detectado. Posible falsificación del identificador.",
+
+        source: DiagnosticSource.phoneInterceptor,
+
+      );
+
+    }
+
+    if (digits.length == 10 &&
+        (digits.startsWith("3") ||
+            digits.startsWith("60"))) {
+
+      return CallVerdict(
+
+        phoneNumber: phoneNumber,
+        riskScore: 5,
+
+        verdict: "SEGURO",
+
+        category: "LÍNEA NACIONAL",
+
+        details:
+            "Número compatible con operadores nacionales.",
+
+        source: DiagnosticSource.localHeuristics,
+
+      );
+
+    }
+
+    if (digits.length < 7 ||
+        digits.length > 14) {
+
+      return CallVerdict(
+
+        phoneNumber: phoneNumber,
+
+        riskScore: 65,
+
+        verdict: "SOSPECHOSO",
+
+        category: "FORMATO ANÓMALO",
+
+        details:
+            "La longitud del número no corresponde a un formato telefónico habitual.",
+
+        source: DiagnosticSource.phoneInterceptor,
+
+      );
+
     }
 
     return CallVerdict(
+
       phoneNumber: phoneNumber,
-      riskScore: 10.0,
+
+      riskScore: 10,
+
       verdict: "SEGURO",
-      category: "DESCONOCIDO ESTÁNDAR",
-      details: "Sin patrones maliciosos evidentes.",
+
+      category: "DESCONOCIDO",
+
+      details:
+          "No se detectaron patrones maliciosos mediante heurísticas locales.",
+
       source: DiagnosticSource.localHeuristics,
+
     );
+
   }
 
-  void dispose() {
-    stopListening();
-    _callVerdictController.close();
+  // ===========================================================================================
+  // CONSULTAS
+  // ===========================================================================================
+
+  Future<List<Map<String, dynamic>>> getHistory() async {
+
+    return await _database.getCallHistory();
+
   }
+
+  Future<void> clearHistory() async {
+
+    await _database.clearCallHistory();
+
+  }
+
+  // ===========================================================================================
+  // LIBERACIÓN
+  // ===========================================================================================
+
+  void dispose() {
+
+    stopListening();
+
+    _controller.close();
+
+  }
+
 }

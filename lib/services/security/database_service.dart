@@ -1,44 +1,50 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/database_service.dart
-// PERSISTENCIA RELACIONAL LOCAL CON CAPACIDAD DE LECTURA FORENSE v4.6
+// MOTOR DE PERSISTENCIA LOCAL - JOSH SECURITY v5.0
+// Compatible con SecurityProvider, PhoneInterceptor y Centinela APK
 // ====================================================================================================
 
-import 'dart:async';
 import 'dart:developer' as developer;
+
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 class DatabaseService {
-  static final DatabaseService instance = DatabaseService._internal();
-  factory DatabaseService() => instance;
   DatabaseService._internal();
 
-  static Database? _database;
+  static final DatabaseService instance = DatabaseService._internal();
+
+  factory DatabaseService() => instance;
+
+  Database? _database;
 
   Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
+    _database ??= await _initDatabase();
     return _database!;
   }
 
   Future<Database> _initDatabase() async {
-    try {
-      final String path = join(await getDatabasesPath(), 'josh_security_centinela.db');
-      return await openDatabase(
-        path,
-        version: 2,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
-    } catch (e, stack) {
-      developer.log('Error al inicializar la base de datos', error: e, stackTrace: stack, name: 'josh.security.db');
-      rethrow;
-    }
+    final path = join(
+      await getDatabasesPath(),
+      "josh_security_centinela.db",
+    );
+
+    return await openDatabase(
+      path,
+      version: 3,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   Future<void> _onCreate(Database db, int version) async {
+
+    //----------------------------------------------------------
+    // REGISTROS FORENSES
+    //----------------------------------------------------------
+
     await db.execute('''
-      CREATE TABLE forensic_logs (
+      CREATE TABLE forensic_logs(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT NOT NULL,
         service TEXT NOT NULL,
@@ -49,83 +55,263 @@ class DatabaseService {
       )
     ''');
 
+    //----------------------------------------------------------
+    // HISTORIAL GENERAL DEL MOTOR
+    //----------------------------------------------------------
+
     await db.execute('''
-      CREATE TABLE whitelist_domains (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        domain TEXT UNIQUE NOT NULL,
-        category TEXT NOT NULL
+      CREATE TABLE scan_history(
+        id TEXT PRIMARY KEY,
+        timestamp TEXT,
+        target TEXT,
+        score REAL,
+        verdict TEXT,
+        vector TEXT
       )
     ''');
+
+    //----------------------------------------------------------
+    // HISTORIAL DE LLAMADAS
+    //----------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE call_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT NOT NULL,
+        risk_score REAL,
+        verdict TEXT,
+        category TEXT,
+        details TEXT,
+        source TEXT,
+        timestamp INTEGER
+      )
+    ''');
+
+    //----------------------------------------------------------
+    // WHITELIST
+    //----------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE whitelist_domains(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT UNIQUE,
+        category TEXT
+      )
+    ''');
+
+    //----------------------------------------------------------
+    // ÍNDICES
+    //----------------------------------------------------------
+
+    await db.execute(
+      'CREATE INDEX idx_scan_time ON scan_history(timestamp);',
+    );
+
+    await db.execute(
+      'CREATE INDEX idx_call_time ON call_history(timestamp);',
+    );
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  Future<void> _onUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+
     if (oldVersion < 2) {
+
       await db.execute('''
-        CREATE TABLE IF NOT EXISTS whitelist_domains (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          domain TEXT UNIQUE NOT NULL,
-          category TEXT NOT NULL
-        )
+      CREATE TABLE IF NOT EXISTS whitelist_domains(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT UNIQUE,
+        category TEXT
+      )
       ''');
     }
-  }
 
-  /// Inserta un log forense de forma asíncrona
+    if (oldVersion < 3) {
+
+      await db.execute('''
+      CREATE TABLE IF NOT EXISTS scan_history(
+        id TEXT PRIMARY KEY,
+        timestamp TEXT,
+        target TEXT,
+        score REAL,
+        verdict TEXT,
+        vector TEXT
+      )
+      ''');
+
+      await db.execute('''
+      CREATE TABLE IF NOT EXISTS call_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT,
+        risk_score REAL,
+        verdict TEXT,
+        category TEXT,
+        details TEXT,
+        source TEXT,
+        timestamp INTEGER
+      )
+      ''');
+    }
+  } 
+ // =====================================================================================
+  // LOGS FORENSES
+  // =====================================================================================
+
   Future<int> insertForensicLog(Map<String, dynamic> logEntry) async {
     try {
-      final Database db = await database;
-      final id = await db.insert(
-        'forensic_logs',
-        logEntry,
+      final db = await database;
+
+      return await db.insert(
+        "forensic_logs",
+        {
+          "timestamp": logEntry["timestamp"] ?? "",
+          "service": logEntry["service"] ?? "JOSH",
+          "activity": logEntry["activity"] ?? "",
+          "verdict": logEntry["verdict"] ?? "",
+          "matched_rule": logEntry["matched_rule"] ?? "",
+          "extra_data": logEntry["extra_data"]?.toString(),
+        },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      developer.log('Registro forense insertado con ID: $id', name: 'josh.security.db');
-      return id;
-    } catch (e, stack) {
-      developer.log('Error al insertar log forense', error: e, stackTrace: stack, name: 'josh.security.db');
+    } catch (e) {
+      developer.log(
+        "insertForensicLog",
+        error: e,
+        name: "DatabaseService",
+      );
       return -1;
     }
   }
 
-  /// Recupera todos los logs forenses ordenados cronológicamente
-  Future<List<Map<String, dynamic>>> getForensicLogs() async {
+  // =====================================================================================
+  // HISTORIAL GENERAL (COMPATIBLE CON SECURITY PROVIDER)
+  // =====================================================================================
+
+  Future<int> insertScanLog(Map<String, dynamic> log) async {
     try {
-      final Database db = await database;
-      final List<Map<String, dynamic>> logs = await db.query(
-        'forensic_logs',
-        orderBy: 'timestamp DESC',
+      final db = await database;
+
+      return await db.insert(
+        "scan_history",
+        {
+          "id": log["id"],
+          "timestamp": log["timestamp"],
+          "target": log["target"],
+          "score": log["score"],
+          "verdict": log["verdict"],
+          "vector": log["vector"],
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      return logs;
-    } catch (e, stack) {
-      developer.log('Error al consultar logs forenses', error: e, stackTrace: stack, name: 'josh.security.db');
-      return [];
+    } catch (e) {
+      developer.log(
+        "insertScanLog",
+        error: e,
+        name: "DatabaseService",
+      );
+      return -1;
     }
   }
 
-  /// Elimina TODOS los registros de la bitácora
+  Future<List<Map<String, dynamic>>> getScanHistory() async {
+    final db = await database;
+
+    return await db.query(
+      "scan_history",
+      orderBy: "timestamp DESC",
+    );
+  }
+
+  // =====================================================================================
+  // HISTORIAL DE LLAMADAS
+  // =====================================================================================
+
+  Future<int> insertCallHistory({
+    required String phoneNumber,
+    required double riskScore,
+    required String verdict,
+    required String category,
+    required String details,
+    required String source,
+    required int timestamp,
+  }) async {
+    try {
+      final db = await database;
+
+      return await db.insert(
+        "call_history",
+        {
+          "phone_number": phoneNumber,
+          "risk_score": riskScore,
+          "verdict": verdict,
+          "category": category,
+          "details": details,
+          "source": source,
+          "timestamp": timestamp,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      developer.log(
+        "insertCallHistory",
+        error: e,
+        name: "DatabaseService",
+      );
+      return -1;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getCallHistory() async {
+    final db = await database;
+
+    return await db.query(
+      "call_history",
+      orderBy: "timestamp DESC",
+    );
+  }
+
+  // =====================================================================================
+  // MÉTODOS DE LIMPIEZA
+  // =====================================================================================
+
+  Future<void> clearCallHistory() async {
+    final db = await database;
+    await db.delete("call_history");
+  }
+
+  Future<void> clearScanHistory() async {
+    final db = await database;
+    await db.delete("scan_history");
+  }
+
   Future<int> clearAllLogs() async {
-    try {
-      final Database db = await database;
-      return await db.delete('forensic_logs');
-    } catch (e, stack) {
-      developer.log('Error al vaciar logs forenses', error: e, stackTrace: stack, name: 'josh.security.db');
-      return 0;
-    }
+    final db = await database;
+
+    await db.delete("scan_history");
+    await db.delete("call_history");
+
+    return await db.delete("forensic_logs");
   }
 
-  /// Limpia registros forenses antiguos superados los 30 días
-  Future<int> clearOldLogs() async {
-    try {
-      final Database db = await database;
-      final String cutoffDate = DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
-      return await db.delete(
-        'forensic_logs',
-        where: 'timestamp < ?',
-        whereArgs: [cutoffDate],
-      );
-    } catch (e, stack) {
-      developer.log('Error al limpiar logs antiguos', error: e, stackTrace: stack, name: 'josh.security.db');
-      return 0;
-    }
+  // =====================================================================================
+  // MÉTODOS DE CONSULTA
+  // =====================================================================================
+
+  Future<List<Map<String, dynamic>>> getForensicLogs() async {
+    final db = await database;
+
+    return await db.query(
+      "forensic_logs",
+      orderBy: "timestamp DESC",
+    );
+  }
+
+  Future<void> close() async {
+    final db = await database;
+    await db.close();
+    _database = null;
   }
 }

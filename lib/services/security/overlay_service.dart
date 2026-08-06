@@ -17,7 +17,11 @@ class OverlayService {
       }
       return true;
     } catch (e) {
-      developer.log('Error al verificar/solicitar permiso de Overlay', error: e, name: 'josh.security.overlay');
+      developer.log(
+        'Error al verificar/solicitar permiso de Overlay',
+        error: e,
+        name: 'josh.security.overlay',
+      );
       return false;
     }
   }
@@ -31,7 +35,10 @@ class OverlayService {
     try {
       final bool isGranted = await FlutterOverlayWindow.isPermissionGranted();
       if (!isGranted) {
-        developer.log('Permiso de overlay no concedido. Omitiendo apertura.', name: 'josh.security.overlay');
+        developer.log(
+          'Permiso de overlay no concedido. Omitiendo apertura.',
+          name: 'josh.security.overlay',
+        );
         return;
       }
 
@@ -47,7 +54,7 @@ class OverlayService {
         flag: OverlayFlag.defaultFlag,
         visibility: NotificationVisibility.visibilityPublic,
         positionGravity: PositionGravity.auto,
-        height: 600, // <-- Aumentado de 480 a 600 para dar espacio exacto al botón ENTENDIDO y evitar overflow
+        height: 600,
         width: WindowSize.matchParent,
       );
 
@@ -77,7 +84,11 @@ class OverlayService {
         await FlutterOverlayWindow.closeOverlay();
       }
     } catch (e) {
-      developer.log('Error al cerrar Overlay', error: e, name: 'josh.security.overlay');
+      developer.log(
+        'Error al cerrar Overlay',
+        error: e,
+        name: 'josh.security.overlay',
+      );
     }
   }
 }

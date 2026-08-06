@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/forensic_report_service.dart
-// REEMPLAZO TOTAL — ENTORNO SÍNCRONIZADO CENTINELA v4.5.1
+// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO CENTINELA v4.5.1
 // OP-HEURÍSTICA: Motor de Auditoría Inmutable y Compilación de Reportes desde Base de Datos
 // ====================================================================================================
 

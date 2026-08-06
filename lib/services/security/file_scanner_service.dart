@@ -1,6 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/file_scanner_service.dart
-// ESCANEO PERIMETRAL Y PERSISTENCIA DE EVIDENCIA FORENSE v4.6 (CONTRATO INTEGRADO)
+// MOTOR DE ESCANEO PERIMETRAL JOSH SECURITY v6.0
+// Primera Parte
 // ====================================================================================================
 
 import 'dart:async';
@@ -8,21 +9,22 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
+
 import 'package:crypto/crypto.dart';
+
 import 'database_service.dart';
 import 'phone_interceptor_service.dart';
 import '../reputation/reputation_engine.dart';
 
-/// Modelo estructurado para el veredicto del análisis de malware en archivos
 class FileScanVerdict {
   final String fileName;
   final int fileSizeInBytes;
-  final String riskLevel; // 'SEGURO', 'ADVERTENCIA', 'CRÍTICO'
+  final String riskLevel;
   final String analysisMessage;
   final DiagnosticSource source;
   final Map<String, dynamic> telemetryDetails;
 
-  FileScanVerdict({
+  const FileScanVerdict({
     required this.fileName,
     required this.fileSizeInBytes,
     required this.riskLevel,
@@ -31,213 +33,353 @@ class FileScanVerdict {
     required this.telemetryDetails,
   });
 
-  /// Propiedad calculada para mostrar el tamaño legible en el HUD
-  double get fileSizeInMB => fileSizeInBytes / (1024 * 1024);
+  double get fileSizeInMB =>
+      fileSizeInBytes / (1024 * 1024);
+
+  bool get isCritical =>
+      riskLevel == "CRÍTICO";
+
+  bool get isWarning =>
+      riskLevel == "ADVERTENCIA";
+
+  bool get isSafe =>
+      riskLevel == "SEGURO";
 }
 
-/// Core del Servicio Perimetral de Escaneo de Archivos y Mitigación de Malware
 class FileScannerService {
-  // Patrón Singleton para acceso global seguro
-  static final FileScannerService _instance = FileScannerService._internal();
-  factory FileScannerService() => _instance;
+
   FileScannerService._internal();
 
-  final ReputationEngine _reputationEngine = ReputationEngine();
+  static final FileScannerService instance =
+      FileScannerService._internal();
 
-  DatabaseService get _dbService {
+  factory FileScannerService() => instance;
+
+  final ReputationEngine _reputation =
+      ReputationEngine();
+
+  DatabaseService get _database =>
+      DatabaseService.instance;
+
+  static const int maxSafeSizeBytes =
+      15 * 1024 * 1024;
+
+  Future<bool> _hasInternet() async {
     try {
-      return DatabaseService.instance;
-    } catch (e) {
-      developer.log(
-        "DatabaseService no inicializado aún. Retornando fallback perezoso.",
-        error: e,
-        name: 'josh.security.scanner',
-      );
-      rethrow;
-    }
-  }
 
-  // Constante estricta de restricción preventiva: 15 Megabytes
-  static const int maxSafeSizeBytes = 15 * 1024 * 1024;
+      final result =
+          await InternetAddress.lookup("google.com")
+              .timeout(const Duration(seconds: 2));
 
-  /// Verifica si el dispositivo tiene conexión a internet
-  Future<bool> _checkNetworkConnectivity() async {
-    try {
-      final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 2));
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      return result.isNotEmpty;
+
     } catch (_) {
       return false;
     }
   }
 
-  /// Calcula el hash SHA-256 de un archivo físico usando lectura por transmisión (Stream)
-  Future<String?> _calculateFileHash(File file) async {
+  Future<String?> _sha256(File file) async {
+
     try {
-      if (!await file.exists()) return null;
-      final stream = file.openRead();
-      final hash = await sha256.bind(stream).first;
+
+      if (!await file.exists()) {
+        return null;
+      }
+
+      final hash =
+          await sha256.bind(file.openRead()).first;
+
       return hash.toString();
-    } catch (e, stackTrace) {
+
+    } catch (e, s) {
+
       developer.log(
-        "Error al calcular hash en scanner",
+        "SHA256 ERROR",
         error: e,
-        stackTrace: stackTrace,
-        name: 'josh.security.scanner',
+        stackTrace: s,
+        name: "FileScanner",
       );
+
       return null;
     }
   }
 
-  /// Ejecuta un escaneo perimetral defensivo real sobre un archivo
-  Future<FileScanVerdict> scanLocalFile(File file) async {
-    final String cleanName = file.path.split(Platform.pathSeparator).last;
-    int sizeInBytes = 0;
+  Future<FileScanVerdict> scanLocalFile(
+      File file) async {
+
+    final filename =
+        file.path.split(Platform.pathSeparator).last;
+
+    int size = 0;
 
     try {
+
       if (await file.exists()) {
-        sizeInBytes = await file.length();
+        size = await file.length();
       }
-    } catch (e, stackTrace) {
-      developer.log(
-        "No se pudo leer el tamaño del archivo",
-        error: e,
-        stackTrace: stackTrace,
-        name: 'josh.security.scanner',
-      );
-    }
 
-    final int cleanSize = sizeInBytes < 0 ? 0 : sizeInBytes;
-    final bool isConnected = await _checkNetworkConnectivity();
-    final DiagnosticSource selectedSource = isConnected ? DiagnosticSource.cloud : DiagnosticSource.local;
-    
-    final String timestamp = DateTime.now().toIso8601String();
-    final int trackingId = Random().nextInt(900000) + 100000;
+    } catch (_) {}
 
-    FileScanVerdict finalVerdict;
-    String matchedRule;
+    final connected =
+        await _hasInternet();
 
-    // --- REGLA 1: RESTRICCIÓN PREVENTIVA DE 15MB ---
-    if (cleanSize > maxSafeSizeBytes) {
-      matchedRule = 'PERIMETER_SIZE_LIMIT_EXCEEDED';
-      finalVerdict = FileScanVerdict(
-        fileName: cleanName,
-        fileSizeInBytes: cleanSize,
-        riskLevel: 'CRÍTICO',
-        analysisMessage: 'Análisis suspendido: El archivo excede el límite preventivo de 15MB. Riesgo de carga masiva.',
+    final source = connected
+        ? DiagnosticSource.cloud
+        : DiagnosticSource.local;
+
+    final tracking =
+        Random().nextInt(900000) + 100000;
+
+    final timestamp =
+        DateTime.now().toIso8601String();
+
+    //----------------------------------------------------------------------
+    // LIMITE PERIMETRAL
+    //----------------------------------------------------------------------
+
+    if (size > maxSafeSizeBytes) {
+
+      final verdict = FileScanVerdict(
+
+        fileName: filename,
+
+        fileSizeInBytes: size,
+
+        riskLevel: "CRÍTICO",
+
+        analysisMessage:
+            "Archivo superior a 15 MB. Escaneo detenido por seguridad.",
+
         source: DiagnosticSource.local,
+
         telemetryDetails: {
-          'tracking_id': 'JOSH-MAL-$trackingId',
-          'timestamp': timestamp,
-          'matched_rule': matchedRule,
-          'max_allowed_bytes': maxSafeSizeBytes,
-          'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
+
+          "tracking_id":
+              "JOSH-$tracking",
+
+          "matched_rule":
+              "MAX_SIZE_LIMIT",
+
+          "timestamp":
+              timestamp,
+
+          "size":
+              size,
+
         },
       );
-      
-      await _persistScanLog(finalVerdict, matchedRule);
-      return finalVerdict;
+
+      await _persistScanLog(
+          verdict,
+          "MAX_SIZE_LIMIT");
+
+      return verdict;
     }
 
-    // --- REGLA 2: OBTENCIÓN DE HASH Y VERIFICACIÓN EN NUBE (VIRUSTOTAL) ---
-    String? fileHash;
-    double cloudRiskScore = 0.0;
+    //----------------------------------------------------------------------
+    // SHA256
+    //----------------------------------------------------------------------
 
-    if (isConnected) {
-      fileHash = await _calculateFileHash(file);
-      if (fileHash != null) {
-        cloudRiskScore = await _reputationEngine.checkVirusTotal(fileHash, isUrl: false);
+    String? hash;
+
+    double cloudScore = 0;
+
+    if (connected) {
+
+      hash = await _sha256(file);
+
+      if (hash != null) {
+
+        cloudScore =
+            await _reputation.checkVirusTotal(
+          hash,
+          isUrl: false,
+        );
       }
     }
 
-    // Si al menos un 5% de los motores de VirusTotal reportan amenaza (score >= 0.05)
-    if (cloudRiskScore >= 0.05) {
-      matchedRule = 'CLOUD_SIGNATURE_MATCH';
-      finalVerdict = FileScanVerdict(
-        fileName: cleanName,
-        fileSizeInBytes: cleanSize,
-        riskLevel: 'CRÍTICO',
-        analysisMessage: '¡Amenaza Detectada! Coincidencia confirmada por firmas de seguridad en la nube.',
-        source: selectedSource,
+    //----------------------------------------------------------------------
+    // VIRUSTOTAL
+    //----------------------------------------------------------------------
+
+    if (cloudScore >= 0.05) {
+
+      final verdict = FileScanVerdict(
+
+        fileName: filename,
+
+        fileSizeInBytes: size,
+
+        riskLevel: "CRÍTICO",
+
+        analysisMessage:
+            "VirusTotal reporta firmas maliciosas.",
+
+        source: source,
+
         telemetryDetails: {
-          'tracking_id': 'JOSH-MAL-$trackingId',
-          'timestamp': timestamp,
-          'matched_rule': matchedRule,
-          'file_hash': fileHash ?? 'N/A',
-          'risk_score': cloudRiskScore,
-          'isolation_mode': 'DESACTIVADO',
+
+          "tracking_id":
+              "JOSH-$tracking",
+
+          "matched_rule":
+              "VIRUSTOTAL_MATCH",
+
+          "risk":
+              cloudScore,
+
+          "hash":
+              hash,
+
+          "timestamp":
+              timestamp,
+
         },
       );
 
-      await _persistScanLog(finalVerdict, matchedRule);
-      return finalVerdict;
+      await _persistScanLog(
+          verdict,
+          "VIRUSTOTAL_MATCH");
+
+      return verdict;
     }
 
-    // --- REGLA 3: EXTENSIONES O COMPORTAMIENTOS EJECUTABLES ---
-    final String lowerName = cleanName.toLowerCase();
-    final bool isSuspiciousExtension = lowerName.endsWith('.apk') || 
-                                       lowerName.endsWith('.exe') || 
-                                       lowerName.endsWith('.bat') ||
-                                       lowerName.endsWith('.scr') ||
-                                       lowerName.endsWith('.vbs');
+    //----------------------------------------------------------------------
+    // HEURISTICAS LOCALES
+    //----------------------------------------------------------------------
 
-    if (isSuspiciousExtension) {
-      matchedRule = 'SUSPICIOUS_EXEC_EXTENSION';
-      finalVerdict = FileScanVerdict(
-        fileName: cleanName,
-        fileSizeInBytes: cleanSize,
-        riskLevel: 'ADVERTENCIA',
-        analysisMessage: 'Precaución: El archivo posee una extensión ejecutable potencialmente riesgosa.',
-        source: selectedSource,
+    final lower =
+        filename.toLowerCase();
+
+    final executable =
+
+        lower.endsWith(".apk") ||
+        lower.endsWith(".exe") ||
+        lower.endsWith(".bat") ||
+        lower.endsWith(".cmd") ||
+        lower.endsWith(".scr") ||
+        lower.endsWith(".vbs") ||
+        lower.endsWith(".ps1") ||
+        lower.endsWith(".jar");
+    if (executable) {
+
+      final verdict = FileScanVerdict(
+
+        fileName: filename,
+
+        fileSizeInBytes: size,
+
+        riskLevel: "ADVERTENCIA",
+
+        analysisMessage:
+            "Archivo ejecutable detectado. Se recomienda verificar su procedencia antes de abrirlo.",
+
+        source: source,
+
         telemetryDetails: {
-          'tracking_id': 'JOSH-MAL-$trackingId',
-          'timestamp': timestamp,
-          'matched_rule': matchedRule,
-          'file_hash': fileHash ?? 'No calculated (Offline)',
-          'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
+
+          "tracking_id": "JOSH-$tracking",
+
+          "matched_rule": "EXECUTABLE_FILE",
+
+          "hash": hash ?? "OFFLINE",
+
+          "timestamp": timestamp,
+
         },
       );
-    } else {
-      // Escenario Limpio
-      matchedRule = 'HEURISTIC_CLEAN_FILE';
-      finalVerdict = FileScanVerdict(
-        fileName: cleanName,
-        fileSizeInBytes: cleanSize,
-        riskLevel: 'SEGURO',
-        analysisMessage: 'JOSH Security analizó el binario. No se detectaron firmas maliciosas.',
-        source: selectedSource,
-        telemetryDetails: {
-          'tracking_id': 'JOSH-MAL-$trackingId',
-          'timestamp': timestamp,
-          'matched_rule': matchedRule,
-          'file_hash': fileHash ?? 'No calculado (Offline)',
-          'isolation_mode': !isConnected ? 'ACTIVO_MODO_AVION' : 'DESACTIVADO',
-        },
+
+      await _persistScanLog(
+        verdict,
+        "EXECUTABLE_FILE",
       );
+
+      return verdict;
     }
 
-    await _persistScanLog(finalVerdict, matchedRule);
-    return finalVerdict;
+    //----------------------------------------------------------------------
+    // ARCHIVO LIMPIO
+    //----------------------------------------------------------------------
+
+    final verdict = FileScanVerdict(
+
+      fileName: filename,
+
+      fileSizeInBytes: size,
+
+      riskLevel: "SEGURO",
+
+      analysisMessage:
+          "No se detectaron indicadores de compromiso ni firmas maliciosas.",
+
+      source: source,
+
+      telemetryDetails: {
+
+        "tracking_id": "JOSH-$tracking",
+
+        "matched_rule": "CLEAN_FILE",
+
+        "hash": hash ?? "OFFLINE",
+
+        "timestamp": timestamp,
+
+      },
+    );
+
+    await _persistScanLog(
+      verdict,
+      "CLEAN_FILE",
+    );
+
+    return verdict;
   }
 
-  /// Guarda el registro forense del escaneo dentro de SQLite
-  Future<void> _persistScanLog(FileScanVerdict verdict, String matchedRule) async {
+  //==========================================================================
+  // PERSISTENCIA FORENSE
+  //==========================================================================
+
+  Future<void> _persistScanLog(
+    FileScanVerdict verdict,
+    String matchedRule,
+  ) async {
+
     try {
-      final Map<String, dynamic> logEntry = {
-        'timestamp': DateTime.now().toIso8601String(),
-        'service': 'FileScannerService',
-        'activity': 'Escaneo de archivo local: ${verdict.fileName} (${verdict.fileSizeInMB.toStringAsFixed(2)} MB)',
-        'verdict': verdict.riskLevel,
-        'matched_rule': matchedRule,
-        'extra_data': jsonEncode(verdict.telemetryDetails),
-      };
-      
-      await _dbService.insertForensicLog(logEntry);
-    } catch (e, stackTrace) {
+
+      await _database.insertForensicLog({
+
+        "timestamp":
+            DateTime.now().toIso8601String(),
+
+        "service":
+            "FileScannerService",
+
+        "activity":
+            "Escaneo de archivo: ${verdict.fileName}",
+
+        "verdict":
+            verdict.riskLevel,
+
+        "matched_rule":
+            matchedRule,
+
+        "extra_data":
+            jsonEncode(verdict.telemetryDetails),
+
+      });
+
+    } catch (e, s) {
+
       developer.log(
-        'ERR_DATABASE_PERSISTENCE_FILE_SCANNER',
+
+        "DATABASE_ERROR",
+
+        name: "FileScannerService",
+
         error: e,
-        stackTrace: stackTrace,
-        name: 'josh.security.db',
+
+        stackTrace: s,
+
       );
     }
   }

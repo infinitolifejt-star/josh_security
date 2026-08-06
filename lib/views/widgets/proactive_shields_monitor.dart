@@ -1,3 +1,8 @@
+// ====================================================================================================
+// ARCHIVO: lib/views/widgets/proactive_shields_monitor.dart
+// COMPONENTE: Monitor Estático de Escudos para JOSH Security
+// ====================================================================================================
+
 import 'package:flutter/material.dart';
 
 class ProactiveShieldsMonitor extends StatelessWidget {

@@ -27,7 +27,7 @@ class HudDisplay extends StatelessWidget {
     return AnimatedBuilder(
       animation: pulseController,
       builder: (context, child) {
-        double glowIntensity = 0.05 + (pulseController.value * 0.05);
+        final double glowIntensity = 0.05 + (pulseController.value * 0.05);
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: double.infinity,

@@ -43,10 +43,7 @@ class ForensicHistoryList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Escuchamos los cambios del proveedor de seguridad de forma reactiva
     final securityProvider = Provider.of<SecurityProvider>(context);
-
-    // Obtenemos los registros históricos cacheados en el estado global
     final List<Map<String, dynamic>> dbLogs = securityProvider.historicalLogs;
 
     Color getCardColor(double score) {
@@ -136,7 +133,6 @@ class ForensicHistoryList extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final rawItem = dbLogs[index];
 
-                    // Mapeo flexible e híbrido de variables
                     final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString();
                     final double score = _calculateHeuristicScore(rawItem);
                     final String vector = (rawItem['vector'] ?? rawItem['service'] ?? 'CENTINELA').toString().toUpperCase();

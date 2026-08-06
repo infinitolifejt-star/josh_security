@@ -1,3 +1,8 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/security/secure_logger.dart
+// COMPONENTE: Motor Criptográfico de Integridad de Logs para JOSH Security
+// ====================================================================================================
+
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
@@ -15,15 +20,15 @@ class SecureLogger {
   Map<String, String> createSecureLog(String data) {
     // Anclaje temporal inmutable para evitar desincronizaciones en la pila asíncrona
     final String timestamp = DateTime.now().toIso8601String();
-    
+
     // TODO: [DEUDA TÉCNICA - CENTINELA] Integrar un UID criptográfico correlativo (UUID v4) por cada registro generado para mitigar ataques de replicación u omisión en los reportes forenses de la Fase 3.
-    
-    // Serialización estricta en JSON para neutralizar inyecciones de delimitadores de texto (|)
+
+    // Serialización estricta en JSON para neutralizar inyecciones de delimitadores de texto
     final String structuredPayload = jsonEncode({
       "data": data,
       "timestamp": timestamp,
     });
-    
+
     final String signature = _hash(structuredPayload);
 
     return {

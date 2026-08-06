@@ -1,3 +1,9 @@
+// ====================================================================================================
+// ARCHIVO: lib/widgets/cyber_shield_painter.dart
+// PINTOR VECTORIAL DEL ESCUDO CYBER
+// JOSH SECURITY v6.0
+// ====================================================================================================
+
 import 'package:flutter/material.dart';
 
 class CyberShieldPainter extends CustomPainter {
@@ -38,18 +44,18 @@ class CyberShieldPainter extends CustomPainter {
 
     // 4. Trazado geométrico del escudo
     final Path shieldPath = Path();
-    shieldPath.moveTo(w * 0.5, h * 0.1);                  
-    shieldPath.lineTo(w * 0.85, h * 0.18);                
-    shieldPath.lineTo(w * 0.85, h * 0.55);                
-    shieldPath.quadraticBezierTo(w * 0.85, h * 0.82, w * 0.5, h * 0.95); 
-    shieldPath.quadraticBezierTo(w * 0.15, h * 0.82, w * 0.15, h * 0.55); 
-    shieldPath.lineTo(w * 0.15, h * 0.18);                
+    shieldPath.moveTo(w * 0.5, h * 0.1);
+    shieldPath.lineTo(w * 0.85, h * 0.18);
+    shieldPath.lineTo(w * 0.85, h * 0.55);
+    shieldPath.quadraticBezierTo(w * 0.85, h * 0.82, w * 0.5, h * 0.95);
+    shieldPath.quadraticBezierTo(w * 0.15, h * 0.82, w * 0.15, h * 0.55);
+    shieldPath.lineTo(w * 0.15, h * 0.18);
     shieldPath.close();
 
     // Dibujar las capas en pantalla
-    canvas.drawPath(shieldPath, glowPaint); 
-    canvas.drawPath(shieldPath, basePaint); 
-    canvas.drawPath(shieldPath, borderPaint); 
+    canvas.drawPath(shieldPath, glowPaint);
+    canvas.drawPath(shieldPath, basePaint);
+    canvas.drawPath(shieldPath, borderPaint);
 
     // 5. Detalles de líneas de circuito internas
     final Paint corePaint = Paint()
@@ -62,7 +68,7 @@ class CyberShieldPainter extends CustomPainter {
     corePath.lineTo(w * 0.5, h * 0.75);
     corePath.moveTo(w * 0.35, h * 0.45);
     corePath.lineTo(w * 0.65, h * 0.45);
-    
+
     canvas.drawPath(corePath, corePaint);
   }
 

@@ -3,6 +3,7 @@
 // COMPONENTE: Pop-Up Flotante Interactivo (JOSH Security)
 // ====================================================================================================
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
@@ -17,12 +18,13 @@ class _OverlayCardState extends State<OverlayCard> {
   String _phoneNumber = 'Analizando...';
   String _riskLevel = 'CORTAFUEGOS';
   String _message = 'JOSH Security evaluando paquete entrante.';
+  StreamSubscription? _overlaySubscription;
 
   @override
   void initState() {
     super.initState();
-    FlutterOverlayWindow.overlayListener.listen((data) {
-      if (data is Map) {
+    _overlaySubscription = FlutterOverlayWindow.overlayListener.listen((data) {
+      if (data is Map && mounted) {
         setState(() {
           _phoneNumber = data['phone_number'] ?? _phoneNumber;
           _riskLevel = data['risk_level'] ?? _riskLevel;
@@ -30,6 +32,12 @@ class _OverlayCardState extends State<OverlayCard> {
         });
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _overlaySubscription?.cancel();
+    super.dispose();
   }
 
   Color _getRiskColor() {
