@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/hud_display.dart
-// COMPONENTE: HUD Superior Modularizado para JOSH Security
+// COMPONENTE: HUD Superior Modularizado con Diagnóstico Agéntico v6.0
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import 'cyber_shield_painter.dart';
 class HudDisplay extends StatelessWidget {
   final double vulnerabilityScore;
   final String verdictText;
+  final String? agentReasoning;
   final Color hudColor;
   final AnimationController pulseController;
   final AnimationController rotationController;
@@ -17,6 +18,7 @@ class HudDisplay extends StatelessWidget {
     super.key,
     required this.vulnerabilityScore,
     required this.verdictText,
+    this.agentReasoning,
     required this.hudColor,
     required this.pulseController,
     required this.rotationController,
@@ -53,7 +55,7 @@ class HudDisplay extends StatelessWidget {
                   const SizedBox(width: 8),
                   Flexible(
                     child: Text(
-                      "JOSH SECURITY • CENTINELA v4.4.6",
+                      "JOSH SECURITY • AGENTE CENTINELA v6.0",
                       style: TextStyle(
                         color: Colors.blueGrey[200],
                         letterSpacing: 2.5,
@@ -99,6 +101,7 @@ class HudDisplay extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.5,
                 ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
               Text(
@@ -109,6 +112,41 @@ class HudDisplay extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
+
+              // CAJA DE DIAGNÓSTICO AGÉNTICO
+              if (agentReasoning != null && agentReasoning!.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B132B).withAlpha((0.6 * 255).round()),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: hudColor.withAlpha((0.3 * 255).round()),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.psychology, color: hudColor, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          agentReasoning!,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontFamily: 'Monospace',
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         );

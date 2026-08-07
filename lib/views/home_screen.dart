@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
 // COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.8 (Escucha Inter-Isolate & Overlay)
-// OPERACIÓN: Sincronización del HUD, Auto-Scroll en Consola, Borrado Visual, Simulación y Recepción de Llamadas Reales
+// OPERACIÓN: Sincronización del HUD, Auto-Scroll en Consola, Borrado Visual y Recepción de Llamadas Reales
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -108,35 +108,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  /// Ejecuta la simulación táctica y despliega el Overlay real en pantalla
-  Future<void> _simulateTacticalCall(SecurityProvider provider) async {
-    FocusScope.of(context).unfocus();
-    final List<String> suspiciousNumbers = [
-      "+57 300 456 7890",
-      "+57 315 987 6543",
-      "+57 311 222 3333"
-    ];
-    
-    final int index = DateTime.now().second % suspiciousNumbers.length;
-    final String targetNumber = suspiciousNumbers[index];
-
-    setState(() {
-      _currentTab = 0; 
-      _tabController.animateTo(0);
-      _targetController.text = targetNumber;
-    });
-
-    provider.updateTabState(0);
-    provider.executeAuditoria(targetNumber, 0);
-
-    // 🚀 Lanza la alerta flotante en pantalla (Overlay) para pruebas
-    await OverlayService.showWarningOverlay(
-      phoneNumber: targetNumber,
-      riskLevel: 'CRÍTICO',
-      message: 'Llamada no identificada con patrón de extorsión reportado.',
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final securityProvider = Provider.of<SecurityProvider>(context);
@@ -225,9 +196,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 height: 190, 
                 child: _buildBottomLogsSection(securityProvider, patrolStatusColor),
               ),
-              const SizedBox(height: 16),
-              
-              _buildSimulationShortcutCard(securityProvider),
               const SizedBox(height: 16),
               
               ForensicHistoryList(
@@ -423,60 +391,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSimulationShortcutCard(SecurityProvider securityProvider) {
-    return Card(
-      color: const Color(0xFF1C2541),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.redAccent.withAlpha((0.3 * 255).round()), width: 1),
-      ),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            const Icon(Icons.bolt, color: Colors.amberAccent, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "ENTRENAMIENTO HEURÍSTICO",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    "Simula llamadas sospechosas y dispara Overlay.",
-                    style: TextStyle(color: Colors.blueGrey[400], fontSize: 10),
-                  ),
-                ],
-              ),
-            ),
-            ElevatedButton(
-              onPressed: securityProvider.isLoading ? null : () => _simulateTacticalCall(securityProvider),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2C3E50),
-                foregroundColor: Colors.redAccent,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: const Text(
-                "SIMULAR",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

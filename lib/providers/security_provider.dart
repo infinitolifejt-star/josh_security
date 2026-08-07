@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/providers/security_provider.dart
-// JOSH SECURITY v6.0 - PROVIDER ORQUESTADOR LIGERO
+// JOSH SECURITY v6.0 - PROVIDER ORQUESTADOR CON AGENTE E IA CONTEXTUAL
 // ====================================================================================================
 
 import 'dart:async';
@@ -9,19 +9,23 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../services/api_service.dart';
+import '../services/security/call_security_engine.dart';
 import '../services/security/database_service.dart';
 import '../services/security/file_scanner_service.dart';
+import '../services/security/phishing_engine.dart';
 import '../services/security/phone_interceptor_service.dart';
+import '../services/security/security_coordinator.dart';
+import '../services/security/telemetry_service.dart';
 
 class SecurityProvider extends ChangeNotifier {
   //============================================================================
-  // SERVICIOS
+  // SERVICIOS & COORDINADOR DE SEGURIDAD
   //============================================================================
-  final ApiService _apiService = ApiService();
   final DatabaseService _database = DatabaseService.instance;
   final PhoneInterceptorService _phoneService = PhoneInterceptorService();
   final FileScannerService _fileScanner = FileScannerService.instance;
+
+  late final SecurityCoordinator _coordinator;
 
   //============================================================================
   // ESTADO GENERAL & HUD
@@ -36,12 +40,13 @@ class SecurityProvider extends ChangeNotifier {
   Color _hudColor = Colors.green;
   String _verdictText = "SISTEMA OPERATIVO SEGURO";
   String _statusCategory = "CENTINELA INICIALIZANDO...";
+  String _agentReasoningText = "Agente Centinela activo y listo.";
 
   String? _selectedFileName;
   File? _selectedFile;
 
   //============================================================================
-  // METRICAS Y CONSOLAS
+  // MÉTRICAS Y CONSOLAS
   //============================================================================
   int _linksChecked = 0;
   int _callsChecked = 0;
@@ -49,6 +54,15 @@ class SecurityProvider extends ChangeNotifier {
 
   final List<String> _forensicLogs = [];
   List<Map<String, dynamic>> _historicalLogs = [];
+
+  SecurityProvider() {
+    // Inicializar coordinador unificado
+    _coordinator = SecurityCoordinator(
+      phishingEngine: PhishingEngine(),
+      callSecurityEngine: CallSecurityEngine(),
+      telemetryService: TelemetryService(),
+    );
+  }
 
   //============================================================================
   // GETTERS
@@ -62,6 +76,7 @@ class SecurityProvider extends ChangeNotifier {
   Color get hudColor => _hudColor;
   String get verdictText => _verdictText;
   String get statusCategory => _statusCategory;
+  String get agentReasoningText => _agentReasoningText;
   int get linksChecked => _linksChecked;
   int get callsChecked => _callsChecked;
   int get malwarePrevented => _malwarePrevented;
@@ -114,7 +129,7 @@ class SecurityProvider extends ChangeNotifier {
   }
 
   //============================================================================
-  // AUDITORÍA CENTRALIZADA
+  // AUDITORÍA CENTRALIZADA AGÉNTICA
   //============================================================================
   Future<void> executeAuditoria(String target, int vector) async {
     if (target.trim().isEmpty && vector != 2) return;
@@ -123,15 +138,15 @@ class SecurityProvider extends ChangeNotifier {
     _setLoadingState(true);
 
     _appendLog("===================================================");
-    _appendLog("CENTINELA INICIANDO AUDITORÍA | OBJ: $target | VEC: $vector");
+    _appendLog("AGENTE CENTINELA EVALUANDO | OBJ: $target | VEC: $vector");
 
     try {
       switch (vector) {
         case 0:
-          await _processScan("SPAM", target, "PHONE", () => _callsChecked++);
+          await _processCallScan(target);
           break;
         case 1:
-          await _processScan("PHISHING", target, "URL", () => _linksChecked++);
+          await _processUrlScan(target);
           break;
         case 2:
           await _auditFile();
@@ -139,7 +154,7 @@ class SecurityProvider extends ChangeNotifier {
       }
       await _loadHistoricalLogs();
     } catch (e) {
-      _appendLog("ERROR GENERAL: $e");
+      _appendLog("ERROR GENERAL AGÉNTICO: $e");
     } finally {
       _isEnginePatrolling = false;
       _setLoadingState(false);
@@ -147,18 +162,42 @@ class SecurityProvider extends ChangeNotifier {
   }
 
   //============================================================================
-  // MÉTODOS DE AUDITORÍA INTERNOS (HELPER GENÉRICO)
+  // PROCESAMIENTO DE VECTORES CON EL COORDINADOR DE IA AGÉNTICA
   //============================================================================
-  Future<void> _processScan(String scanType, String target, String vectorTag, VoidCallback incrementCounter) async {
-    _appendLog("Analizando vector $vectorTag...");
-    final result = await _apiService.scanTarget(scanType, target);
-    final double score = (result["riskScore"] ?? 0).toDouble();
+  Future<void> _processCallScan(String target) async {
+    _appendLog("Iniciando análisis agéntico de llamada...");
+    final result = await _coordinator.scanCall(phoneNumber: target);
+    
+    double agentScore = (result["agentRiskScore"] ?? result["riskScore"] ?? 0.0).toDouble();
+    String verdict = result["verdict"] ?? "DESCONOCIDO";
+    String reasoning = result["agentReasoning"] ?? "Sin razonamiento.";
 
-    _updateHud(score);
-    incrementCounter();
+    _callsChecked++;
+    _agentReasoningText = reasoning;
+    _updateHudWithVerdict(agentScore, verdict);
 
-    _appendLog("RIESGO: ${score.toStringAsFixed(1)}% | VEREDICTO: ${result["classification"]}");
-    await _persistAudit(target, score, result["classification"] ?? "DESCONOCIDO", vectorTag, result.toString());
+    _appendLog("RIESGO AGÉNTICO: ${agentScore.toStringAsFixed(1)}% | VEREDICTO: $verdict");
+    _appendLog("RAZONAMIENTO: $reasoning");
+
+    await _persistAudit(target, agentScore, verdict, "PHONE", result.toString());
+  }
+
+  Future<void> _processUrlScan(String target) async {
+    _appendLog("Iniciando análisis agéntico de URL...");
+    final result = await _coordinator.scanUrl(target);
+
+    double agentScore = (result["agentRiskScore"] ?? result["riskScore"] ?? 0.0).toDouble();
+    String verdict = result["verdict"] ?? "DESCONOCIDO";
+    String reasoning = result["agentReasoning"] ?? "Sin razonamiento.";
+
+    _linksChecked++;
+    _agentReasoningText = reasoning;
+    _updateHudWithVerdict(agentScore, verdict);
+
+    _appendLog("RIESGO AGÉNTICO: ${agentScore.toStringAsFixed(1)}% | VEREDICTO: $verdict");
+    _appendLog("RAZONAMIENTO: $reasoning");
+
+    await _persistAudit(target, agentScore, verdict, "URL", result.toString());
   }
 
   Future<void> _auditFile() async {
@@ -172,7 +211,8 @@ class SecurityProvider extends ChangeNotifier {
     final double score = verdict.isCritical ? 100 : (verdict.isWarning ? 60 : 5);
 
     _malwarePrevented++;
-    _updateHud(score);
+    _agentReasoningText = "Análisis estático de firmas y hashes sobre ejecutable.";
+    _updateHudWithVerdict(score, verdict.riskLevel);
     _appendLog("Resultado: ${verdict.riskLevel}");
 
     await _persistAudit(_selectedFileName ?? "APK_DESCONOCIDO", score, verdict.riskLevel, "MALWARE", verdict.toString());
@@ -193,7 +233,7 @@ class SecurityProvider extends ChangeNotifier {
       "service": vector,
       "activity": target,
       "verdict": verdict,
-      "matched_rule": "CENTINELA_$vector",
+      "matched_rule": "AGENT_$vector",
       "extra_data": rawDetails,
     });
   }
@@ -201,23 +241,22 @@ class SecurityProvider extends ChangeNotifier {
   //============================================================================
   // GESTIÓN DE ESTADO Y RESET
   //============================================================================
-  void _updateHud(double score) {
+  void _updateHudWithVerdict(double score, String verdict) {
     _vulnerabilityScore = score;
+    _verdictText = verdict;
+
     if (score >= 70) {
       _hudColor = Colors.red;
-      _verdictText = "AMENAZA BLOQUEADA";
-    } else if (score >= 35) {
+    } else if (score >= 30) {
       _hudColor = Colors.orange;
-      _verdictText = "RIESGO MODERADO";
     } else {
       _hudColor = Colors.green;
-      _verdictText = "SISTEMA OPERATIVO SEGURO";
     }
   }
 
   Future<void> clearMasterBitacora() async {
     try {
-      _appendLog("Eliminando registros locales...");
+      _appendLog("Eliminando registros locales y de memoria...");
       await _database.clearAllLogs();
       _historicalLogs.clear();
       _forensicLogs.clear();
@@ -237,6 +276,7 @@ class SecurityProvider extends ChangeNotifier {
     _hudColor = Colors.green;
     _verdictText = "SISTEMA OPERATIVO SEGURO";
     _statusCategory = "CENTINELA OPERATIVO";
+    _agentReasoningText = "Agente Centinela activo y listo.";
     notifyListeners();
   }
 

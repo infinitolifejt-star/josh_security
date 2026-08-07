@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/overlay_card.dart
-// COMPONENTE: Pop-Up Flotante Interactivo (JOSH Security)
+// COMPONENTE: Pop-Up Flotante Interactivo con Razonamiento Agéntico (JOSH Security v6.0)
 // ====================================================================================================
 
 import 'dart:async';
@@ -18,6 +18,7 @@ class _OverlayCardState extends State<OverlayCard> {
   String _phoneNumber = 'Analizando...';
   String _riskLevel = 'CORTAFUEGOS';
   String _message = 'JOSH Security evaluando paquete entrante.';
+  String? _agentReasoning;
   StreamSubscription? _overlaySubscription;
 
   @override
@@ -29,6 +30,7 @@ class _OverlayCardState extends State<OverlayCard> {
           _phoneNumber = data['phone_number'] ?? _phoneNumber;
           _riskLevel = data['risk_level'] ?? _riskLevel;
           _message = data['message'] ?? _message;
+          _agentReasoning = data['agent_reasoning'];
         });
       }
     });
@@ -65,7 +67,7 @@ class _OverlayCardState extends State<OverlayCard> {
                 color: riskColor.withAlpha(80),
                 blurRadius: 12,
                 spreadRadius: 2,
-              )
+              ),
             ],
           ),
           child: Column(
@@ -123,6 +125,39 @@ class _OverlayCardState extends State<OverlayCard> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
+              if (_agentReasoning != null && _agentReasoning!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: riskColor.withAlpha(100),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.psychology, color: riskColor, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _agentReasoning!,
+                          style: TextStyle(
+                            color: Colors.white.withAlpha(230),
+                            fontSize: 11,
+                            fontFamily: 'Monospace',
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,

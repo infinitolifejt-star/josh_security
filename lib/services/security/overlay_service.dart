@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/overlay_service.dart
-// COMPONENTE: Gestor del Pop-Up Flotante en Pantalla (JOSH Security)
+// COMPONENTE: Gestor del Pop-Up Flotante en Pantalla (JOSH Security v6.0)
 // ====================================================================================================
 
 import 'dart:developer' as developer;
@@ -31,6 +31,7 @@ class OverlayService {
     required String phoneNumber,
     required String riskLevel,
     required String message,
+    String? agentReasoning,
   }) async {
     try {
       final bool isGranted = await FlutterOverlayWindow.isPermissionGranted();
@@ -66,6 +67,7 @@ class OverlayService {
         'phone_number': phoneNumber,
         'risk_level': riskLevel,
         'message': message,
+        'agent_reasoning': agentReasoning,
       });
     } catch (e, stack) {
       developer.log(
