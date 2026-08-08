@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/forensic_history_list.dart
-// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO CENTINELA v4.5.3 (TYPO CLEAN)
+// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO JOSH SECURITY v6.0-AGENTIC
 // OP-HEURÍSTICA: Interfaz de Bitácora Conectada a Persistencia Reactiva del Provider
 // ====================================================================================================
 
@@ -20,6 +20,9 @@ class ForensicHistoryList extends StatelessWidget {
   double _calculateHeuristicScore(Map<String, dynamic> rawItem) {
     if (rawItem['score'] != null) {
       return (rawItem['score'] as num).toDouble();
+    }
+    if (rawItem['agentRiskScore'] != null) {
+      return (rawItem['agentRiskScore'] as num).toDouble();
     }
 
     final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString().toUpperCase();
@@ -41,6 +44,95 @@ class ForensicHistoryList extends StatelessWidget {
     }
   }
 
+  void _mostrarDetalleForense(BuildContext context, Map<String, dynamic> item, double score, String verdict) {
+    final String target = (item['target'] ?? item['activity'] ?? item['url'] ?? item['phoneNumber'] ?? 'Análisis de perímetro').toString();
+    final String timestamp = (item['timestamp'] ?? item['scanned_at'] ?? 'Sin fecha').toString();
+    final String reasoning = (item['agentReasoning'] ?? item['reason'] ?? 'Evaluación estándar del motor de seguridad').toString();
+    final String vector = (item['vector'] ?? item['service'] ?? 'SEGURIDAD').toString().toUpperCase();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF111A35),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF1C2541)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.shield_outlined, color: Color(0xFF5BC0BE)),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Detalle de Inspección',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('OBJETIVO / VECTOR', style: TextStyle(color: Color(0xFF5BC0BE), fontSize: 11, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              SelectableText(
+                target,
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('RIESGO ESTRUCTURAL', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
+                      Text('${score.toStringAsFixed(1)}%', style: TextStyle(color: score >= 70 ? const Color(0xFFFF5252) : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)), fontWeight: FontWeight.bold, fontSize: 14)),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text('VEREDICTO', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
+                      Text(verdict, style: TextStyle(color: score >= 70 ? const Color(0xFFFF5252) : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)), fontWeight: FontWeight.bold, fontSize: 12)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text('FECHA Y HORA', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
+              Text('$vector • $timestamp', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              const SizedBox(height: 16),
+              const Text('RAZONAMIENTO AGÉNTICO / EVIDENCIA', style: TextStyle(color: Color(0xFF5BC0BE), fontSize: 11, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D1326),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF1C2541)),
+                ),
+                child: Text(
+                  reasoning,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('CERRAR', style: TextStyle(color: Color(0xFF5BC0BE))),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final securityProvider = Provider.of<SecurityProvider>(context);
@@ -53,7 +145,7 @@ class ForensicHistoryList extends StatelessWidget {
     }
 
     IconData getCardIcon(double score, String vector) {
-      if (vector.contains('TEL') || vector.contains('PHONE')) {
+      if (vector.contains('TEL') || vector.contains('PHONE') || vector.contains('CALL')) {
         return Icons.phone_in_talk_outlined;
       } else if (vector.contains('URL') || vector.contains('LINK') || vector.contains('PHISHING')) {
         return Icons.link_rounded;
@@ -135,68 +227,88 @@ class ForensicHistoryList extends StatelessWidget {
 
                     final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString();
                     final double score = _calculateHeuristicScore(rawItem);
-                    final String vector = (rawItem['vector'] ?? rawItem['service'] ?? 'CENTINELA').toString().toUpperCase();
-                    final String target = (rawItem['target'] ?? rawItem['activity'] ?? 'Análisis de perímetro').toString();
+                    final String vector = (rawItem['vector'] ?? rawItem['service'] ?? 'SEGURIDAD').toString().toUpperCase();
+                    final String target = (rawItem['target'] ?? rawItem['activity'] ?? rawItem['url'] ?? rawItem['phoneNumber'] ?? 'Análisis de perímetro').toString();
                     final String timestamp = (rawItem['timestamp'] ?? rawItem['scanned_at'] ?? '').toString();
                     final Color cardColor = getCardColor(score);
 
                     return Container(
                       margin: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1C2541),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: cardColor.withAlpha((0.2 * 255).round())),
                       ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                        leading: CircleAvatar(
-                          backgroundColor: cardColor.withAlpha((0.1 * 255).round()),
-                          child: Icon(
-                            getCardIcon(score, vector),
-                            color: cardColor,
-                            size: 20,
-                          ),
-                        ),
-                        title: Text(
-                          target,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: Text(
-                            timestamp.isNotEmpty ? "$vector • $timestamp" : vector,
-                            style: TextStyle(
-                              color: Colors.blueGrey[300],
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                      child: InkWell(
+                        onTap: () => _mostrarDetalleForense(context, rawItem, score, verdict),
+                        child: Row(
                           children: [
-                            Text(
-                              score > 0 ? "${score.toStringAsFixed(1)}%" : "OK",
-                              style: TextStyle(
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: cardColor.withAlpha((0.1 * 255).round()),
+                              child: Icon(
+                                getCardIcon(score, vector),
                                 color: cardColor,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
+                                size: 18,
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              verdict.toUpperCase(),
-                              style: TextStyle(
-                                color: cardColor.withAlpha((0.7 * 255).round()),
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    target,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    timestamp.isNotEmpty ? "$vector • $timestamp" : vector,
+                                    style: TextStyle(
+                                      color: Colors.blueGrey[300],
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  score > 0 ? "${score.toStringAsFixed(1)}%" : "OK",
+                                  style: TextStyle(
+                                    color: cardColor,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: cardColor.withAlpha((0.15 * 255).round()),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    verdict.length > 10 ? '${verdict.substring(0, 9)}...' : verdict.toUpperCase(),
+                                    style: TextStyle(
+                                      color: cardColor,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

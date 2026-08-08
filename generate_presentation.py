@@ -1,127 +1,138 @@
 # =====================================================================
-# PROJECT CENTINELA: AUTOMATED SLIDE COMPILER (v4.4.0 - PRODUCTION)
-# AUDITORÍA DE CONTENEDORES VISUALES Y ACTUALIZACIÓN DE HOJA DE RUTA
+# JOSH SECURITY: AUTOMATED SLIDE COMPILER (v6.0 - PRODUCTION)
+# AUDITORÍA DE CONTENEDORES VISUALES Y PRESENTACIÓN TÉCNICA
 # =====================================================================
-import os
 from pptx import Presentation
-from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+from pptx.util import Inches, Pt
 
-def crear_presentacion_centinela():
-    print("[+] Configurando Motor de Diapositivas Ejecutivas 'Centinela 2026'...")
+
+def crear_presentacion_josh_security():
+    print("[+] Configurando Motor de Diapositivas 'JOSH Security'...")
     prs = Presentation()
-    
-    # Configuración de aspecto panorámico moderno (16:9)
+
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
-    
-    # Paleta Cromática Cyber-Business High Contrast
-    COLOR_FONDO = RGBColor(2, 6, 23)       # Ultra Dark (#020617)
-    COLOR_NEON = RGBColor(56, 189, 248)    # Azul Neón (#38BDF8)
-    COLOR_TEXTO = RGBColor(148, 163, 184)  # Plata Técnico (#94A3B8)
-    COLOR_EXITO = RGBColor(16, 185, 129)   # Verde Reactivo (#10B981)
 
-    # Actualización Forense de la Data: Reflejando estado v4.4.0 de Producción
+    COLOR_FONDO = RGBColor(2, 6, 23)
+    COLOR_NEON = RGBColor(56, 189, 248)
+    COLOR_TEXTO = RGBColor(148, 163, 184)
+    COLOR_EXITO = RGBColor(16, 185, 129)
+
     diapositivas_data = [
         {
-            "titulo": "CENTINELA ENGINE: PILAR 2",
-            "sub": "Conexión Estratégica del Motor de Análisis Python 3.13",
+            "titulo": "JOSH SECURITY ENGINE: ARCHITECTURE",
+            "sub": "Conexión Estratégica del Motor Python 3.13 / Flask Cloud",
             "puntos": [
-                "Ecosistema Reactivo: Integración directa entre Flutter UI y scripts de backend.",
-                "Arquitectura Asíncrona: Procesamiento en segundo plano sin congelamiento visual.",
-                "Objetivo del Módulo: Reemplazar simulaciones estáticas por veredictos reales."
-            ]
+                "Ecosistema Reactivo: Integración entre Flutter UI y backend.",
+                "Arquitectura Asíncrona: Procesamiento en segundo plano.",
+                "Motor Forense: Análisis determinista en tiempo real.",
+            ],
         },
         {
-            "titulo": "MECANISMO DE INGESTIÓN DE DATA",
-            "sub": "Protocolo de Entrada y Sanitización de Vectores",
+            "titulo": "MECANISMO DE INGESTIÓN Y SANITIZACIÓN",
+            "sub": "Protocolo de Entrada y Evaluación de Vectores de Amenaza",
             "puntos": [
-                "Captura por TextField: Recepción en tiempo real de cadenas sospechosas.",
-                "Sanitización en Python: Limpieza de expresiones regulares e inyecciones de código.",
-                "Fase de Disparo: Aceleración automática del giro 3D del escudo al iniciar parsing."
-            ]
+                "Ingestión Multicanal: Recepción de URLs, ejecutables y "
+                "teléfonos.",
+                "Sanitización en Backend: Normalización bajo estándar "
+                "ITU-T E.164.",
+                "Fase de Inspección: Animación sincronizada del escudo 3D.",
+            ],
         },
         {
-            "titulo": "PROCESAMIENTO DE AMENAZAS",
-            "sub": "Motor Analítico y Consulta de Firmas",
+            "titulo": "EVALUACIÓN DE AMENAZAS Y FIRMAS",
+            "sub": "Integración Heurística con Motores Globales",
             "puntos": [
-                "Módulo de Análisis: Inspección heurística y matching de strings peligrosos.",
-                "Estructura Escalable: Conexión nativa a las APIs de VirusTotal y Google Safe Browsing.",
-                "Clasificación Binaria: Retorno inmediato de flags de estado [SAFE / WARNING / DANGER]."
-            ]
+                "Análisis Multinivel: Escaneo heurístico de firmas y "
+                "patrones.",
+                "Consultas en Tiempo Real: Conexión con Google Safe "
+                "Browsing y VT.",
+                "Escala Unificada: Puntaje de 0 a 100 y niveles semánticos.",
+            ],
         },
         {
-            "titulo": "RESPUESTA REACTIVA DE LA INTERFAZ",
-            "sub": "Mapeo de Canales y Retorno de Flags",
+            "titulo": "RESPUESTA REACTIVA Y PERSISTENCIA",
+            "sub": "Mapeo de Canales y Almacenamiento Forense",
             "puntos": [
-                "Mutación de Estado: Cambio instantáneo de matriz cromática basada en el payload.",
-                "Retroalimentación Resonante: Efectos Glow reactivos (Verde Neón / Rojo Alerta).",
-                "Persistencia de Evidencias: Inserción atómica en el Historial de Vigilancia SQLite."
-            ]
+                "Mutación Dinámica de UI: Transición cromática según "
+                "el riesgo.",
+                "Retroalimentación Visual: Indicadores Glowing reactivos.",
+                "Persistencia: Registro atómico SQLite y exportación en PDF.",
+            ],
         },
         {
-            "titulo": "HOJA DE RUTA E INFRAESTRUCTURA CLOUD",
-            "sub": "Siguientes Pasos del Despliegue Técnico y Escalamiento",
+            "titulo": "INFRAESTRUCTURA CLOUD Y ESCALABILIDAD",
+            "sub": "Hoja de Ruta del Despliegue Técnico",
             "puntos": [
-                "Fase 1: Migración completa de servicios locales a entorno Cloud en Render.",
-                "Fase 2: Implementación de Webhooks reactivos para bloqueo de llamadas SPAM.",
-                "Fase 3: Auditoría forense periódica de logs blindados por firmas SHA-256."
-            ]
-        }
+                "Despliegue Cloud: Microservicios alojados en Render.",
+                "Interceptación Móvil: Detección preventiva de llamadas "
+                "spam.",
+                "Auditoría Forense: Reportes PDF estructurados para "
+                "incidentes.",
+            ],
+        },
     ]
 
-    blank_layout = prs.slide_layouts[6] 
+    blank_layout = prs.slide_layouts[6]
 
     for data in diapositivas_data:
         slide = prs.slides.add_slide(blank_layout)
-        
-        # Aplicación del fondo plano oscuro institucional
+
         background = slide.background
         fill = background.fill
         fill.solid()
         fill.fore_color.rgb = COLOR_FONDO
-        
-        # Caja de Encabezado (Título y Subtítulo)
-        txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.6), Inches(11.5), Inches(1.5))
-        tf = txBox.text_frame
+
+        tx_box = slide.shapes.add_textbox(
+            Inches(0.8), Inches(0.6), Inches(11.5), Inches(1.5)
+        )
+        tf = tx_box.text_frame
         tf.word_wrap = True
         tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
-        
+
         p = tf.paragraphs[0]
         p.text = data["titulo"]
-        p.font.size = Pt(38)
+        p.font.size = Pt(36)
         p.font.bold = True
-        p.font.name = 'Arial'
+        p.font.name = "Arial"
         p.font.color.rgb = COLOR_NEON
-        
+
         p_sub = tf.add_paragraph()
         p_sub.text = data["sub"]
         p_sub.font.size = Pt(16)
         p_sub.font.italic = True
-        p_sub.font.name = 'Arial'
+        p_sub.font.name = "Arial"
         p_sub.font.color.rgb = COLOR_EXITO
         p_sub.space_before = Pt(6)
 
-        # Caja de Contenido (Viñetas Analíticas)
-        contentBox = slide.shapes.add_textbox(Inches(0.8), Inches(2.4), Inches(11.5), Inches(4.3))
-        tf_content = contentBox.text_frame
+        content_box = slide.shapes.add_textbox(
+            Inches(0.8), Inches(2.4), Inches(11.5), Inches(4.3)
+        )
+        tf_content = content_box.text_frame
         tf_content.word_wrap = True
-        tf_content.margin_left = tf_content.margin_right = tf_content.margin_top = tf_content.margin_bottom = 0
-        
+        tf_content.margin_left = (
+            tf_content.margin_right
+        ) = tf_content.margin_top = tf_content.margin_bottom = 0
+
         for i, punto in enumerate(data["puntos"]):
-            # Corregimos el bug de python-pptx purgando la viñeta inicial del contenedor
-            p_pt = tf_content.paragraphs[0] if i == 0 else tf_content.add_paragraph()
+            p_pt = (
+                tf_content.paragraphs[0]
+                if i == 0
+                else tf_content.add_paragraph()
+            )
             p_pt.text = f"▪  {punto}"
             p_pt.font.size = Pt(20)
-            p_pt.font.name = 'Arial'
+            p_pt.font.name = "Arial"
             p_pt.font.color.rgb = COLOR_TEXTO
             p_pt.space_before = Pt(20)
             p_pt.alignment = PP_ALIGN.LEFT
 
-    output_filename = "Centinela_Pilar2_Conexion.pptx"
+    output_filename = "JoshSecurity_Arquitectura_Presentacion.pptx"
     prs.save(output_filename)
-    print(f"\n[+] PRESENTACIÓN REFACTORIZADA: Archivo corporativo blindado en '{output_filename}'.")
+    print(f"\n[+] PRESENTACIÓN COMPILADA: Guardada en '{output_filename}'.")
+
 
 if __name__ == "__main__":
-    crear_presentacion_centinela()
+    crear_presentacion_josh_security()

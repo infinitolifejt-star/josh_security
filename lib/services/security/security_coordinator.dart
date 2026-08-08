@@ -29,8 +29,10 @@ class SecurityCoordinator {
   Future<Map<String, dynamic>> scanUrl(String url) async {
     final heuristicResult = _phishingEngine.analyze(url);
     
-    // Extraer puntuación de riesgo heurístico primario
-    double heuristicRisk = (heuristicResult["riskScore"] ?? 0.0).toDouble();
+    // Extraer puntuación de riesgo heurístico probando las claves habituales ('score', 'agentRiskScore', 'riskScore')
+    double heuristicRisk = (heuristicResult["score"] ?? 
+                            heuristicResult["agentRiskScore"] ?? 
+                            heuristicResult["riskScore"] ?? 0.0).toDouble();
 
     // Deliberación agéntica con memoria contextual
     final AgentVerdict agentVerdict = await AgentEngine.evaluateThreat(
@@ -42,11 +44,15 @@ class SecurityCoordinator {
     // Mapeo unificado con decisión del agente
     final Map<String, dynamic> result = {
       ...heuristicResult,
+      "target": url,
+      "vector": "PHISHING",
+      "score": agentVerdict.finalRiskScore > 0 ? agentVerdict.finalRiskScore : heuristicRisk,
       "verdict": agentVerdict.statusText,
       "agentRiskScore": agentVerdict.finalRiskScore,
       "agentReasoning": agentVerdict.reasoning,
       "requiresExternalLookup": agentVerdict.requiresExternalLookup,
       "actionRecommendation": agentVerdict.actionRecommendation,
+      "timestamp": DateTime.now().toString().split('.')[0],
     };
 
     await _telemetryService.incrementLinksChecked();
@@ -84,8 +90,10 @@ class SecurityCoordinator {
       callText: text,
     );
 
-    // Extraer puntuación de riesgo heurístico primario
-    double heuristicRisk = (heuristicResult["riskScore"] ?? 0.0).toDouble();
+    // Extraer puntuación de riesgo heurístico probando las claves habituales ('score', 'agentRiskScore', 'riskScore')
+    double heuristicRisk = (heuristicResult["score"] ?? 
+                            heuristicResult["agentRiskScore"] ?? 
+                            heuristicResult["riskScore"] ?? 0.0).toDouble();
 
     // Deliberación agéntica con memoria contextual
     final AgentVerdict agentVerdict = await AgentEngine.evaluateThreat(
@@ -97,11 +105,15 @@ class SecurityCoordinator {
     // Mapeo unificado con decisión del agente
     final Map<String, dynamic> result = {
       ...heuristicResult,
+      "target": phoneNumber,
+      "vector": "PHONE",
+      "score": agentVerdict.finalRiskScore > 0 ? agentVerdict.finalRiskScore : heuristicRisk,
       "verdict": agentVerdict.statusText,
       "agentRiskScore": agentVerdict.finalRiskScore,
       "agentReasoning": agentVerdict.reasoning,
       "requiresExternalLookup": agentVerdict.requiresExternalLookup,
       "actionRecommendation": agentVerdict.actionRecommendation,
+      "timestamp": DateTime.now().toString().split('.')[0],
     };
 
     await _telemetryService.incrementCallsChecked();
