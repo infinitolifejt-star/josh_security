@@ -63,6 +63,14 @@ def init_db():
             )
         """
         )
+
+        # Migración dinámica: si la base existente carece de 'score', la añade sin romper la estructura
+        cursor.execute("PRAGMA table_info(escaneos)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        if "score" not in columnas:
+            cursor.execute("ALTER TABLE escaneos ADD COLUMN score INTEGER")
+            print("✅ Migración SQLite exitosa: Columna 'score' agregada.")
+
         conn.commit()
 
 
@@ -266,7 +274,7 @@ def scan_endpoint():
 
     cache = buscar_cache(target, tipo)
     if cache:
-        risk_val = int(cache[2])
+        risk_val = int(cache[2]) if cache[2] is not None else 0
         return (
             jsonify(
                 {
