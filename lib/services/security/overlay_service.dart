@@ -1,32 +1,50 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/overlay_service.dart
-// COMPONENTE: Gestor del Pop-Up Flotante en Pantalla (JOSH Security v6.0)
+// JOSH SECURITY v6.0
+// GESTOR DEL POP-UP FLOTANTE
 // ====================================================================================================
 
+import 'dart:async';
 import 'dart:developer' as developer;
+
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 class OverlayService {
-  /// Solicita permisos para dibujar sobre otras aplicaciones si no están concedidos
+  OverlayService._();
+
+  // ==================================================================================================
+  // PERMISO
+  // ==================================================================================================
+
   static Future<bool> requestPermission() async {
     try {
-      final bool isGranted = await FlutterOverlayWindow.isPermissionGranted();
-      if (!isGranted) {
-        final bool? status = await FlutterOverlayWindow.requestPermission();
-        return status ?? false;
+      final bool granted =
+          await FlutterOverlayWindow.isPermissionGranted();
+
+      if (granted) {
+        return true;
       }
-      return true;
-    } catch (e) {
+
+      final bool? result =
+          await FlutterOverlayWindow.requestPermission();
+
+      return result ?? false;
+    } catch (e, stackTrace) {
       developer.log(
-        'Error al verificar/solicitar permiso de Overlay',
-        error: e,
+        'Error verificando/solicitando permiso de Overlay.',
         name: 'josh.security.overlay',
+        error: e,
+        stackTrace: stackTrace,
       );
+
       return false;
     }
   }
 
-  /// Muestra la alerta flotante con los detalles del diagnóstico de la llamada
+  // ==================================================================================================
+  // MOSTRAR OVERLAY
+  // ==================================================================================================
+
   static Future<void> showWarningOverlay({
     required String phoneNumber,
     required String riskLevel,
@@ -34,62 +52,131 @@ class OverlayService {
     String? agentReasoning,
   }) async {
     try {
-      final bool isGranted = await FlutterOverlayWindow.isPermissionGranted();
-      if (!isGranted) {
+      final bool permissionGranted =
+          await FlutterOverlayWindow.isPermissionGranted();
+
+      if (!permissionGranted) {
         developer.log(
-          'Permiso de overlay no concedido. Omitiendo apertura.',
+          'Permiso de overlay no concedido.',
           name: 'josh.security.overlay',
         );
+
         return;
       }
 
-      if (await FlutterOverlayWindow.isActive()) {
-        await FlutterOverlayWindow.closeOverlay();
-        await Future.delayed(const Duration(milliseconds: 100));
+      // ---------------------------------------------------------------------------------------------
+      // CERRAR OVERLAY PREVIO
+      // ---------------------------------------------------------------------------------------------
+
+      final bool active =
+          await FlutterOverlayWindow.isActive();
+
+      if (active) {
+        try {
+          await FlutterOverlayWindow.closeOverlay();
+        } catch (e) {
+          developer.log(
+            'Error cerrando overlay previo.',
+            name: 'josh.security.overlay',
+            error: e,
+          );
+        }
+
+        await Future<void>.delayed(
+          const Duration(milliseconds: 150),
+        );
       }
+
+      // ---------------------------------------------------------------------------------------------
+      // CREAR OVERLAY
+      // ---------------------------------------------------------------------------------------------
 
       await FlutterOverlayWindow.showOverlay(
         enableDrag: true,
-        overlayTitle: "ALERTA CENTINELA",
-        overlayContent: "$riskLevel: $phoneNumber",
+        overlayTitle: 'ALERTA CENTINELA',
+        overlayContent: '$riskLevel: $phoneNumber',
         flag: OverlayFlag.defaultFlag,
-        visibility: NotificationVisibility.visibilityPublic,
+        visibility: NotificationVisibility.visibilitySecret,
         positionGravity: PositionGravity.auto,
         height: 600,
         width: WindowSize.matchParent,
       );
 
-      // Pequeño retardo para asegurar que la ventana de la VM Dart montó la vista antes de compartir datos
-      await Future.delayed(const Duration(milliseconds: 150));
+      // ---------------------------------------------------------------------------------------------
+      // ESPERAR AL ISOLATED ENGINE DEL OVERLAY
+      // ---------------------------------------------------------------------------------------------
 
-      // Transmite los datos de la amenaza a la vista del Overlay (OverlayCard)
-      await FlutterOverlayWindow.shareData({
+      await Future<void>.delayed(
+        const Duration(milliseconds: 250),
+      );
+
+      // ---------------------------------------------------------------------------------------------
+      // ENVIAR INFORMACIÓN AL OVERLAY
+      // ---------------------------------------------------------------------------------------------
+
+      final Map<String, dynamic> payload =
+          <String, dynamic>{
         'phone_number': phoneNumber,
         'risk_level': riskLevel,
         'message': message,
-        'agent_reasoning': agentReasoning,
-      });
-    } catch (e, stack) {
+        'agent_reasoning': agentReasoning ?? '',
+      };
+
+      // Primer intento.
+      try {
+        await FlutterOverlayWindow.shareData(payload);
+        return;
+      } catch (e) {
+        developer.log(
+          'Primer envío de datos al overlay falló. Reintentando.',
+          name: 'josh.security.overlay',
+          error: e,
+        );
+      }
+
+      // Segundo intento.
+      await Future<void>.delayed(
+        const Duration(milliseconds: 250),
+      );
+
+      try {
+        await FlutterOverlayWindow.shareData(payload);
+        return;
+      } catch (e) {
+        developer.log(
+          'Segundo envío de datos al overlay falló.',
+          name: 'josh.security.overlay',
+          error: e,
+        );
+      }
+    } catch (e, stackTrace) {
       developer.log(
-        'Error al desplegar Overlay',
-        error: e,
-        stackTrace: stack,
+        'Error desplegando Overlay.',
         name: 'josh.security.overlay',
+        error: e,
+        stackTrace: stackTrace,
       );
     }
   }
 
-  /// Cierra la ventana emergente
+  // ==================================================================================================
+  // CERRAR OVERLAY
+  // ==================================================================================================
+
   static Future<void> closeOverlay() async {
     try {
-      if (await FlutterOverlayWindow.isActive()) {
+      final bool active =
+          await FlutterOverlayWindow.isActive();
+
+      if (active) {
         await FlutterOverlayWindow.closeOverlay();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       developer.log(
-        'Error al cerrar Overlay',
-        error: e,
+        'Error cerrando Overlay.',
         name: 'josh.security.overlay',
+        error: e,
+        stackTrace: stackTrace,
       );
     }
   }

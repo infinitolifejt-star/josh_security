@@ -6,55 +6,158 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 
-class MainActivity: FlutterActivity() {
-    private val APK_CHANNEL = "josh_security/apk_centinel"
-    private val CALL_CHANNEL = "josh_security/phone_interceptor"
+class MainActivity : FlutterActivity() {
+
+    companion object {
+        private const val APK_CHANNEL = "josh_security/apk_centinel"
+        private const val CALL_CHANNEL = "josh_security/phone_interceptor"
+        private const val PREFS_NAME = "josh_security_pending_apks"
+        private const val KEY_PENDING_LIST = "pending_apks_json"
+    }
+
+    private var apkChannel: MethodChannel? = null
+    private var callChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        
-        // Canal Centinela APK
-        val apkChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APK_CHANNEL)
+
+        // =========================================================================
+        // CANAL CENTINELA APK
+        // =========================================================================
+
+        apkChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            APK_CHANNEL
+        )
+
         ApkInstallReceiver.methodChannel = apkChannel
 
-        apkChannel.setMethodCallHandler { call, result ->
-            if (call.method == "getPendingApks") {
-                val pendingList = checkAndFlushPendingApks(applicationContext)
-                result.success(pendingList)
-            } else {
-                result.notImplemented()
+        apkChannel?.setMethodCallHandler { call, result ->
+
+            when (call.method) {
+
+                "getPendingApks" -> {
+                    try {
+                        val pendingList = checkAndFlushPendingApks(
+                            applicationContext
+                        )
+
+                        result.success(pendingList)
+
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        result.error(
+                            "PENDING_APKS_ERROR",
+                            "No fue posible recuperar las APK pendientes.",
+                            e.message
+                        )
+                    }
+                }
+
+                else -> {
+                    result.notImplemented()
+                }
             }
         }
 
-        // Canal Interceptor de Llamadas
-        val callChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CALL_CHANNEL)
+        // =========================================================================
+        // CANAL INTERCEPTOR TELEFÓNICO
+        // =========================================================================
+
+        callChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            CALL_CHANNEL
+        )
+
         PhoneCallReceiver.methodChannel = callChannel
     }
 
-    // Procesa y limpia la cola de APKs detectadas mientras la app estaba cerrada
-    private fun checkAndFlushPendingApks(context: Context): List<Map<String, String>> {
-        val prefs = context.getSharedPreferences("josh_security_pending_apks", Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString("pending_apks_json", "[]") ?: "[]"
-        
+    /**
+     * Recupera los eventos de APK almacenados mientras Flutter estaba cerrado.
+     *
+     * Después de recuperarlos correctamente, elimina la cola persistente.
+     */
+    private fun checkAndFlushPendingApks(
+        context: Context
+    ): List<Map<String, String>> {
+
+        val prefs = context.getSharedPreferences(
+            PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
+
+        val jsonString = prefs.getString(
+            KEY_PENDING_LIST,
+            "[]"
+        ) ?: "[]"
+
         val resultList = mutableListOf<Map<String, String>>()
-        
+
         try {
-            val jsonArray = JSONArray(jsonStr)
+            val jsonArray = JSONArray(jsonString)
+
             for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val map = mapOf(
-                    "packageName" to obj.optString("packageName"),
-                    "appName" to obj.optString("appName"),
-                    "apkPath" to obj.optString("apkPath")
+
+                val obj = jsonArray.optJSONObject(i)
+                    ?: continue
+
+                val packageName = obj.optString(
+                    "packageName",
+                    ""
                 )
-                resultList.add(map)
+
+                val appName = obj.optString(
+                    "appName",
+                    ""
+                )
+
+                val apkPath = obj.optString(
+                    "apkPath",
+                    ""
+                )
+
+                resultList.add(
+                    mapOf(
+                        "packageName" to packageName,
+                        "appName" to appName,
+                        "apkPath" to apkPath
+                    )
+                )
             }
-            // Limpiar la lista guardada tras recuperarla
-            prefs.edit().remove("pending_apks_json").apply()
+
+            // Solo limpiamos la cola después de haber podido leerla.
+            prefs.edit()
+                .remove(KEY_PENDING_LIST)
+                .apply()
+
         } catch (e: Exception) {
+
+            // No eliminamos la cola si el JSON no pudo procesarse.
             e.printStackTrace()
         }
 
         return resultList
+    }
+
+    /**
+     * Limpieza de referencias cuando Flutter destruye el engine.
+     *
+     * Esto evita que un BroadcastReceiver conserve un MethodChannel
+     * perteneciente a un engine que ya no existe.
+     */
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+
+        if (ApkInstallReceiver.methodChannel === apkChannel) {
+            ApkInstallReceiver.methodChannel = null
+        }
+
+        if (PhoneCallReceiver.methodChannel === callChannel) {
+            PhoneCallReceiver.methodChannel = null
+        }
+
+        apkChannel = null
+        callChannel = null
+
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 }

@@ -1,98 +1,205 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    
-    <!-- Conectividad -->
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- Permisos de intercepción de llamadas y SMS -->
-    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
-    <uses-permission android:name="android.permission.READ_CALL_LOG"/>
-    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
-    <uses-permission android:name="android.permission.RECEIVE_SMS"/>
-    <uses-permission android:name="android.permission.READ_SMS"/>
+    <!-- ========================================================================================== -->
+    <!-- RED -->
+    <!-- ========================================================================================== -->
 
-    <!-- Permisos de Notificación (Requerido para Android 13+) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Permisos para ejecución persistente y Foreground Services -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    
-    <!-- Permiso para superposición táctica (Overlay Pop-up) -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!-- ========================================================================================== -->
+    <!-- TELEFONÍA -->
+    <!-- ========================================================================================== -->
 
-    <!-- PERMISOS CENTINELA: Detección de Instalación de APKs/Paquetes -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
-    <!-- REGLA DE VISIBILIDAD DE PAQUETES (Android 11+) -->
+    <!-- ========================================================================================== -->
+    <!-- SMS -->
+    <!-- Mantener únicamente si JOSH realmente utiliza estas funciones. -->
+    <!-- ========================================================================================== -->
+
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!-- ========================================================================================== -->
+    <!-- NOTIFICACIONES -->
+    <!-- ========================================================================================== -->
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- ========================================================================================== -->
+    <!-- ARRANQUE DEL DISPOSITIVO -->
+    <!-- ========================================================================================== -->
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- ========================================================================================== -->
+    <!-- FOREGROUND SERVICES -->
+    <!-- ========================================================================================== -->
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Background service -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Overlay service - Android 14+ -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- ========================================================================================== -->
+    <!-- OVERLAY -->
+    <!-- ========================================================================================== -->
+
+    <uses-permission
+        android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <uses-permission
+        android:name="android.permission.WAKE_LOCK" />
+
+    <uses-permission
+        android:name="android.permission.DISABLE_KEYGUARD" />
+
+    <!-- ========================================================================================== -->
+    <!-- INSTALACIÓN / VISIBILIDAD DE PAQUETES -->
+    <!-- Mantener solo si el módulo de seguridad realmente lo necesita. -->
+    <!-- ========================================================================================== -->
+
+    <uses-permission
+        android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- ========================================================================================== -->
+    <!-- QUERIES -->
+    <!-- ========================================================================================== -->
+
     <queries>
+
         <intent>
             <action android:name="android.intent.action.MAIN" />
         </intent>
+
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
         </intent>
+
     </queries>
+
+    <!-- ========================================================================================== -->
+    <!-- APPLICATION -->
+    <!-- ========================================================================================== -->
 
     <application
         android:label="JOSH Security"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true"> 
-        
-        <!-- Servicio en Segundo Plano del Motor Centinela -->
+        android:allowBackup="true">
+
+        <!-- ====================================================================================== -->
+        <!-- FLUTTER BACKGROUND SERVICE -->
+        <!-- ====================================================================================== -->
+
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false"
-            tools:replace="android:exported,android:foregroundServiceType">
-        </service>
-
-        <!-- Servicio Interno para la Ventana Flotante (Overlay) -->
-        <service
-            android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
+            android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync"
             tools:replace="android:exported,android:foregroundServiceType" />
 
-        <!-- Receptor de eventos de encendido del dispositivo -->
+        <!-- ====================================================================================== -->
+        <!-- FLUTTER OVERLAY WINDOW -->
+        <!-- Android 14+: specialUse -->
+        <!-- ====================================================================================== -->
+
+        <service
+            android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            tools:replace="android:exported,android:foregroundServiceType">
+
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="caller_id_security_overlay" />
+
+        </service>
+
+        <!-- ====================================================================================== -->
+        <!-- BOOT RECEIVER DEL BACKGROUND SERVICE -->
+        <!-- ====================================================================================== -->
+
         <receiver
             android:name="id.flutter.flutter_background_service.BootReceiver"
             android:enabled="true"
             android:exported="true">
+
             <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+
+                <action
+                    android:name="android.intent.action.BOOT_COMPLETED" />
+
+                <action
+                    android:name="android.intent.action.QUICKBOOT_POWERON" />
+
             </intent-filter>
+
         </receiver>
 
-        <!-- RECEPTOR CENTINELA: Intercepción de Llamadas Entrantes -->
+        <!-- ====================================================================================== -->
+        <!-- PHONE CALL RECEIVER -->
+        <!-- ====================================================================================== -->
+
         <receiver
             android:name=".PhoneCallReceiver"
             android:enabled="true"
             android:exported="true">
+
             <intent-filter>
-                <action android:name="android.intent.action.PHONE_STATE" />
+
+                <action
+                    android:name="android.intent.action.PHONE_STATE" />
+
             </intent-filter>
+
         </receiver>
 
-        <!-- RECEPTOR CENTINELA: Intercepción de Instalación/Actualización de APKs -->
+        <!-- ====================================================================================== -->
+        <!-- APK INSTALL RECEIVER -->
+        <!-- ====================================================================================== -->
+
         <receiver
             android:name=".ApkInstallReceiver"
             android:enabled="true"
             android:exported="true">
+
             <intent-filter>
-                <action android:name="android.intent.action.PACKAGE_ADDED" />
-                <action android:name="android.intent.action.PACKAGE_REPLACED" />
-                <data android:scheme="package" />
+
+                <action
+                    android:name="android.intent.action.PACKAGE_ADDED" />
+
+                <action
+                    android:name="android.intent.action.PACKAGE_REPLACED" />
+
+                <data
+                    android:scheme="package" />
+
             </intent-filter>
+
         </receiver>
+
+        <!-- ====================================================================================== -->
+        <!-- MAIN ACTIVITY -->
+        <!-- ====================================================================================== -->
 
         <activity
             android:name=".MainActivity"
@@ -102,19 +209,34 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
+
             <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"
-              />
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+
+                <action
+                    android:name="android.intent.action.MAIN" />
+
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
+
             </intent-filter>
+
         </activity>
+
+        <!-- ====================================================================================== -->
+        <!-- FLUTTER EMBEDDING -->
+        <!-- ====================================================================================== -->
 
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
     </application>
+
 </manifest>
