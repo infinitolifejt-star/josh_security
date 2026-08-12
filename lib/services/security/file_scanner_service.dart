@@ -110,9 +110,9 @@ class FileScannerService {
       final verdict = FileScanVerdict(
         fileName: filename,
         fileSizeInBytes: size,
-        riskScore: 25, // Un peso excesivo es observación/advertencia de tamaño, NUNCA malware crítico.
+        riskScore: 25,
         riskLevel: "ADVERTENCIA_TAMAÑO",
-        analysisMessage: "El archivo supera los 15 MB. Se omitió la inspección profunda en la nube por límites perimetrales.",
+        analysisMessage: "El archivo supera los 15 MB. Se omitió la inspección profunda por límites perimetrales.",
         source: DiagnosticSource.local,
         telemetryDetails: {
           "tracking_id": "JOSH-$tracking",
@@ -133,12 +133,23 @@ class FileScannerService {
     double cloudScore = 0;
 
     if (connected) {
-      hash = await _sha256(file);
-      if (hash != null) {
-        cloudScore = await _reputation.checkVirusTotal(
-          hash,
-          isUrl: false,
-        );
+      try {
+        // Asegurar inicialización preventiva de la reputación antes de la consulta
+        try {
+          dynamic engine = _reputation;
+          await engine.init();
+        } catch (_) {}
+
+        hash = await _sha256(file);
+        if (hash != null) {
+          cloudScore = await _reputation.checkVirusTotal(
+            hash,
+            isUrl: false,
+          );
+        }
+      } catch (e) {
+        developer.log("REPUTATION_ENGINE WARNING: $e", name: "FileScannerService");
+        cloudScore = 0.0;
       }
     }
 
@@ -182,9 +193,9 @@ class FileScannerService {
       final verdict = FileScanVerdict(
         fileName: filename,
         fileSizeInBytes: size,
-        riskScore: 50, // Ejecutable sin firma conocida = Advertencia preventiva, no condena automática
+        riskScore: 50,
         riskLevel: "ADVERTENCIA",
-        analysisMessage: "Archivo con capacidad de ejecución detectado. Verifique su origen antes de instalar o ejecutar.",
+        analysisMessage: "Archivo con capacidad de ejecución detectado. Verifique su origen antes de instalar.",
         source: source,
         telemetryDetails: {
           "tracking_id": "JOSH-$tracking",
@@ -199,7 +210,7 @@ class FileScannerService {
     }
 
     // ----------------------------------------------------------------------------------------------
-    // CAPA 4: DOCUMENTO O ARCHIVO LIMPIO
+    // CAPA 4: ARCHIVO MULTIMEDIA / DOCUMENTO LIMPIO
     // ----------------------------------------------------------------------------------------------
     final verdict = FileScanVerdict(
       fileName: filename,

@@ -41,9 +41,7 @@ void overlayMain() {
 // SERVICIO GLOBAL DEL INTERCEPTOR
 // ====================================================================================================
 
-final PhoneInterceptorService _phoneInterceptorService =
-    PhoneInterceptorService();
-
+final PhoneInterceptorService _phoneInterceptorService = PhoneInterceptorService();
 Timer? _keepAliveTimer;
 
 // ====================================================================================================
@@ -53,37 +51,21 @@ Timer? _keepAliveTimer;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // -----------------------------------------------------------------------------------------------
-  // 1. PERMISOS NECESARIOS PARA TELEFONÍA
-  // -----------------------------------------------------------------------------------------------
-
+  // 1. Permisos de telefonía y notificaciones
   await _requestRuntimePermissions();
 
-  // -----------------------------------------------------------------------------------------------
-  // 2. INICIALIZACIÓN DEL ESCUDO DE SEGUNDO PLANO
-  // -----------------------------------------------------------------------------------------------
-
+  // 2. Inicialización del Escudo de Segundo Plano
   try {
     await BackgroundShield.initializeService();
-
-    debugPrint(
-      '🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.',
-    );
+    debugPrint('🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.');
   } catch (e, stackTrace) {
-    debugPrint(
-      '⚠️ [JOSH SHIELD] Error al inicializar el servicio de fondo: $e',
-    );
-
+    debugPrint('⚠️ [JOSH SHIELD] Error al inicializar el servicio de fondo: $e');
     debugPrint(stackTrace.toString());
   }
 
-  // -----------------------------------------------------------------------------------------------
-  // 3. PERMISO DE OVERLAY + INTERCEPTOR TELEFÓNICO
-  // -----------------------------------------------------------------------------------------------
-
+  // 3. Permiso de Overlay e Interceptor Telefónico
   try {
     final bool overlayGranted = await OverlayService.requestPermission();
-
     debugPrint(
       overlayGranted
           ? '🪟 [JOSH OVERLAY] Permiso de overlay concedido.'
@@ -91,66 +73,36 @@ Future<void> main() async {
     );
 
     _phoneInterceptorService.startListening();
-
-    debugPrint(
-      '📞 [JOSH INTERCEPTOR] Escucha de llamadas entrantes activada.',
-    );
+    debugPrint('📞 [JOSH INTERCEPTOR] Escucha de llamadas entrantes activada.');
   } catch (e, stackTrace) {
-    debugPrint(
-      '⚠️ [JOSH INTERCEPTOR] Error activando interceptor: $e',
-    );
-
+    debugPrint('⚠️ [JOSH INTERCEPTOR] Error activando interceptor: $e');
     debugPrint(stackTrace.toString());
   }
 
-  // -----------------------------------------------------------------------------------------------
-  // 4. SECURITY PROVIDER
-  // -----------------------------------------------------------------------------------------------
-
+  // 4. Inicializar Security Provider
   final SecurityProvider securityProvider = SecurityProvider();
-
   bool onboardingVisto = false;
 
   try {
     await securityProvider.initialize();
-
-    debugPrint(
-      '📊 [JOSH ENGINE] Base de datos y motor de seguridad listos.',
-    );
+    debugPrint('📊 [JOSH ENGINE] Base de datos y motor de seguridad listos.');
   } catch (e, stackTrace) {
-    debugPrint(
-      '⚠️ [JOSH ENGINE] Error inicializando SecurityProvider: $e',
-    );
-
+    debugPrint('⚠️ [JOSH ENGINE] Error inicializando SecurityProvider: $e');
     debugPrint(stackTrace.toString());
   }
 
-  // -----------------------------------------------------------------------------------------------
-  // 5. SHARED PREFERENCES
-  // -----------------------------------------------------------------------------------------------
-
+  // 5. Lectura de Preferencias
   try {
-    final SharedPreferences prefs =
-        await SharedPreferences.getInstance();
-
-    onboardingVisto =
-        prefs.getBool('onboarding_visto') ?? false;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    onboardingVisto = prefs.getBool('onboarding_visto') ?? false;
   } catch (e) {
-    debugPrint(
-      '⚠️ [JOSH MAIN] Error leyendo estado del onboarding: $e',
-    );
+    debugPrint('⚠️ [JOSH MAIN] Error leyendo estado del onboarding: $e');
   }
 
-  // -----------------------------------------------------------------------------------------------
-  // 6. KEEP ALIVE
-  // -----------------------------------------------------------------------------------------------
-
+  // 6. Keep Alive del Backend
   _iniciarKeepAlive();
 
-  // -----------------------------------------------------------------------------------------------
-  // 7. ARRANQUE DE LA APLICACIÓN
-  // -----------------------------------------------------------------------------------------------
-
+  // 7. Arranque de la Aplicación
   runApp(
     MultiProvider(
       providers: [
@@ -171,33 +123,17 @@ Future<void> main() async {
 
 Future<void> _requestRuntimePermissions() async {
   try {
-    // READ_PHONE_STATE / permisos asociados al grupo de telefonía.
-    final PermissionStatus phoneStatus =
-        await Permission.phone.request();
+    final PermissionStatus phoneStatus = await Permission.phone.request();
+    debugPrint('📱 [JOSH PERMISSIONS] Estado permiso PHONE: $phoneStatus');
 
-    debugPrint(
-      '📱 [JOSH PERMISSIONS] Estado permiso PHONE: $phoneStatus',
-    );
-
-    // Android 13+
-    final PermissionStatus notificationStatus =
-        await Permission.notification.request();
-
-    debugPrint(
-      '🔔 [JOSH PERMISSIONS] Estado permiso NOTIFICATION: '
-      '$notificationStatus',
-    );
+    final PermissionStatus notificationStatus = await Permission.notification.request();
+    debugPrint('🔔 [JOSH PERMISSIONS] Estado permiso NOTIFICATION: $notificationStatus');
 
     if (!phoneStatus.isGranted) {
-      debugPrint(
-        '⚠️ [JOSH PERMISSIONS] El permiso telefónico no fue concedido.',
-      );
+      debugPrint('⚠️ [JOSH PERMISSIONS] El permiso telefónico no fue concedido.');
     }
   } catch (e, stackTrace) {
-    debugPrint(
-      '⚠️ [JOSH PERMISSIONS] Error solicitando permisos: $e',
-    );
-
+    debugPrint('⚠️ [JOSH PERMISSIONS] Error solicitando permisos: $e');
     debugPrint(stackTrace.toString());
   }
 }
@@ -208,47 +144,46 @@ Future<void> _requestRuntimePermissions() async {
 
 void _iniciarKeepAlive() {
   _keepAliveTimer?.cancel();
-
-  const String url =
-      'https://josh-security.onrender.com/';
+  const String url = 'https://josh-security.onrender.com/';
 
   _keepAliveTimer = Timer.periodic(
     const Duration(minutes: 14),
     (_) async {
       try {
-        debugPrint(
-          '🛰️ [KEEP-ALIVE] Transmitiendo pulso preventivo a Render...',
-        );
-
-        final response = await http
-            .get(Uri.parse(url))
-            .timeout(
+        debugPrint('🛰️ [KEEP-ALIVE] Transmitiendo pulso preventivo a Render...');
+        final response = await http.get(Uri.parse(url)).timeout(
               const Duration(seconds: 15),
             );
-
-        debugPrint(
-          '🛰️ [KEEP-ALIVE] Respuesta HTTP: ${response.statusCode}',
-        );
+        debugPrint('🛰️ [KEEP-ALIVE] Respuesta HTTP: ${response.statusCode}');
       } catch (e) {
-        debugPrint(
-          '⚠️ [KEEP-ALIVE] Error de conexión: $e',
-        );
+        debugPrint('⚠️ [KEEP-ALIVE] Error de conexión: $e');
       }
     },
   );
 }
 
 // ====================================================================================================
-// APLICACIÓN
+// APLICACIÓN PRINCIPAL
 // ====================================================================================================
 
-class JoshSecurityApp extends StatelessWidget {
+class JoshSecurityApp extends StatefulWidget {
   final bool mostrarOnboarding;
 
   const JoshSecurityApp({
     super.key,
     required this.mostrarOnboarding,
   });
+
+  @override
+  State<JoshSecurityApp> createState() => _JoshSecurityAppState();
+}
+
+class _JoshSecurityAppState extends State<JoshSecurityApp> {
+  @override
+  void dispose() {
+    _keepAliveTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -261,9 +196,7 @@ class JoshSecurityApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0F172A),
         useMaterial3: true,
       ),
-      home: mostrarOnboarding
-          ? const OnboardingScreen()
-          : const HomeScreen(),
+      home: widget.mostrarOnboarding ? const OnboardingScreen() : const HomeScreen(),
     );
   }
 }

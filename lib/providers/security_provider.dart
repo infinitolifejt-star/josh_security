@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../services/security/apk_centinel_service.dart';
 import '../services/security/call_security_engine.dart';
 import '../services/security/database_service.dart';
 import '../services/security/file_scanner_service.dart';
@@ -17,14 +18,16 @@ import '../services/security/phone_interceptor_service.dart';
 import '../services/security/security_coordinator.dart';
 import '../services/security/telemetry_service.dart';
 
-class SecurityProvider extends ChangeNotifier {
+class SecurityProvider with ChangeNotifier {
   //============================================================================
   // SERVICIOS & COORDINADOR DE SEGURIDAD
   //============================================================================
   final DatabaseService _database = DatabaseService.instance;
   final PhoneInterceptorService _phoneService = PhoneInterceptorService();
   final FileScannerService _fileScanner = FileScannerService.instance;
+  final ApkCentinelService _apkCentinel = ApkCentinelService.instance;
 
+  StreamSubscription<ApkInstallEvent>? _apkSubscription;
   late final SecurityCoordinator _coordinator;
 
   //============================================================================
@@ -56,7 +59,6 @@ class SecurityProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _historicalLogs = [];
 
   SecurityProvider() {
-    // Inicializar coordinador unificado
     _coordinator = SecurityCoordinator(
       phishingEngine: PhishingEngine(),
       callSecurityEngine: CallSecurityEngine(),
@@ -77,6 +79,7 @@ class SecurityProvider extends ChangeNotifier {
   String get verdictText => _verdictText;
   String get statusCategory => _statusCategory;
   String get agentReasoningText => _agentReasoningText;
+  String get agentReasoning => _agentReasoningText;
   int get linksChecked => _linksChecked;
   int get callsChecked => _callsChecked;
   int get malwarePrevented => _malwarePrevented;
@@ -94,6 +97,11 @@ class SecurityProvider extends ChangeNotifier {
     try {
       await _database.database;
       _phoneService.startListening();
+
+      // Inicialización del Centinela de APKs y subscripción a eventos
+      await _apkCentinel.initialize();
+      _apkSubscription = _apkCentinel.onApkInstalled.listen(_handleApkInstallEvent);
+
       await _loadHistoricalLogs();
       _statusCategory = "CENTINELA OPERATIVO";
       _initialized = true;
@@ -102,6 +110,30 @@ class SecurityProvider extends ChangeNotifier {
     } finally {
       _setLoadingState(false);
     }
+  }
+
+  void _handleApkInstallEvent(ApkInstallEvent event) async {
+    _malwarePrevented++;
+
+    final bool isSystemOrStore = event.apkPath.contains("/data/app/");
+    final double score = isSystemOrStore ? 5.0 : 40.0;
+    final String verdict = isSystemOrStore ? "SEGURO (OFICIAL)" : "ANALIZAR_ORIGEN";
+
+    _appendLog("APK INSTALADO DETECTADO: ${event.appName} (${event.packageName})");
+
+    _agentReasoningText = "Centinela analizó la instalación de '${event.appName}'.";
+    _updateHudWithVerdict(score, verdict);
+
+    await _persistAudit(
+      event.appName.isNotEmpty ? event.appName : event.packageName,
+      score,
+      verdict,
+      "MALWARE",
+      "Package: ${event.packageName} | Path: ${event.apkPath}",
+    );
+
+    await _loadHistoricalLogs();
+    notifyListeners();
   }
 
   void updateTabState(int tab) {
@@ -167,7 +199,7 @@ class SecurityProvider extends ChangeNotifier {
   Future<void> _processCallScan(String target) async {
     _appendLog("Iniciando análisis agéntico de llamada...");
     final result = await _coordinator.scanCall(phoneNumber: target);
-    
+
     double agentScore = (result["agentRiskScore"] ?? result["riskScore"] ?? 0.0).toDouble();
     String verdict = result["verdict"] ?? "DESCONOCIDO";
     String reasoning = result["agentReasoning"] ?? "Sin razonamiento.";
@@ -312,6 +344,7 @@ class SecurityProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _apkSubscription?.cancel();
     _phoneService.dispose();
     super.dispose();
   }

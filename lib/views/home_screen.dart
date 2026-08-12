@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
 // COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.8 (Escucha Inter-Isolate & Overlay)
-// OPERACIÓN: Sincronización del HUD, Auto-Scroll en Consola, Borrado Visual y Recepción de Llamadas Reales
+// OPERACIÓN: Sincronización del HUD, Auto-Scroll en Consola, Borrado Visual y Corrección de Overflow
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -24,17 +24,18 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final TextEditingController _targetController = TextEditingController();
   final ScrollController _logsScrollController = ScrollController();
-  
+
   late TabController _tabController;
-  late AnimationController _rotationController; 
+  late AnimationController _rotationController;
   late AnimationController _pulseController;
   int _currentTab = 0;
+  int _lastLogCount = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    
+
     _rotationController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -64,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final String message = event['message'] ?? '';
 
         final provider = Provider.of<SecurityProvider>(context, listen: false);
-        
+
         // Se ejecuta la auditoría del vector llamada para sincronizar UI y Bitácora
         if (number.isNotEmpty) {
           provider.executeAuditoria(number, 0);
@@ -89,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _tabController.dispose();
-    _rotationController.dispose(); 
+    _rotationController.dispose();
     _pulseController.dispose();
     _targetController.dispose();
     _logsScrollController.dispose();
@@ -112,7 +113,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final securityProvider = Provider.of<SecurityProvider>(context);
 
-    _scrollToBottomLogs();
+    // Auto-scroll optimizado solo cuando entran nuevos logs
+    if (securityProvider.forensicLogs.length != _lastLogCount) {
+      _lastLogCount = securityProvider.forensicLogs.length;
+      _scrollToBottomLogs();
+    }
 
     if (securityProvider.isLoading) {
       if (!_rotationController.isAnimating) {
@@ -133,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       backgroundColor: const Color(0xFF0A1128),
       body: SafeArea(
         child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -141,9 +147,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                 decoration: BoxDecoration(
-                  color: patrolStatusColor.withAlpha((0.1 * 255).round()),
+                  color: patrolStatusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: patrolStatusColor.withAlpha((0.3 * 255).round())),
+                  border: Border.all(color: patrolStatusColor.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -173,34 +179,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               HudDisplay(
                 vulnerabilityScore: securityProvider.vulnerabilityScore,
                 verdictText: securityProvider.verdictText,
+                agentReasoning: securityProvider.agentReasoning,
                 hudColor: securityProvider.hudColor,
                 pulseController: _pulseController,
                 rotationController: _rotationController,
               ),
               const SizedBox(height: 16),
-              
+
               ProactiveShieldsMonitor(
                 linksChecked: securityProvider.linksChecked,
                 callsChecked: securityProvider.callsChecked,
                 malwarePrevented: securityProvider.malwarePrevented,
               ),
               const SizedBox(height: 16),
-              
+
               _buildVectorSelector(),
               const SizedBox(height: 16),
-              
+
               _buildInputSection(securityProvider),
               const SizedBox(height: 16),
-              
+
               SizedBox(
-                height: 190, 
+                height: 180,
                 child: _buildBottomLogsSection(securityProvider, patrolStatusColor),
               ),
               const SizedBox(height: 16),
-              
+
               ForensicHistoryList(
                 onClear: () => securityProvider.clearMasterBitacora(),
               ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -221,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           color: const Color(0xFF3A506B),
-          border: Border.all(color: Colors.blueAccent.withAlpha((0.4 * 255).round())),
+          border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.4)),
         ),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.blueGrey[300],

@@ -1,7 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/forensic_history_list.dart
-// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO JOSH SECURITY v6.0-AGENTIC
-// OP-HEURÍSTICA: Interfaz de Bitácora Conectada a Persistencia Reactiva del Provider
+// CORRECCIÓN: Corrección de Overflow, Scroll Independiente y reemplazo de Container por SizedBox
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -16,7 +15,6 @@ class ForensicHistoryList extends StatelessWidget {
     required this.onClear,
   });
 
-  /// Traduce los esquemas de base de datos a los parámetros visuales del HUD
   double _calculateHeuristicScore(Map<String, dynamic> rawItem) {
     if (rawItem['score'] != null) {
       return (rawItem['score'] as num).toDouble();
@@ -25,22 +23,24 @@ class ForensicHistoryList extends StatelessWidget {
       return (rawItem['agentRiskScore'] as num).toDouble();
     }
 
-    final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString().toUpperCase();
+    final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE')
+        .toString()
+        .toUpperCase();
 
     switch (verdict) {
       case 'AMENAZA_BLOQUEADA_PREVENTIVAMENTE':
       case 'CRÍTICO':
       case 'PELIGRO':
-        return 85.0; // Estado crítico (Rojo)
+        return 85.0;
       case 'SUGERENCIA_REVISAR_ALERTAS':
       case 'ADVERTENCIA':
       case 'SOSPECHOSO':
-        return 45.0; // Advertencia de seguridad (Amarillo)
+        return 45.0;
       case 'SISTEMA_OPERATIVO_SEGURO':
       case 'CONFIABLE':
       case 'SEGURO':
       default:
-        return 0.0; // Sistema íntegro (Verde)
+        return 0.0;
     }
   }
 
@@ -89,14 +89,32 @@ class ForensicHistoryList extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('RIESGO ESTRUCTURAL', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
-                      Text('${score.toStringAsFixed(1)}%', style: TextStyle(color: score >= 70 ? const Color(0xFFFF5252) : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)), fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(
+                        '${score.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          color: score >= 70
+                              ? const Color(0xFFFF5252)
+                              : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
                     ],
                   ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       const Text('VEREDICTO', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
-                      Text(verdict, style: TextStyle(color: score >= 70 ? const Color(0xFFFF5252) : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)), fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text(
+                        verdict,
+                        style: TextStyle(
+                          color: score >= 70
+                              ? const Color(0xFFFF5252)
+                              : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -152,7 +170,7 @@ class ForensicHistoryList extends StatelessWidget {
       } else if (vector.contains('MALWARE') || vector.contains('BIN')) {
         return Icons.security_rounded;
       }
-      
+
       if (score >= 70) return Icons.gpp_bad_outlined;
       if (score >= 35) return Icons.report_problem_outlined;
       return Icons.verified_user_outlined;
@@ -167,6 +185,7 @@ class ForensicHistoryList extends StatelessWidget {
         border: Border.all(color: const Color(0xFF1C2541)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -218,103 +237,106 @@ class ForensicHistoryList extends StatelessWidget {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: dbLogs.length,
-                  itemBuilder: (context, index) {
-                    final rawItem = dbLogs[index];
+              : SizedBox(
+                  height: 300, // Altura contenida para el área deslizable
+                  child: ListView.builder(
+                    shrinkWrap: false,
+                    physics: const AlwaysScrollableScrollPhysics(), // Permite scroll suave en la bitácora
+                    itemCount: dbLogs.length,
+                    itemBuilder: (context, index) {
+                      final rawItem = dbLogs[index];
 
-                    final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString();
-                    final double score = _calculateHeuristicScore(rawItem);
-                    final String vector = (rawItem['vector'] ?? rawItem['service'] ?? 'SEGURIDAD').toString().toUpperCase();
-                    final String target = (rawItem['target'] ?? rawItem['activity'] ?? rawItem['url'] ?? rawItem['phoneNumber'] ?? 'Análisis de perímetro').toString();
-                    final String timestamp = (rawItem['timestamp'] ?? rawItem['scanned_at'] ?? '').toString();
-                    final Color cardColor = getCardColor(score);
+                      final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString();
+                      final double score = _calculateHeuristicScore(rawItem);
+                      final String vector = (rawItem['vector'] ?? rawItem['service'] ?? 'SEGURIDAD').toString().toUpperCase();
+                      final String target = (rawItem['target'] ?? rawItem['activity'] ?? rawItem['url'] ?? rawItem['phoneNumber'] ?? 'Análisis de perímetro').toString();
+                      final String timestamp = (rawItem['timestamp'] ?? rawItem['scanned_at'] ?? '').toString();
+                      final Color cardColor = getCardColor(score);
 
-                    return Container(
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1C2541),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: cardColor.withAlpha((0.2 * 255).round())),
-                      ),
-                      child: InkWell(
-                        onTap: () => _mostrarDetalleForense(context, rawItem, score, verdict),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 18,
-                              backgroundColor: cardColor.withAlpha((0.1 * 255).round()),
-                              child: Icon(
-                                getCardIcon(score, vector),
-                                color: cardColor,
-                                size: 18,
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1C2541),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: cardColor.withValues(alpha: 0.2)),
+                        ),
+                        child: InkWell(
+                          onTap: () => _mostrarDetalleForense(context, rawItem, score, verdict),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: cardColor.withValues(alpha: 0.1),
+                                child: Icon(
+                                  getCardIcon(score, vector),
+                                  color: cardColor,
+                                  size: 18,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      target,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      timestamp.isNotEmpty ? "$vector • $timestamp" : vector,
+                                      style: TextStyle(
+                                        color: Colors.blueGrey[300],
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    target,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    score > 0 ? "${score.toStringAsFixed(1)}%" : "OK",
+                                    style: TextStyle(
+                                      color: cardColor,
+                                      fontWeight: FontWeight.w900,
                                       fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.3,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    timestamp.isNotEmpty ? "$vector • $timestamp" : vector,
-                                    style: TextStyle(
-                                      color: Colors.blueGrey[300],
-                                      fontSize: 10,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: cardColor.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      verdict.length > 10 ? '${verdict.substring(0, 9)}...' : verdict.toUpperCase(),
+                                      style: TextStyle(
+                                        color: cardColor,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  score > 0 ? "${score.toStringAsFixed(1)}%" : "OK",
-                                  style: TextStyle(
-                                    color: cardColor,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: cardColor.withAlpha((0.15 * 255).round()),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    verdict.length > 10 ? '${verdict.substring(0, 9)}...' : verdict.toUpperCase(),
-                                    style: TextStyle(
-                                      color: cardColor,
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
         ],
       ),

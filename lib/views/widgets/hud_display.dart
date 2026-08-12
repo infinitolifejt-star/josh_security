@@ -33,7 +33,7 @@ class HudDisplay extends StatelessWidget {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
           decoration: BoxDecoration(
             color: const Color(0xFF1C2541),
             borderRadius: BorderRadius.circular(20),
@@ -67,7 +67,7 @@ class HudDisplay extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 padding: const EdgeInsets.all(4),
@@ -84,15 +84,15 @@ class HudDisplay extends StatelessWidget {
                 child: RotationTransition(
                   turns: rotationController,
                   child: SizedBox(
-                    width: 90,
-                    height: 90,
+                    width: 80,
+                    height: 80,
                     child: CustomPaint(
                       painter: CyberShieldPainter(glowColor: hudColor),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Text(
                 verdictText,
                 style: TextStyle(
@@ -103,19 +103,19 @@ class HudDisplay extends StatelessWidget {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 "${vulnerabilityScore.toStringAsFixed(1)}%",
                 style: TextStyle(
                   color: hudColor,
-                  fontSize: 40,
+                  fontSize: 36,
                   fontWeight: FontWeight.w900,
                 ),
               ),
 
               // CAJA DE DIAGNÓSTICO AGÉNTICO
               if (agentReasoning != null && agentReasoning!.isNotEmpty) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
