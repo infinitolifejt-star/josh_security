@@ -84,25 +84,17 @@ class PhoneInterceptorService {
 
   bool get isListening => _isListening;
 
+  // --- VARIABLES AÑADIDAS PARA EVITAR EL NÚMERO FANTASMA ---
+  String? _lastProcessedNumber;
+  int _lastProcessTimestamp = 0;
+
   // ==================================================================================================
   // INDICATIVOS INTERNACIONALES DE RIESGO
   // ==================================================================================================
 
   static const List<String> _suspiciousCodes = <String>[
-    '234',
-    '254',
-    '381',
-    '216',
-    '225',
-    '233',
-    '92',
-    '880',
-    '371',
-    '370',
-    '881',
-    '882',
-    '883',
-    '870',
+    '234', '254', '381', '216', '225', '233', '92',
+    '880', '371', '370', '881', '882', '883', '870',
   ];
 
   // ==================================================================================================
@@ -115,7 +107,6 @@ class PhoneInterceptorService {
         'El interceptor ya estaba escuchando.',
         name: 'PhoneInterceptor',
       );
-
       return;
     }
 
@@ -176,7 +167,6 @@ class PhoneInterceptorService {
         'Payload telefónico inválido: $rawArguments',
         name: 'PhoneInterceptor',
       );
-
       return;
     }
 
@@ -190,9 +180,22 @@ class PhoneInterceptorService {
         'Evento telefónico recibido sin número.',
         name: 'PhoneInterceptor',
       );
-
       return;
     }
+
+    // --- FILTRO AÑADIDO PARA BLOQUEAR LLAMADAS FANTASMAS O REBOTES ---
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (_lastProcessedNumber == phone && (now - _lastProcessTimestamp) < 1500) {
+      developer.log(
+        'Llamada en caché ignorada para evitar rebote de Android ($phone).',
+        name: 'PhoneInterceptor',
+      );
+      return;
+    }
+
+    _lastProcessedNumber = phone;
+    _lastProcessTimestamp = now;
+    // -----------------------------------------------------------------
 
     developer.log(
       'Número recibido desde Android: $phone',
@@ -249,6 +252,11 @@ class PhoneInterceptorService {
 
   Future<void> _handleCallEnded() async {
     try {
+      // --- LIMPIEZA AÑADIDA PARA BORRAR EL NÚMERO AL COLGAR ---
+      _lastProcessedNumber = null;
+      _lastProcessTimestamp = 0;
+      // --------------------------------------------------------
+
       await OverlayService.closeOverlay();
     } catch (e, stackTrace) {
       developer.log(
@@ -350,16 +358,13 @@ class PhoneInterceptorService {
     String phoneNumber,
   ) async {
     final String clean = phoneNumber.trim();
-
     final String lower = clean.toLowerCase();
-
     final String digits =
         clean.replaceAll(RegExp(r'\D'), '');
 
     // -----------------------------------------------------------------------------------------------
     // 1. NÚMERO OCULTO / PRIVADO
     // -----------------------------------------------------------------------------------------------
-
     final bool isPrivateNumber =
         digits.isEmpty ||
         lower.contains('oculto') ||
@@ -386,7 +391,6 @@ class PhoneInterceptorService {
     // -----------------------------------------------------------------------------------------------
     // 2. LÍNEAS OFICIALES / EMERGENCIA
     // -----------------------------------------------------------------------------------------------
-
     if (digits == '123' ||
         digits == '112' ||
         digits == '165' ||
@@ -406,7 +410,6 @@ class PhoneInterceptorService {
     // -----------------------------------------------------------------------------------------------
     // 3. INDICATIVOS INTERNACIONALES SOSPECHOSOS
     // -----------------------------------------------------------------------------------------------
-
     for (final String code in _suspiciousCodes) {
       final bool startsWithInternationalCode =
           clean.startsWith('+$code');
@@ -432,7 +435,6 @@ class PhoneInterceptorService {
     // -----------------------------------------------------------------------------------------------
     // 4. PATRONES NUMÉRICOS REPETITIVOS
     // -----------------------------------------------------------------------------------------------
-
     if (RegExp(r'(\d)\1{4,}').hasMatch(digits)) {
       return CallVerdict(
         phoneNumber: clean,
@@ -449,7 +451,6 @@ class PhoneInterceptorService {
     // -----------------------------------------------------------------------------------------------
     // 5. COLOMBIA - MÓVIL / FIJO
     // -----------------------------------------------------------------------------------------------
-
     if (digits.length == 10 &&
         digits.startsWith('3')) {
       return CallVerdict(
@@ -479,7 +480,6 @@ class PhoneInterceptorService {
     // -----------------------------------------------------------------------------------------------
     // 6. COLOMBIA +57
     // -----------------------------------------------------------------------------------------------
-
     if (digits.length == 12 &&
         digits.startsWith('57')) {
       return CallVerdict(
@@ -496,7 +496,6 @@ class PhoneInterceptorService {
     // -----------------------------------------------------------------------------------------------
     // 7. LONGITUD ANÓMALA
     // -----------------------------------------------------------------------------------------------
-
     if (digits.length < 7 ||
         digits.length > 15) {
       return CallVerdict(
@@ -513,7 +512,6 @@ class PhoneInterceptorService {
     // -----------------------------------------------------------------------------------------------
     // 8. DESCONOCIDO
     // -----------------------------------------------------------------------------------------------
-
     return CallVerdict(
       phoneNumber: clean,
       riskScore: 10,

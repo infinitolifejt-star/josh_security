@@ -49,22 +49,25 @@ class CallSecurityEngine {
   // ================================================================================================
 
   /// Determina el estado de validación según longitud y tipo de marcado
-  PhoneValidationStatus _evaluateValidationStatus(String cleanNumber) {
-    if (cleanNumber.isEmpty || cleanNumber == "unknown" || cleanNumber == "private") {
+  PhoneValidationStatus _evaluateValidationStatus(String rawNumber, String cleanDigits) {
+    final lowerRaw = rawNumber.toLowerCase().trim();
+
+    if (lowerRaw.isEmpty ||
+        cleanDigits.isEmpty ||
+        lowerRaw.contains("unknown") ||
+        lowerRaw.contains("private") ||
+        lowerRaw.contains("desconocido") ||
+        lowerRaw.contains("privado")) {
       return PhoneValidationStatus.hiddenOrUnknown;
     }
 
-    // Estándar ITU-T E.164: Un número telefónico internacional válido tiene entre 7 y 15 dígitos.
-    if (cleanNumber.length > 15) {
-      return PhoneValidationStatus.invalidFormat;
-    }
-
-    // Estructuras de 3 a 6 dígitos corresponden a Códigos Cortos (Shortcodes / Servicios)
-    if (cleanNumber.length >= 3 && cleanNumber.length <= 6) {
+    // Estructuras de 3 a 6 dígitos corresponden a Códigos Cortos (Shortcodes)
+    if (cleanDigits.length >= 3 && cleanDigits.length <= 6) {
       return PhoneValidationStatus.shortCode;
     }
 
-    if (cleanNumber.length < 7) {
+    // Estándar ITU-T E.164: Un número telefónico internacional válido tiene entre 7 y 15 dígitos.
+    if (cleanDigits.length < 7 || cleanDigits.length > 15) {
       return PhoneValidationStatus.invalidFormat;
     }
 
@@ -72,24 +75,27 @@ class CallSecurityEngine {
   }
 
   /// Evalúa repeticiones anómalas en la cadena numérica (ej. 9999999999 o 88888888)
-  bool _hasAnomalousRepetition(String number) {
-    if (number.length < 4) return false;
+  bool _hasAnomalousRepetition(String cleanDigits) {
+    if (cleanDigits.length < 6) return false;
 
     // Detectar si todos los dígitos son idénticos
-    final firstChar = number[0];
-    if (number.runes.every((r) => String.fromCharCode(r) == firstChar)) {
+    final firstChar = cleanDigits[0];
+    if (cleanDigits.runes.every((r) => String.fromCharCode(r) == firstChar)) {
       return true;
     }
 
-    // Detectar patrones repetitivos en pares (ej. 88889999)
-    final firstTwo = number.substring(0, 2);
-    int count = 0;
-    for (int i = 0; i < number.length - 1; i += 2) {
-      if (number.substring(i, min(i + 2, number.length)) == firstTwo) {
-        count++;
+    // Detectar si el mismo patrón de 2 dígitos se repite consecutivamente más de 3 veces
+    final pattern = cleanDigits.substring(0, 2);
+    int matches = 0;
+    for (int i = 0; i <= cleanDigits.length - 2; i += 2) {
+      if (cleanDigits.substring(i, i + 2) == pattern) {
+        matches++;
+      } else {
+        break;
       }
     }
-    return count >= 4;
+
+    return matches >= 4;
   }
 
   // ================================================================================================
@@ -101,11 +107,11 @@ class CallSecurityEngine {
     String? contactName,
     String? callText,
   }) {
-    final rawNumber = phoneNumber.toLowerCase().trim();
+    final rawNumber = phoneNumber.trim();
     final cleanDigits = rawNumber.replaceAll(RegExp(r'\D'), '');
     final combinedContext = "${contactName ?? ""} ${callText ?? ""}".toLowerCase();
 
-    final validationStatus = _evaluateValidationStatus(rawNumber.isEmpty ? rawNumber : cleanDigits);
+    final validationStatus = _evaluateValidationStatus(rawNumber, cleanDigits);
 
     int riskScore = 0;
     List<String> evidence = [];
@@ -128,7 +134,6 @@ class CallSecurityEngine {
         break;
 
       case PhoneValidationStatus.valid:
-        // Formato numérico estándar
         break;
     }
 
@@ -195,20 +200,30 @@ class CallSecurityEngine {
   }
 
   // ================================================================================================
-  // COMPARACIÓN DE NÚMEROS (Distancia de Levenshtein simplificada)
+  // COMPARACIÓN DE NÚMEROS (Distancia Levenshtein Real)
   // ================================================================================================
 
   int similarity(String a, String b) {
-    int distance = 0;
-    final length = min(a.length, b.length);
+    if (a == b) return 0;
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
 
-    for (int i = 0; i < length; i++) {
-      if (a[i] != b[i]) {
-        distance++;
+    List<int> v0 = List<int>.generate(b.length + 1, (i) => i);
+    List<int> v1 = List<int>.filled(b.length + 1, 0);
+
+    for (int i = 0; i < a.length; i++) {
+      v1[0] = i + 1;
+
+      for (int j = 0; j < b.length; j++) {
+        int cost = (a[i] == b[j]) ? 0 : 1;
+        v1[j + 1] = min(v1[j] + 1, min(v0[j + 1] + 1, v0[j] + cost));
+      }
+
+      for (int j = 0; j <= b.length; j++) {
+        v0[j] = v1[j];
       }
     }
 
-    distance += (a.length - b.length).abs();
-    return distance;
+    return v1[b.length];
   }
 }

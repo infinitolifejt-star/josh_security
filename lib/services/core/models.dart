@@ -1,5 +1,7 @@
 // lib/services/core/models.dart
 
+export 'phone_threat_intelligence.dart';
+
 /// Representa el registro estructural de una llamada entrante capturada por el Centinela
 class CallRecord {
   final String phone;
