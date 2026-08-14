@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
 // JOSH SECURITY v6.0
-// MOTOR DE INTERCEPTOR TELEFÓNICO + REPUTACIÓN + PERSISTENCIA LOCAL
+// INTERCEPTOR TELEFÓNICO + SECURITY COORDINATOR + AGENTE + PERSISTENCIA + OVERLAY
 // ====================================================================================================
 
 import 'dart:async';
@@ -11,6 +11,10 @@ import 'package:flutter/services.dart';
 
 import 'database_service.dart';
 import 'overlay_service.dart';
+import 'call_security_engine.dart';
+import 'phishing_engine.dart';
+import 'security_coordinator.dart';
+import 'telemetry_service.dart';
 
 // ====================================================================================================
 // FUENTES DE DIAGNÓSTICO
@@ -23,6 +27,7 @@ enum DiagnosticSource {
   phoneInterceptor,
   cloudDatabase,
   fileSystem,
+  agent,
 }
 
 // ====================================================================================================
@@ -67,12 +72,19 @@ class CallVerdict {
 // ====================================================================================================
 
 class PhoneInterceptorService {
-  PhoneInterceptorService();
+  PhoneInterceptorService()
+      : _securityCoordinator = SecurityCoordinator(
+          phishingEngine: PhishingEngine(),
+          callSecurityEngine: CallSecurityEngine(),
+          telemetryService: TelemetryService(),
+        );
 
   static const MethodChannel _channel =
       MethodChannel('josh_security/phone_interceptor');
 
   final DatabaseService _database = DatabaseService();
+
+  final SecurityCoordinator _securityCoordinator;
 
   final StreamController<CallVerdict> _controller =
       StreamController<CallVerdict>.broadcast();
@@ -84,27 +96,45 @@ class PhoneInterceptorService {
 
   bool get isListening => _isListening;
 
-  // --- VARIABLES AÑADIDAS PARA EVITAR EL NÚMERO FANTASMA ---
+  // ================================================================================================
+  // INICIALIZACIÓN
+  // ================================================================================================
+
+  Future<void>? _initializationFuture;
+
+  Future<void> _ensureInitialized() {
+    return _initializationFuture ??=
+        _securityCoordinator.initialize();
+  }
+
+  // ================================================================================================
+  // CONTROL DE DUPLICADOS / REBOTES
+  // ================================================================================================
+
   String? _lastProcessedNumber;
+  String? _activeCallNumber;
+
   int _lastProcessTimestamp = 0;
 
-  // ==================================================================================================
-  // INDICATIVOS INTERNACIONALES DE RIESGO
-  // ==================================================================================================
+  static const Duration _duplicateWindow =
+      Duration(milliseconds: 2500);
 
-  static const List<String> _suspiciousCodes = <String>[
-    '234', '254', '381', '216', '225', '233', '92',
-    '880', '371', '370', '881', '882', '883', '870',
-  ];
-
-  // ==================================================================================================
+  // ================================================================================================
   // INICIO
-  // ==================================================================================================
+  // ================================================================================================
 
   void startListening() {
     if (_isListening) {
       developer.log(
         'El interceptor ya estaba escuchando.',
+        name: 'PhoneInterceptor',
+      );
+      return;
+    }
+
+    if (_controller.isClosed) {
+      developer.log(
+        'No se puede iniciar: StreamController cerrado.',
         name: 'PhoneInterceptor',
       );
       return;
@@ -116,15 +146,28 @@ class PhoneInterceptorService {
       _handleNativeMethodCall,
     );
 
+    unawaited(
+      _ensureInitialized().catchError(
+        (Object error, StackTrace stackTrace) {
+          developer.log(
+            'Error inicializando SecurityCoordinator.',
+            name: 'PhoneInterceptor',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        },
+      ),
+    );
+
     developer.log(
       'Interceptor telefónico iniciado.',
       name: 'PhoneInterceptor',
     );
   }
 
-  // ==================================================================================================
+  // ================================================================================================
   // EVENTOS NATIVOS
-  // ==================================================================================================
+  // ================================================================================================
 
   Future<dynamic> _handleNativeMethodCall(
     MethodCall call,
@@ -155,9 +198,9 @@ class PhoneInterceptorService {
     }
   }
 
-  // ==================================================================================================
+  // ================================================================================================
   // LLAMADA ENTRANTE
-  // ==================================================================================================
+  // ================================================================================================
 
   Future<void> _handleIncomingCall(
     dynamic rawArguments,
@@ -173,21 +216,42 @@ class PhoneInterceptorService {
     final Map<String, dynamic> args =
         Map<String, dynamic>.from(rawArguments);
 
-    final String phone = _extractPhoneNumber(args);
+    final String phone = _normalizePhoneNumber(
+      _extractPhoneNumber(args),
+    );
 
     if (phone.isEmpty) {
       developer.log(
-        'Evento telefónico recibido sin número.',
+        'Evento telefónico sin número.',
         name: 'PhoneInterceptor',
       );
       return;
     }
 
-    // --- FILTRO AÑADIDO PARA BLOQUEAR LLAMADAS FANTASMAS O REBOTES ---
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    if (_lastProcessedNumber == phone && (now - _lastProcessTimestamp) < 1500) {
+    final int now =
+        DateTime.now().millisecondsSinceEpoch;
+
+    // ----------------------------------------------------------------------------------------------
+    // DUPLICADO
+    // ----------------------------------------------------------------------------------------------
+
+    if (_lastProcessedNumber == phone &&
+        (now - _lastProcessTimestamp) <
+            _duplicateWindow.inMilliseconds) {
       developer.log(
-        'Llamada en caché ignorada para evitar rebote de Android ($phone).',
+        'Evento duplicado ignorado para $phone.',
+        name: 'PhoneInterceptor',
+      );
+      return;
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // MISMA LLAMADA ACTIVA
+    // ----------------------------------------------------------------------------------------------
+
+    if (_activeCallNumber == phone) {
+      developer.log(
+        'Evento repetido de llamada activa ignorado para $phone.',
         name: 'PhoneInterceptor',
       );
       return;
@@ -195,28 +259,44 @@ class PhoneInterceptorService {
 
     _lastProcessedNumber = phone;
     _lastProcessTimestamp = now;
-    // -----------------------------------------------------------------
+    _activeCallNumber = phone;
 
     developer.log(
       'Número recibido desde Android: $phone',
       name: 'PhoneInterceptor',
     );
 
+    // ----------------------------------------------------------------------------------------------
+    // AQUÍ ESTÁ LA CONEXIÓN CENTRAL
+    // ----------------------------------------------------------------------------------------------
+
     final CallVerdict verdict =
         await analyzePhoneNumber(phone);
 
+    // ----------------------------------------------------------------------------------------------
+    // PERSISTENCIA
+    // ----------------------------------------------------------------------------------------------
+
     await _saveCall(verdict);
+
+    // ----------------------------------------------------------------------------------------------
+    // STREAM
+    // ----------------------------------------------------------------------------------------------
 
     if (!_controller.isClosed) {
       _controller.add(verdict);
     }
 
+    // ----------------------------------------------------------------------------------------------
+    // OVERLAY
+    // ----------------------------------------------------------------------------------------------
+
     await showOverlayIfRequired(verdict);
   }
 
-  // ==================================================================================================
-  // EXTRACCIÓN FLEXIBLE DEL NÚMERO
-  // ==================================================================================================
+  // ================================================================================================
+  // EXTRACCIÓN DEL NÚMERO
+  // ================================================================================================
 
   String _extractPhoneNumber(
     Map<String, dynamic> args,
@@ -227,6 +307,8 @@ class PhoneInterceptorService {
       'number',
       'incomingNumber',
       'incoming_number',
+      'telephone',
+      'tel',
     ];
 
     for (final String key in possibleKeys) {
@@ -236,7 +318,8 @@ class PhoneInterceptorService {
         continue;
       }
 
-      final String text = value.toString().trim();
+      final String text =
+          value.toString().trim();
 
       if (text.isNotEmpty) {
         return text;
@@ -246,16 +329,79 @@ class PhoneInterceptorService {
     return '';
   }
 
-  // ==================================================================================================
-  // FINALIZACIÓN
-  // ==================================================================================================
+  // ================================================================================================
+  // NORMALIZACIÓN
+  // ================================================================================================
+
+  String _normalizePhoneNumber(
+    String value,
+  ) {
+    final String trimmed = value.trim();
+
+    if (trimmed.isEmpty) {
+      return '';
+    }
+
+    final String lower =
+        trimmed.toLowerCase();
+
+    const List<String> hiddenValues = <String>[
+      'unknown',
+      'unknown number',
+      'private',
+      'private number',
+      'restricted',
+      'restricted number',
+      'unknown caller',
+      'oculto',
+      'número oculto',
+      'numero oculto',
+      'privado',
+      'número privado',
+      'numero privado',
+      'desconocido',
+      'número desconocido',
+      'numero desconocido',
+      'restringido',
+    ];
+
+    if (hiddenValues.contains(lower)) {
+      return trimmed;
+    }
+
+    final String normalized =
+        trimmed.replaceAll(
+      RegExp(r'[^\d+]'),
+      '',
+    );
+
+    return normalized.isNotEmpty
+        ? normalized
+        : trimmed;
+  }
+
+  // ================================================================================================
+  // FINALIZACIÓN DE LLAMADA
+  // ================================================================================================
 
   Future<void> _handleCallEnded() async {
     try {
-      // --- LIMPIEZA AÑADIDA PARA BORRAR EL NÚMERO AL COLGAR ---
-      _lastProcessedNumber = null;
-      _lastProcessTimestamp = 0;
-      // --------------------------------------------------------
+      developer.log(
+        'Evento de finalización de llamada recibido.',
+        name: 'PhoneInterceptor',
+      );
+
+      _activeCallNumber = null;
+
+      unawaited(
+        Future<void>.delayed(
+          _duplicateWindow,
+          () {
+            _lastProcessedNumber = null;
+            _lastProcessTimestamp = 0;
+          },
+        ),
+      );
 
       await OverlayService.closeOverlay();
     } catch (e, stackTrace) {
@@ -268,9 +414,9 @@ class PhoneInterceptorService {
     }
   }
 
-  // ==================================================================================================
+  // ================================================================================================
   // STOP
-  // ==================================================================================================
+  // ================================================================================================
 
   void stopListening() {
     if (!_isListening) {
@@ -281,15 +427,19 @@ class PhoneInterceptorService {
 
     _channel.setMethodCallHandler(null);
 
+    _activeCallNumber = null;
+    _lastProcessedNumber = null;
+    _lastProcessTimestamp = 0;
+
     developer.log(
       'Interceptor telefónico detenido.',
       name: 'PhoneInterceptor',
     );
   }
 
-  // ==================================================================================================
+  // ================================================================================================
   // OVERLAY
-  // ==================================================================================================
+  // ================================================================================================
 
   Future<void> showOverlayIfRequired(
     CallVerdict verdict,
@@ -299,9 +449,7 @@ class PhoneInterceptorService {
         phoneNumber: verdict.phoneNumber,
         riskLevel: verdict.verdict,
         message: verdict.details,
-        agentReasoning:
-            '[DIAGNÓSTICO LOCAL]: '
-            '${verdict.category} — ${verdict.details}',
+        agentReasoning: verdict.details,
       );
     } catch (e, stackTrace) {
       developer.log(
@@ -313,9 +461,9 @@ class PhoneInterceptorService {
     }
   }
 
-  // ==================================================================================================
+  // ================================================================================================
   // PERSISTENCIA
-  // ==================================================================================================
+  // ================================================================================================
 
   Future<void> _saveCall(
     CallVerdict verdict,
@@ -328,11 +476,12 @@ class PhoneInterceptorService {
         category: verdict.category,
         details: verdict.details,
         source: verdict.source.name,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp:
+            DateTime.now().millisecondsSinceEpoch,
       );
     } catch (e, stackTrace) {
       developer.log(
-        'No fue posible guardar el historial telefónico.',
+        'No fue posible guardar historial telefónico.',
         name: 'PhoneInterceptor',
         error: e,
         stackTrace: stackTrace,
@@ -340,9 +489,9 @@ class PhoneInterceptorService {
     }
   }
 
-  // ==================================================================================================
+  // ================================================================================================
   // API PÚBLICA
-  // ==================================================================================================
+  // ================================================================================================
 
   Future<CallVerdict> analyzeIncomingCall(
     String phoneNumber,
@@ -350,182 +499,232 @@ class PhoneInterceptorService {
     return analyzePhoneNumber(phoneNumber);
   }
 
-  // ==================================================================================================
-  // MOTOR HEURÍSTICO
-  // ==================================================================================================
+  // ================================================================================================
+  // MOTOR TELEFÓNICO CENTRAL
+  // ================================================================================================
 
   Future<CallVerdict> analyzePhoneNumber(
     String phoneNumber,
   ) async {
-    final String clean = phoneNumber.trim();
-    final String lower = clean.toLowerCase();
-    final String digits =
-        clean.replaceAll(RegExp(r'\D'), '');
+    await _ensureInitialized();
 
-    // -----------------------------------------------------------------------------------------------
-    // 1. NÚMERO OCULTO / PRIVADO
-    // -----------------------------------------------------------------------------------------------
-    final bool isPrivateNumber =
-        digits.isEmpty ||
-        lower.contains('oculto') ||
-        lower.contains('privado') ||
-        lower.contains('private') ||
-        lower.contains('unknown') ||
-        lower.contains('desconocido') ||
-        lower.contains('restricted') ||
-        lower.contains('restringido');
+    final String clean =
+        phoneNumber.trim();
 
-    if (isPrivateNumber) {
-      return CallVerdict(
-        phoneNumber:
-            clean.isEmpty ? 'Número Oculto' : clean,
-        riskScore: 75,
-        verdict: 'SOSPECHOSO',
-        category: 'NÚMERO PRIVADO',
+    if (clean.isEmpty) {
+      return const CallVerdict(
+        phoneNumber: 'Número Oculto',
+        riskScore: 40.0,
+        verdict: 'ADVERTENCIA',
+        category: 'IDENTIFICADOR AUSENTE',
         details:
-            'Llamada sin identificador visible o número restringido.',
-        source: DiagnosticSource.localHeuristics,
+            'La llamada no proporcionó un identificador telefónico válido.',
+        source: DiagnosticSource.agent,
       );
     }
 
-    // -----------------------------------------------------------------------------------------------
-    // 2. LÍNEAS OFICIALES / EMERGENCIA
-    // -----------------------------------------------------------------------------------------------
-    if (digits == '123' ||
-        digits == '112' ||
-        digits == '165' ||
-        digits == '116' ||
-        digits.startsWith('018000')) {
+    try {
+      // ============================================================================================
+      // TODA LA DECISIÓN PASA POR SECURITY COORDINATOR
+      // ============================================================================================
+
+      final Map<String, dynamic> result =
+          await _securityCoordinator.scanCall(
+        phoneNumber: clean,
+      );
+
+      final double riskScore =
+          _readDouble(
+        result['score'],
+        fallback: _readDouble(
+          result['riskScore'],
+          fallback: 0.0,
+        ),
+      );
+
+      final String verdict =
+          _readString(
+        result['verdict'],
+        fallback: 'UNKNOWN',
+      );
+
+      final String category =
+          _resolveCategory(result);
+
+      final String details =
+          _buildAnalysisDetails(result);
+
+      developer.log(
+        'Llamada analizada por SecurityCoordinator: '
+        '$clean | score=$riskScore | verdict=$verdict',
+        name: 'PhoneInterceptor',
+      );
+
       return CallVerdict(
         phoneNumber: clean,
-        riskScore: 0,
-        verdict: 'SEGURO',
-        category: 'LÍNEA OFICIAL',
+        riskScore: riskScore,
+        verdict: verdict,
+        category: category,
+        details: details,
+        source: DiagnosticSource.agent,
+      );
+    } catch (e, stackTrace) {
+      developer.log(
+        'Error en SecurityCoordinator.scanCall().',
+        name: 'PhoneInterceptor',
+        error: e,
+        stackTrace: stackTrace,
+      );
+
+      return CallVerdict(
+        phoneNumber: clean,
+        riskScore: 0.0,
+        verdict: 'ANÁLISIS NO DISPONIBLE',
+        category: 'ERROR DEL MOTOR',
         details:
-            'Número oficial o línea de asistencia pública/nacional.',
-        source: DiagnosticSource.localHeuristics,
+            'No fue posible completar el análisis central de seguridad.',
+        source: DiagnosticSource.phoneInterceptor,
       );
     }
+  }
 
-    // -----------------------------------------------------------------------------------------------
-    // 3. INDICATIVOS INTERNACIONALES SOSPECHOSOS
-    // -----------------------------------------------------------------------------------------------
-    for (final String code in _suspiciousCodes) {
-      final bool startsWithInternationalCode =
-          clean.startsWith('+$code');
+  // ================================================================================================
+  // CONSTRUCCIÓN DEL DIAGNÓSTICO
+  // ================================================================================================
 
-      final bool startsWithDigitsCode =
-          digits.startsWith(code) &&
-          digits.length >= code.length + 7;
+  String _buildAnalysisDetails(
+    Map<String, dynamic> result,
+  ) {
+    final List<String> sections = <String>[];
 
-      if (startsWithInternationalCode ||
-          startsWithDigitsCode) {
-        return CallVerdict(
-          phoneNumber: clean,
-          riskScore: 92,
-          verdict: 'CRÍTICO',
-          category: 'SPAM INTERNACIONAL',
-          details:
-              'Indicativo internacional de alto riesgo detectado (+$code).',
-          source: DiagnosticSource.phoneInterceptor,
+    final dynamic reasons =
+        result['reasons'];
+
+    if (reasons is List) {
+      final List<String> validReasons =
+          reasons
+              .map((dynamic item) => item.toString().trim())
+              .where((String item) => item.isNotEmpty)
+              .toList();
+
+      if (validReasons.isNotEmpty) {
+        sections.add(
+          'EVIDENCIA: ${validReasons.join(' | ')}',
         );
       }
     }
 
-    // -----------------------------------------------------------------------------------------------
-    // 4. PATRONES NUMÉRICOS REPETITIVOS
-    // -----------------------------------------------------------------------------------------------
-    if (RegExp(r'(\d)\1{4,}').hasMatch(digits)) {
-      return CallVerdict(
-        phoneNumber: clean,
-        riskScore: 85,
-        verdict: 'CRÍTICO',
-        category: 'SPOOFING',
-        details:
-            'Patrón numérico repetitivo detectado. '
-            'El formato presenta características anómalas.',
-        source: DiagnosticSource.phoneInterceptor,
-      );
-    }
-
-    // -----------------------------------------------------------------------------------------------
-    // 5. COLOMBIA - MÓVIL / FIJO
-    // -----------------------------------------------------------------------------------------------
-    if (digits.length == 10 &&
-        digits.startsWith('3')) {
-      return CallVerdict(
-        phoneNumber: clean,
-        riskScore: 5,
-        verdict: 'SEGURO',
-        category: 'LÍNEA NACIONAL',
-        details:
-            'Número móvil colombiano con formato nacional válido.',
-        source: DiagnosticSource.localHeuristics,
-      );
-    }
-
-    if (digits.length == 10 &&
-        digits.startsWith('60')) {
-      return CallVerdict(
-        phoneNumber: clean,
-        riskScore: 5,
-        verdict: 'SEGURO',
-        category: 'LÍNEA NACIONAL',
-        details:
-            'Número fijo colombiano con formato nacional válido.',
-        source: DiagnosticSource.localHeuristics,
-      );
-    }
-
-    // -----------------------------------------------------------------------------------------------
-    // 6. COLOMBIA +57
-    // -----------------------------------------------------------------------------------------------
-    if (digits.length == 12 &&
-        digits.startsWith('57')) {
-      return CallVerdict(
-        phoneNumber: clean,
-        riskScore: 5,
-        verdict: 'SEGURO',
-        category: 'LÍNEA NACIONAL',
-        details:
-            'Número colombiano detectado mediante código de país +57.',
-        source: DiagnosticSource.localHeuristics,
-      );
-    }
-
-    // -----------------------------------------------------------------------------------------------
-    // 7. LONGITUD ANÓMALA
-    // -----------------------------------------------------------------------------------------------
-    if (digits.length < 7 ||
-        digits.length > 15) {
-      return CallVerdict(
-        phoneNumber: clean,
-        riskScore: 65,
-        verdict: 'SOSPECHOSO',
-        category: 'FORMATO ANÓMALO',
-        details:
-            'La longitud del número no corresponde a una estructura telefónica habitual.',
-        source: DiagnosticSource.phoneInterceptor,
-      );
-    }
-
-    // -----------------------------------------------------------------------------------------------
-    // 8. DESCONOCIDO
-    // -----------------------------------------------------------------------------------------------
-    return CallVerdict(
-      phoneNumber: clean,
-      riskScore: 10,
-      verdict: 'SEGURO',
-      category: 'DESCONOCIDO',
-      details:
-          'No se detectaron patrones maliciosos en la verificación heurística local.',
-      source: DiagnosticSource.localHeuristics,
+    final String heuristicReason =
+        _readString(
+      result['reason'],
+      fallback: '',
     );
+
+    if (heuristicReason.isNotEmpty) {
+      sections.add(
+        'HEURÍSTICA: $heuristicReason',
+      );
+    }
+
+    final String agentReasoning =
+        _readString(
+      result['agentReasoning'],
+      fallback: '',
+    );
+
+    if (agentReasoning.isNotEmpty) {
+      sections.add(
+        'AGENTE: $agentReasoning',
+      );
+    }
+
+    final String action =
+        _readString(
+      result['actionRecommendation'],
+      fallback: '',
+    );
+
+    if (action.isNotEmpty) {
+      sections.add(
+        'ACCIÓN: $action',
+      );
+    }
+
+    if (sections.isEmpty) {
+      return 'Análisis de seguridad completado.';
+    }
+
+    return sections.join('\n');
   }
 
-  // ==================================================================================================
+  // ================================================================================================
+  // CATEGORÍA
+  // ================================================================================================
+
+  String _resolveCategory(
+    Map<String, dynamic> result,
+  ) {
+    final String validationStatus =
+        _readString(
+      result['validation_status'],
+      fallback: '',
+    );
+
+    if (validationStatus.isNotEmpty) {
+      return validationStatus;
+    }
+
+    final dynamic reasons =
+        result['reasons'];
+
+    if (reasons is List && reasons.isNotEmpty) {
+      return 'ANÁLISIS TELEFÓNICO';
+    }
+
+    return 'LLAMADA TELEFÓNICA';
+  }
+
+  // ================================================================================================
+  // CONVERSIÓN SEGURA
+  // ================================================================================================
+
+  double _readDouble(
+    dynamic value, {
+    required double fallback,
+  }) {
+    if (value is num) {
+      return value.toDouble().clamp(0.0, 100.0);
+    }
+
+    if (value is String) {
+      final double? parsed =
+          double.tryParse(value);
+
+      if (parsed != null) {
+        return parsed.clamp(0.0, 100.0);
+      }
+    }
+
+    return fallback;
+  }
+
+  String _readString(
+    dynamic value, {
+    required String fallback,
+  }) {
+    if (value == null) {
+      return fallback;
+    }
+
+    final String text =
+        value.toString().trim();
+
+    return text.isEmpty ? fallback : text;
+  }
+
+  // ================================================================================================
   // HISTORIAL
-  // ==================================================================================================
+  // ================================================================================================
 
   Future<List<Map<String, dynamic>>> getHistory() async {
     return _database.getCallHistory();
@@ -535,9 +734,9 @@ class PhoneInterceptorService {
     await _database.clearCallHistory();
   }
 
-  // ==================================================================================================
+  // ================================================================================================
   // DISPOSE
-  // ==================================================================================================
+  // ================================================================================================
 
   void dispose() {
     stopListening();

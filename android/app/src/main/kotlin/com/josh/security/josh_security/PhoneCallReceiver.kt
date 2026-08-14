@@ -27,27 +27,41 @@ class PhoneCallReceiver : BroadcastReceiver() {
         private var callGeneration = 0L
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent
+    ) {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
             return
         }
 
-        val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
+        val state =
+            intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+                ?: return
 
         when (state) {
             TelephonyManager.EXTRA_STATE_RINGING -> {
                 handleRinging(context, intent)
             }
+
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                 handleOffHook()
             }
+
             TelephonyManager.EXTRA_STATE_IDLE -> {
                 handleIdle()
             }
         }
     }
 
-    private fun handleRinging(context: Context, intent: Intent) {
+    // ================================================================================================
+    // RINGING
+    // ================================================================================================
+
+    private fun handleRinging(
+        context: Context,
+        intent: Intent
+    ) {
         if (!isIncoming) {
             isIncoming = true
             activeNumber = null
@@ -58,17 +72,32 @@ class PhoneCallReceiver : BroadcastReceiver() {
         val generation = callGeneration
 
         @Suppress("DEPRECATION")
-        val directNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+        val directNumber =
+            intent.getStringExtra(
+                TelephonyManager.EXTRA_INCOMING_NUMBER
+            )
 
         if (isUsablePhoneNumber(directNumber)) {
-            Log.d(TAG, "Número entrante capturado directamente: $directNumber")
+            Log.d(
+                TAG,
+                "Número entrante capturado directamente: $directNumber"
+            )
+
             publishIncomingNumber(directNumber!!)
             return
         }
 
-        val immediateNumber = getRecentIncomingNumber(context.applicationContext)
+        val immediateNumber =
+            getRecentIncomingNumber(
+                context.applicationContext
+            )
+
         if (isUsablePhoneNumber(immediateNumber)) {
-            Log.d(TAG, "Número recuperado inmediatamente desde CallLog: $immediateNumber")
+            Log.d(
+                TAG,
+                "Número recuperado inmediatamente desde CallLog: $immediateNumber"
+            )
+
             publishIncomingNumber(immediateNumber!!)
             return
         }
@@ -79,15 +108,34 @@ class PhoneCallReceiver : BroadcastReceiver() {
         )
     }
 
+    // ================================================================================================
+    // OFFHOOK
+    // ================================================================================================
+
     private fun handleOffHook() {
-        if (!isIncoming) return
-        Log.d(TAG, "Llamada entrante en curso: ${activeNumber ?: "Número desconocido"}")
+        if (!isIncoming) {
+            return
+        }
+
+        Log.d(
+            TAG,
+            "Llamada entrante en curso: ${activeNumber ?: "Número desconocido"}"
+        )
     }
 
-    private fun handleIdle() {
-        if (!isIncoming) return
+    // ================================================================================================
+    // IDLE
+    // ================================================================================================
 
-        Log.d(TAG, "Llamada entrante finalizada o rechazada")
+    private fun handleIdle() {
+        if (!isIncoming) {
+            return
+        }
+
+        Log.d(
+            TAG,
+            "Llamada entrante finalizada o rechazada"
+        )
 
         isIncoming = false
         activeNumber = null
@@ -97,43 +145,94 @@ class PhoneCallReceiver : BroadcastReceiver() {
         notifyFlutterCallEnded()
     }
 
+    // ================================================================================================
+    // FALLBACK CALL LOG
+    // ================================================================================================
+
     private fun scheduleCallLogFallback(
         context: Context,
         generation: Long
     ) {
         val handler = Handler(Looper.getMainLooper())
-        val delays = longArrayOf(50L, 200L, 600L, 1200L)
+
+        val delays = longArrayOf(
+            50L,
+            200L,
+            600L,
+            1200L
+        )
 
         for (delay in delays) {
-            handler.postDelayed({
-                if (!isIncoming || generation != callGeneration) return@postDelayed
-                if (isUsablePhoneNumber(activeNumber)) return@postDelayed
+            handler.postDelayed(
+                {
+                    if (!isIncoming ||
+                        generation != callGeneration
+                    ) {
+                        return@postDelayed
+                    }
 
-                val number = getRecentIncomingNumber(context)
+                    if (isUsablePhoneNumber(activeNumber)) {
+                        return@postDelayed
+                    }
 
-                if (isUsablePhoneNumber(number)) {
-                    Log.d(TAG, "Número recuperado desde CallLog en reintento ($delay ms): $number")
-                    publishIncomingNumber(number!!)
-                }
-            }, delay)
+                    val number =
+                        getRecentIncomingNumber(context)
+
+                    if (isUsablePhoneNumber(number)) {
+                        Log.d(
+                            TAG,
+                            "Número recuperado desde CallLog en reintento ($delay ms): $number"
+                        )
+
+                        publishIncomingNumber(number!!)
+                    }
+                },
+                delay
+            )
         }
 
-        handler.postDelayed({
-            if (!isIncoming || generation != callGeneration) return@postDelayed
-            if (isUsablePhoneNumber(activeNumber)) return@postDelayed
+        handler.postDelayed(
+            {
+                if (!isIncoming ||
+                    generation != callGeneration
+                ) {
+                    return@postDelayed
+                }
 
-            Log.w(TAG, "No fue posible obtener el número entrante tras varios reintentos.")
-            publishIncomingNumber("Número Oculto")
-        }, 1800L)
+                if (isUsablePhoneNumber(activeNumber)) {
+                    return@postDelayed
+                }
+
+                Log.w(
+                    TAG,
+                    "No fue posible obtener el número entrante. Se enviará como número oculto."
+                )
+
+                publishIncomingNumber("Número Oculto")
+            },
+            1800L
+        )
     }
 
-    private fun getRecentIncomingNumber(context: Context): String? {
-        if (ContextCompat.checkSelfPermission(
+    // ================================================================================================
+    // CALL LOG
+    // ================================================================================================
+
+    private fun getRecentIncomingNumber(
+        context: Context
+    ): String? {
+
+        if (
+            ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.READ_CALL_LOG
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.w(TAG, "READ_CALL_LOG no concedido.")
+            Log.w(
+                TAG,
+                "READ_CALL_LOG no concedido."
+            )
+
             return null
         }
 
@@ -146,10 +245,11 @@ class PhoneCallReceiver : BroadcastReceiver() {
                 CallLog.Calls.DATE
             )
 
-            val selection = "(${CallLog.Calls.TYPE} = ? " +
-                    "OR ${CallLog.Calls.TYPE} = ? " +
-                    "OR ${CallLog.Calls.TYPE} = ?) " +
-                    "AND ${CallLog.Calls.DATE} >= ?"
+            val selection =
+                "(${CallLog.Calls.TYPE} = ? " +
+                "OR ${CallLog.Calls.TYPE} = ? " +
+                "OR ${CallLog.Calls.TYPE} = ?) " +
+                "AND ${CallLog.Calls.DATE} >= ?"
 
             val selectionArgs = arrayOf(
                 CallLog.Calls.INCOMING_TYPE.toString(),
@@ -166,17 +266,29 @@ class PhoneCallReceiver : BroadcastReceiver() {
                 "${CallLog.Calls.DATE} DESC"
             )
 
-            if (cursor != null && cursor.moveToFirst()) {
-                val numberIndex = cursor.getColumnIndex(CallLog.Calls.NUMBER)
+            if (
+                cursor != null &&
+                cursor.moveToFirst()
+            ) {
+                val numberIndex =
+                    cursor.getColumnIndex(
+                        CallLog.Calls.NUMBER
+                    )
+
                 if (numberIndex != -1) {
-                    val candidate = cursor.getString(numberIndex)
+                    val candidate =
+                        cursor.getString(numberIndex)
+
                     if (isUsablePhoneNumber(candidate)) {
                         return candidate
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error leyendo CallLog: ${e.message}")
+            Log.e(
+                TAG,
+                "Error leyendo CallLog: ${e.message}"
+            )
         } finally {
             cursor?.close()
         }
@@ -184,65 +296,142 @@ class PhoneCallReceiver : BroadcastReceiver() {
         return null
     }
 
-    private fun isUsablePhoneNumber(number: String?): Boolean {
-        if (number.isNullOrBlank()) return false
-        val clean = number.trim().lowercase()
+    // ================================================================================================
+    // VALIDACIÓN BÁSICA DE CAPTURA
+    // ================================================================================================
+
+    private fun isUsablePhoneNumber(
+        number: String?
+    ): Boolean {
+        if (number.isNullOrBlank()) {
+            return false
+        }
+
+        val clean =
+            number.trim().lowercase()
 
         when (clean) {
-            "unknown", "desconocido", "private", "privado", "restricted", "restringido", "null" -> {
+            "unknown",
+            "desconocido",
+            "private",
+            "privado",
+            "restricted",
+            "restringido",
+            "null",
+            "número oculto",
+            "numero oculto" -> {
                 return false
             }
         }
 
-        val digits = clean.filter { it.isDigit() }
+        val digits =
+            clean.filter { it.isDigit() }
+
         return digits.length >= 7
     }
 
-    private fun publishIncomingNumber(phoneNumber: String) {
-        if (!isIncoming) return
+    // ================================================================================================
+    // PUBLICAR NÚMERO
+    // ================================================================================================
 
-        val normalized = phoneNumber.filter { it.isDigit() }
-        val previousNormalized = activeNumber?.filter { it.isDigit() }
+    private fun publishIncomingNumber(
+        phoneNumber: String
+    ) {
+        if (!isIncoming) {
+            return
+        }
 
-        if (previousNormalized != null && previousNormalized == normalized) {
+        val normalized =
+            phoneNumber.filter { it.isDigit() }
+
+        val previousNormalized =
+            activeNumber?.filter { it.isDigit() }
+
+        if (
+            previousNormalized != null &&
+            previousNormalized == normalized
+        ) {
             return
         }
 
         activeNumber = phoneNumber
-        Log.d(TAG, "Número entrante listo para Flutter: $phoneNumber")
-        notifyFlutterCallIntercepted(phoneNumber)
+
+        Log.d(
+            TAG,
+            "Número entrante listo para Flutter: $phoneNumber"
+        )
+
+        notifyFlutterCallIntercepted(
+            phoneNumber
+        )
     }
 
-    private fun notifyFlutterCallIntercepted(phoneNumber: String) {
-        val channel = methodChannel ?: run {
-            Log.w(TAG, "MethodChannel no disponible todavía: $phoneNumber")
-            return
-        }
+    // ================================================================================================
+    // FLUTTER: LLAMADA DETECTADA
+    // ================================================================================================
 
-        val payload = mapOf(
-            "phoneNumber" to phoneNumber,
-            "timestamp" to System.currentTimeMillis()
-        )
+    private fun notifyFlutterCallIntercepted(
+        phoneNumber: String
+    ) {
+        val channel =
+            methodChannel ?: run {
+                Log.w(
+                    TAG,
+                    "MethodChannel no disponible todavía: $phoneNumber"
+                )
+                return
+            }
+
+        val payload =
+            mapOf(
+                "phoneNumber" to phoneNumber,
+                "timestamp" to System.currentTimeMillis()
+            )
 
         Handler(Looper.getMainLooper()).post {
             try {
-                channel.invokeMethod("onCallIntercepted", payload)
-                Log.d(TAG, "Evento enviado correctamente a Flutter.")
+                channel.invokeMethod(
+                    "onCallIntercepted",
+                    payload
+                )
+
+                Log.d(
+                    TAG,
+                    "Evento onCallIntercepted enviado correctamente a Flutter."
+                )
             } catch (e: Exception) {
-                Log.e(TAG, "Error enviando evento a Flutter: ${e.message}")
+                Log.e(
+                    TAG,
+                    "Error enviando evento a Flutter: ${e.message}"
+                )
             }
         }
     }
 
+    // ================================================================================================
+    // FLUTTER: LLAMADA FINALIZADA
+    // ================================================================================================
+
     private fun notifyFlutterCallEnded() {
-        val channel = methodChannel ?: return
+        val channel =
+            methodChannel ?: return
 
         Handler(Looper.getMainLooper()).post {
             try {
-                channel.invokeMethod("onCallEnded", null)
-                Log.d(TAG, "Evento onCallEnded enviado correctamente a Flutter.")
+                channel.invokeMethod(
+                    "onCallEnded",
+                    null
+                )
+
+                Log.d(
+                    TAG,
+                    "Evento onCallEnded enviado correctamente a Flutter."
+                )
             } catch (e: Exception) {
-                Log.e(TAG, "Error notificando fin de llamada: ${e.message}")
+                Log.e(
+                    TAG,
+                    "Error notificando fin de llamada: ${e.message}"
+                )
             }
         }
     }

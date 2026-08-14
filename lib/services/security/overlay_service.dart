@@ -12,9 +12,25 @@ import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 class OverlayService {
   OverlayService._();
 
-  // ==================================================================================================
+  // ================================================================================================
+  // CONSTANTES
+  // ================================================================================================
+
+  static const Duration _overlayStartupDelay =
+      Duration(milliseconds: 300);
+
+  static const Duration _retryDelay =
+      Duration(milliseconds: 300);
+
+  // ================================================================================================
+  // ESTADO INTERNO
+  // ================================================================================================
+
+  static bool _operationInProgress = false;
+
+  // ================================================================================================
   // PERMISO
-  // ==================================================================================================
+  // ================================================================================================
 
   static Future<bool> requestPermission() async {
     try {
@@ -41,9 +57,9 @@ class OverlayService {
     }
   }
 
-  // ==================================================================================================
-  // MOSTRAR OVERLAY
-  // ==================================================================================================
+  // ================================================================================================
+  // MOSTRAR / ACTUALIZAR OVERLAY
+  // ================================================================================================
 
   static Future<void> showWarningOverlay({
     required String phoneNumber,
@@ -51,6 +67,16 @@ class OverlayService {
     required String message,
     String? agentReasoning,
   }) async {
+    if (_operationInProgress) {
+      developer.log(
+        'Operación de overlay ya en curso. Evento ignorado.',
+        name: 'josh.security.overlay',
+      );
+      return;
+    }
+
+    _operationInProgress = true;
+
     try {
       final bool permissionGranted =
           await FlutterOverlayWindow.isPermissionGranted();
@@ -64,32 +90,59 @@ class OverlayService {
         return;
       }
 
-      // ---------------------------------------------------------------------------------------------
-      // CERRAR OVERLAY PREVIO
-      // ---------------------------------------------------------------------------------------------
+      final Map<String, dynamic> payload =
+          <String, dynamic>{
+        'phone_number': phoneNumber,
+        'risk_level': riskLevel,
+        'message': message,
+        'agent_reasoning': agentReasoning ?? '',
+      };
+
+      // ----------------------------------------------------------------------------------------------
+      // SI YA EXISTE UN OVERLAY, ACTUALIZARLO
+      // ----------------------------------------------------------------------------------------------
 
       final bool active =
           await FlutterOverlayWindow.isActive();
 
       if (active) {
+        developer.log(
+          'Overlay activo. Actualizando información.',
+          name: 'josh.security.overlay',
+        );
+
+        final bool sent =
+            await _sendPayload(payload);
+
+        if (sent) {
+          return;
+        }
+
+        developer.log(
+          'No fue posible actualizar el overlay activo. '
+          'Se intentará reconstruir.',
+          name: 'josh.security.overlay',
+        );
+
         try {
           await FlutterOverlayWindow.closeOverlay();
-        } catch (e) {
+        } catch (e, stackTrace) {
           developer.log(
-            'Error cerrando overlay previo.',
+            'Error cerrando overlay activo antes de reconstruir.',
             name: 'josh.security.overlay',
             error: e,
+            stackTrace: stackTrace,
           );
         }
 
         await Future<void>.delayed(
-          const Duration(milliseconds: 150),
+          const Duration(milliseconds: 200),
         );
       }
 
-      // ---------------------------------------------------------------------------------------------
+      // ----------------------------------------------------------------------------------------------
       // CREAR OVERLAY
-      // ---------------------------------------------------------------------------------------------
+      // ----------------------------------------------------------------------------------------------
 
       await FlutterOverlayWindow.showOverlay(
         enableDrag: true,
@@ -102,51 +155,25 @@ class OverlayService {
         width: WindowSize.matchParent,
       );
 
-      // ---------------------------------------------------------------------------------------------
-      // ESPERAR AL ISOLATED ENGINE DEL OVERLAY
-      // ---------------------------------------------------------------------------------------------
+      // ----------------------------------------------------------------------------------------------
+      // ESPERAR INICIALIZACIÓN DEL ISOLATE NATIVO
+      // ----------------------------------------------------------------------------------------------
 
       await Future<void>.delayed(
-        const Duration(milliseconds: 250),
+        _overlayStartupDelay,
       );
 
-      // ---------------------------------------------------------------------------------------------
-      // ENVIAR INFORMACIÓN AL OVERLAY
-      // ---------------------------------------------------------------------------------------------
+      // ----------------------------------------------------------------------------------------------
+      // ENVIAR PAYLOAD
+      // ----------------------------------------------------------------------------------------------
 
-      final Map<String, dynamic> payload =
-          <String, dynamic>{
-        'phone_number': phoneNumber,
-        'risk_level': riskLevel,
-        'message': message,
-        'agent_reasoning': agentReasoning ?? '',
-      };
+      final bool sent =
+          await _sendPayload(payload);
 
-      // Primer intento.
-      try {
-        await FlutterOverlayWindow.shareData(payload);
-        return;
-      } catch (e) {
+      if (!sent) {
         developer.log(
-          'Primer envío de datos al overlay falló. Reintentando.',
+          'No fue posible enviar los datos al overlay después de los reintentos.',
           name: 'josh.security.overlay',
-          error: e,
-        );
-      }
-
-      // Segundo intento.
-      await Future<void>.delayed(
-        const Duration(milliseconds: 250),
-      );
-
-      try {
-        await FlutterOverlayWindow.shareData(payload);
-        return;
-      } catch (e) {
-        developer.log(
-          'Segundo envío de datos al overlay falló.',
-          name: 'josh.security.overlay',
-          error: e,
         );
       }
     } catch (e, stackTrace) {
@@ -156,21 +183,73 @@ class OverlayService {
         error: e,
         stackTrace: stackTrace,
       );
+    } finally {
+      _operationInProgress = false;
     }
   }
 
-  // ==================================================================================================
+  // ================================================================================================
+  // ENVÍO DE DATOS AL OVERLAY
+  // ================================================================================================
+
+  static Future<bool> _sendPayload(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      await FlutterOverlayWindow.shareData(payload);
+      return true;
+    } catch (e) {
+      developer.log(
+        'Primer envío de datos al overlay falló.',
+        name: 'josh.security.overlay',
+        error: e,
+      );
+    }
+
+    await Future<void>.delayed(
+      _retryDelay,
+    );
+
+    try {
+      await FlutterOverlayWindow.shareData(payload);
+      return true;
+    } catch (e) {
+      developer.log(
+        'Segundo envío de datos al overlay falló.',
+        name: 'josh.security.overlay',
+        error: e,
+      );
+    }
+
+    return false;
+  }
+
+  // ================================================================================================
   // CERRAR OVERLAY
-  // ==================================================================================================
+  // ================================================================================================
 
   static Future<void> closeOverlay() async {
+    if (_operationInProgress) {
+      developer.log(
+        'Cierre de overlay solicitado mientras existe otra operación.',
+        name: 'josh.security.overlay',
+      );
+    }
+
     try {
       final bool active =
           await FlutterOverlayWindow.isActive();
 
-      if (active) {
-        await FlutterOverlayWindow.closeOverlay();
+      if (!active) {
+        return;
       }
+
+      await FlutterOverlayWindow.closeOverlay();
+
+      developer.log(
+        'Overlay cerrado correctamente.',
+        name: 'josh.security.overlay',
+      );
     } catch (e, stackTrace) {
       developer.log(
         'Error cerrando Overlay.',

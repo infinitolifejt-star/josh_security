@@ -28,3 +28,5 @@ Centinela_Pilar2_Conexion.pptx
 # 💻 Sistemas Operativos
 .DS_Store
 Thumbs.db
+# Android local configuration
+android/local.properties

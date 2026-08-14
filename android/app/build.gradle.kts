@@ -1,6 +1,6 @@
-// ====================================================================================================
+﻿// ====================================================================================================
 // ARCHIVO: android/app/build.gradle.kts
-// CONFIGURACIÓN: Adaptación para JOSH Security (Soporte Java 8 Desugaring Habilitado - v2.1.4)
+// CONFIGURACIÃ“N: AdaptaciÃ³n para JOSH Security (Soporte Java 8 Desugaring Habilitado - v2.1.4)
 // ====================================================================================================
 
 plugins {
@@ -46,13 +46,16 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+    lint {
+        disable += "PropertyEscape"
+    }
 }
 
 flutter {
     source = "../.."
 }
 
-// 3. SECCIÓN NUEVA: Añadimos la librería nativa de desugaring con versión 2.1.4 solicitada
+// 3. SECCIÃ“N NUEVA: AÃ±adimos la librerÃ­a nativa de desugaring con versiÃ³n 2.1.4 solicitada
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

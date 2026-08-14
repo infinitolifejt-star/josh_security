@@ -1,12 +1,21 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/call_security_engine.dart
-// MOTOR DE SEGURIDAD PARA LLAMADAS Y TELEFONÍA
-// JOSH SECURITY v6.0 - ARQUITECTURA DE DECISIÓN UNIFICADA
+// MOTOR HEURÍSTICO DE SEGURIDAD PARA LLAMADAS
+// JOSH SECURITY v6.0
+//
+// RESPONSABILIDAD:
+// - Análisis estructural.
+// - Patrones numéricos.
+// - Indicadores de ingeniería social.
+// - Generación de puntuación heurística.
+// - NO toma la decisión agéntica final.
+//
+// La decisión final corresponde a SecurityCoordinator + AgentEngine.
 // ====================================================================================================
 
 import 'dart:math';
 
-/// Estados de Validación Estructural según E.164 / Google libphonenumber
+/// Estados de validación estructural del número.
 enum PhoneValidationStatus {
   valid,
   invalidFormat,
@@ -15,80 +24,119 @@ enum PhoneValidationStatus {
 }
 
 class CallSecurityEngine {
+
   CallSecurityEngine();
 
   // ================================================================================================
   // PATRONES DE RIESGO E INGENIERÍA SOCIAL
   // ================================================================================================
 
-  static final List<String> suspiciousPatterns = [
-    "banco",
-    "seguridad",
-    "soporte",
-    "verificacion",
-    "premio",
-    "ganaste",
-    "urgente",
-    "bloqueo",
-    "cuenta",
-    "clave",
-    "codigo",
-    "token",
-    "confirmar",
-    "actualizar",
-    "credito",
-    "inversion",
-    "oferta",
-    "wallet",
-    "crypto",
-    "cripto",
+  static const List<String> suspiciousPatterns = <String>[
+    'banco',
+    'seguridad',
+    'soporte',
+    'verificacion',
+    'premio',
+    'ganaste',
+    'urgente',
+    'bloqueo',
+    'cuenta',
+    'clave',
+    'codigo',
+    'token',
+    'confirmar',
+    'actualizar',
+    'credito',
+    'inversion',
+    'oferta',
+    'wallet',
+    'crypto',
+    'cripto',
   ];
 
   // ================================================================================================
-  // MÉTODOS DE EVALUACIÓN ESTRUCTURAL
+  // VALIDACIÓN ESTRUCTURAL
   // ================================================================================================
 
-  /// Determina el estado de validación según longitud y tipo de marcado
-  PhoneValidationStatus _evaluateValidationStatus(String rawNumber, String cleanDigits) {
-    final lowerRaw = rawNumber.toLowerCase().trim();
+  PhoneValidationStatus _evaluateValidationStatus(
+    String rawNumber,
+    String cleanDigits,
+  ) {
+    final String lowerRaw =
+        rawNumber.toLowerCase().trim();
 
-    if (lowerRaw.isEmpty ||
-        cleanDigits.isEmpty ||
-        lowerRaw.contains("unknown") ||
-        lowerRaw.contains("private") ||
-        lowerRaw.contains("desconocido") ||
-        lowerRaw.contains("privado")) {
+    if (
+      lowerRaw.isEmpty ||
+      cleanDigits.isEmpty ||
+      lowerRaw.contains('unknown') ||
+      lowerRaw.contains('private') ||
+      lowerRaw.contains('desconocido') ||
+      lowerRaw.contains('privado') ||
+      lowerRaw.contains('restricted') ||
+      lowerRaw.contains('restringido') ||
+      lowerRaw.contains('oculto')
+    ) {
       return PhoneValidationStatus.hiddenOrUnknown;
     }
 
-    // Estructuras de 3 a 6 dígitos corresponden a Códigos Cortos (Shortcodes)
-    if (cleanDigits.length >= 3 && cleanDigits.length <= 6) {
+    // 3 a 6 dígitos: posible código corto.
+    if (
+      cleanDigits.length >= 3 &&
+      cleanDigits.length <= 6
+    ) {
       return PhoneValidationStatus.shortCode;
     }
 
-    // Estándar ITU-T E.164: Un número telefónico internacional válido tiene entre 7 y 15 dígitos.
-    if (cleanDigits.length < 7 || cleanDigits.length > 15) {
+    // Rango estructural E.164.
+    if (
+      cleanDigits.length < 7 ||
+      cleanDigits.length > 15
+    ) {
       return PhoneValidationStatus.invalidFormat;
     }
 
     return PhoneValidationStatus.valid;
   }
 
-  /// Evalúa repeticiones anómalas en la cadena numérica (ej. 9999999999 o 88888888)
-  bool _hasAnomalousRepetition(String cleanDigits) {
-    if (cleanDigits.length < 6) return false;
+  // ================================================================================================
+  // REPETICIÓN ANÓMALA
+  // ================================================================================================
 
-    // Detectar si todos los dígitos son idénticos
-    final firstChar = cleanDigits[0];
-    if (cleanDigits.runes.every((r) => String.fromCharCode(r) == firstChar)) {
+  bool _hasAnomalousRepetition(
+    String cleanDigits,
+  ) {
+    if (cleanDigits.length < 6) {
+      return false;
+    }
+
+    final String firstChar =
+        cleanDigits[0];
+
+    final bool allIdentical =
+        cleanDigits.runes.every(
+      (int rune) =>
+          String.fromCharCode(rune) ==
+          firstChar,
+    );
+
+    if (allIdentical) {
       return true;
     }
 
-    // Detectar si el mismo patrón de 2 dígitos se repite consecutivamente más de 3 veces
-    final pattern = cleanDigits.substring(0, 2);
+    final String pattern =
+        cleanDigits.substring(0, 2);
+
     int matches = 0;
-    for (int i = 0; i <= cleanDigits.length - 2; i += 2) {
-      if (cleanDigits.substring(i, i + 2) == pattern) {
+
+    for (
+      int i = 0;
+      i <= cleanDigits.length - 2;
+      i += 2
+    ) {
+      if (
+        cleanDigits.substring(i, i + 2) ==
+        pattern
+      ) {
         matches++;
       } else {
         break;
@@ -107,119 +155,269 @@ class CallSecurityEngine {
     String? contactName,
     String? callText,
   }) {
-    final rawNumber = phoneNumber.trim();
-    final cleanDigits = rawNumber.replaceAll(RegExp(r'\D'), '');
-    final combinedContext = "${contactName ?? ""} ${callText ?? ""}".toLowerCase();
+    final String rawNumber =
+        phoneNumber.trim();
 
-    final validationStatus = _evaluateValidationStatus(rawNumber, cleanDigits);
+    final String cleanDigits =
+        rawNumber.replaceAll(
+      RegExp(r'\D'),
+      '',
+    );
+
+    final String combinedContext =
+        '${contactName ?? ''} ${callText ?? ''}'
+            .toLowerCase();
+
+    final PhoneValidationStatus validationStatus =
+        _evaluateValidationStatus(
+      rawNumber,
+      cleanDigits,
+    );
 
     int riskScore = 0;
-    List<String> evidence = [];
 
-    // 1. Evaluación Estructural
+    final List<String> evidence =
+        <String>[];
+
+    // ==============================================================================================
+    // 1. ESTRUCTURA
+    // ==============================================================================================
+
     switch (validationStatus) {
+
       case PhoneValidationStatus.hiddenOrUnknown:
         riskScore += 40;
-        evidence.add("Número oculto, privado o no identificado.");
+
+        evidence.add(
+          'Número oculto, privado o no identificado.',
+        );
         break;
 
       case PhoneValidationStatus.invalidFormat:
         riskScore += 35;
-        evidence.add("Anomalía de formato: Longitud incompatible con el estándar internacional ITU-T E.164.");
+
+        evidence.add(
+          'Anomalía de formato: longitud incompatible con la estructura internacional esperada.',
+        );
         break;
 
       case PhoneValidationStatus.shortCode:
         riskScore += 25;
-        evidence.add("Estructura correspondiente a código corto no verificado.");
+
+        evidence.add(
+          'Estructura correspondiente a código corto no verificado.',
+        );
         break;
 
       case PhoneValidationStatus.valid:
         break;
     }
 
-    // 2. Prefijos Anómalos
-    if (rawNumber.startsWith("+999") || rawNumber.startsWith("+000") || rawNumber.startsWith("000")) {
+    // ==============================================================================================
+    // 2. PREFIJOS ANÓMALOS
+    // ==============================================================================================
+
+    if (
+      rawNumber.startsWith('+999') ||
+      rawNumber.startsWith('+000') ||
+      rawNumber.startsWith('000')
+    ) {
       riskScore += 45;
-      evidence.add("Prefijo de red no asignado o altamente sospechoso.");
+
+      evidence.add(
+        'Prefijo de red no asignado o altamente sospechoso.',
+      );
     }
 
-    // 3. Patrones de Repetición Extrema
-    if (_hasAnomalousRepetition(cleanDigits)) {
+    // ==============================================================================================
+    // 3. REPETICIÓN EXTREMA
+    // ==============================================================================================
+
+    if (
+      _hasAnomalousRepetition(
+        cleanDigits,
+      )
+    ) {
       riskScore += 50;
-      evidence.add("Patrón numérico altamente repetitivo detectado.");
+
+      evidence.add(
+        'Patrón numérico altamente repetitivo detectado.',
+      );
     }
 
-    // 4. Análisis de Ingeniería Social en Contexto de Texto/Contacto
+    // ==============================================================================================
+    // 4. INGENIERÍA SOCIAL
+    // ==============================================================================================
+
     int socialEngineeringMatches = 0;
-    for (final pattern in suspiciousPatterns) {
-      if (combinedContext.contains(pattern)) {
+
+    for (
+      final String pattern
+          in suspiciousPatterns
+    ) {
+      if (
+        combinedContext.contains(pattern)
+      ) {
         socialEngineeringMatches++;
-        if (socialEngineeringMatches <= 3) {
+
+        if (
+          socialEngineeringMatches <= 3
+        ) {
           riskScore += 15;
-          evidence.add("Indicador de ingeniería social detectado: '$pattern'");
+
+          evidence.add(
+            "Indicador de ingeniería social detectado: '$pattern'",
+          );
         }
       }
     }
 
-    // Normalizar score al rango 0 - 100
-    riskScore = min(riskScore, 100);
+    // ==============================================================================================
+    // NORMALIZACIÓN
+    // ==============================================================================================
 
-    // 5. Mapeo Semántico del Veredicto
+    riskScore =
+        min(riskScore, 100);
+
+    // ==============================================================================================
+    // VEREDICTO HEURÍSTICO
+    //
+    // IMPORTANTE:
+    // Este veredicto NO es todavía el veredicto agéntico final.
+    // SecurityCoordinator lo pasa a AgentEngine.
+    // ==============================================================================================
+
     String verdict;
     String statusLabel;
 
     if (riskScore >= 80) {
-      verdict = "AMENAZA_CONFIRMADA";
-      statusLabel = "🔴 ALTO RIESGO / AMENAZA";
+
+      verdict = 'AMENAZA_CONFIRMADA';
+
+      statusLabel =
+          '🔴 ALTO RIESGO / AMENAZA';
+
     } else if (riskScore >= 60) {
-      verdict = "ALTO_RIESGO";
-      statusLabel = "🟠 ALTO RIESGO";
+
+      verdict = 'ALTO_RIESGO';
+
+      statusLabel =
+          '🟠 ALTO RIESGO';
+
     } else if (riskScore >= 40) {
-      verdict = "ADVERTENCIA";
-      statusLabel = "🟡 ADVERTENCIA PREVENTIVA";
-    } else if (validationStatus == PhoneValidationStatus.invalidFormat) {
-      verdict = "ANOMALIA_FORMATO";
-      statusLabel = "🔵 ANOMALÍA DE FORMATO";
-    } else if (validationStatus == PhoneValidationStatus.shortCode) {
-      verdict = "SHORTCODE_NO_VERIFICADO";
-      statusLabel = "🟡 CÓDIGO CORTO NO VERIFICADO";
+
+      verdict = 'ADVERTENCIA';
+
+      statusLabel =
+          '🟡 ADVERTENCIA PREVENTIVA';
+
+    } else if (
+      validationStatus ==
+      PhoneValidationStatus.invalidFormat
+    ) {
+
+      verdict =
+          'ANOMALIA_FORMATO';
+
+      statusLabel =
+          '🔵 ANOMALÍA DE FORMATO';
+
+    } else if (
+      validationStatus ==
+      PhoneValidationStatus.shortCode
+    ) {
+
+      verdict =
+          'SHORTCODE_NO_VERIFICADO';
+
+      statusLabel =
+          '🟡 CÓDIGO CORTO NO VERIFICADO';
+
     } else {
-      verdict = "SIN_AMENAZAS";
-      statusLabel = "🟢 SIN AMENAZAS DETECTADAS";
+
+      verdict =
+          'SIN_AMENAZAS';
+
+      statusLabel =
+          '🟢 SIN AMENAZAS DETECTADAS';
     }
 
-    return {
-      "phone": phoneNumber,
-      "risk_score": riskScore,
-      "validation_status": validationStatus.toString().split('.').last,
-      "verdict": verdict,
-      "status_label": statusLabel,
-      "reasons": evidence,
-      "timestamp": DateTime.now().toIso8601String(),
+    return <String, dynamic>{
+      'phone': phoneNumber,
+      'risk_score': riskScore,
+      'validation_status':
+          validationStatus.name,
+      'verdict': verdict,
+      'status_label': statusLabel,
+      'reasons': evidence,
+      'timestamp':
+          DateTime.now().toIso8601String(),
     };
   }
 
   // ================================================================================================
-  // COMPARACIÓN DE NÚMEROS (Distancia Levenshtein Real)
+  // DISTANCIA LEVENSHTEIN
   // ================================================================================================
 
-  int similarity(String a, String b) {
-    if (a == b) return 0;
-    if (a.isEmpty) return b.length;
-    if (b.isEmpty) return a.length;
+  int similarity(
+    String a,
+    String b,
+  ) {
+    if (a == b) {
+      return 0;
+    }
 
-    List<int> v0 = List<int>.generate(b.length + 1, (i) => i);
-    List<int> v1 = List<int>.filled(b.length + 1, 0);
+    if (a.isEmpty) {
+      return b.length;
+    }
 
-    for (int i = 0; i < a.length; i++) {
+    if (b.isEmpty) {
+      return a.length;
+    }
+
+    List<int> v0 =
+        List<int>.generate(
+      b.length + 1,
+      (int i) => i,
+    );
+
+    List<int> v1 =
+        List<int>.filled(
+      b.length + 1,
+      0,
+    );
+
+    for (
+      int i = 0;
+      i < a.length;
+      i++
+    ) {
       v1[0] = i + 1;
 
-      for (int j = 0; j < b.length; j++) {
-        int cost = (a[i] == b[j]) ? 0 : 1;
-        v1[j + 1] = min(v1[j] + 1, min(v0[j + 1] + 1, v0[j] + cost));
+      for (
+        int j = 0;
+        j < b.length;
+        j++
+      ) {
+        final int cost =
+            a[i] == b[j]
+                ? 0
+                : 1;
+
+        v1[j + 1] = min(
+          v1[j] + 1,
+          min(
+            v0[j + 1] + 1,
+            v0[j] + cost,
+          ),
+        );
       }
 
-      for (int j = 0; j <= b.length; j++) {
+      for (
+        int j = 0;
+        j <= b.length;
+        j++
+      ) {
         v0[j] = v1[j];
       }
     }
