@@ -1,8 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/main.dart
 // PROJECT JOSH SECURITY
-// PUNTO DE ENTRADA PRINCIPAL
-// INTEGRACIÓN: BACKGROUND SHIELD + PHONE INTERCEPTOR + OVERLAY
+// PUNTO DE ENTRADA PRINCIPAL + OVERLAY ISOLATE
 // ====================================================================================================
 
 import 'dart:async';
@@ -22,7 +21,7 @@ import 'views/onboarding_screen.dart';
 import 'views/widgets/overlay_card.dart';
 
 // ====================================================================================================
-// ENTRY POINT DEL OVERLAY
+// ENTRY POINT DEL OVERLAY (Ejecutado en un Isolate independiente por Android)
 // ====================================================================================================
 
 @pragma('vm:entry-point')
@@ -32,7 +31,10 @@ void overlayMain() {
   runApp(
     const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: OverlayCard(),
+      home: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: OverlayCard(),
+      ),
     ),
   );
 }
@@ -45,7 +47,7 @@ final PhoneInterceptorService _phoneInterceptorService = PhoneInterceptorService
 Timer? _keepAliveTimer;
 
 // ====================================================================================================
-// MAIN
+// MAIN PRINCIPAL
 // ====================================================================================================
 
 Future<void> main() async {

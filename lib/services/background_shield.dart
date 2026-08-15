@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/background_shield.dart
 // ENTORNO SINCRO CENTINELA v4.6.0
-// OP-HEURÍSTICA: Escudo Silencioso Persistente con Control Integrado de Overlays
+// OP-HEURÍSTICA: Escudo Silencioso Persistente y Registro Forense
 // ====================================================================================================
 
 import 'dart:async';
@@ -31,14 +31,16 @@ class BackgroundShield {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       notificationChannelId,
       'JOSH Active Shield',
-      description: 'Mantiene el motor de JOSH Security protegiendo tu dispositivo en tiempo real.',
+      description:
+          'Mantiene el motor de JOSH Security protegiendo tu dispositivo en tiempo real.',
       importance: Importance.low,
       playSound: false,
       enableVibration: false,
     );
 
     await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
 
     await service.configure(
@@ -83,7 +85,8 @@ class BackgroundShield {
         final String incomingNumber = state.number ?? '';
 
         if (incomingNumber.isNotEmpty) {
-          final CallVerdict verdict = await interceptor.analyzeIncomingCall(incomingNumber);
+          final CallVerdict verdict =
+              await interceptor.analyzeIncomingCall(incomingNumber);
 
           // Sincronizar en SQLite desde el proceso en segundo plano
           try {
@@ -102,25 +105,15 @@ class BackgroundShield {
             'riskLevel': verdict.riskLevel,
             'message': verdict.analysisMessage,
           });
-
-          // Lanzamiento seguro del Overlay
-          try {
-            await OverlayService.showWarningOverlay(
-              phoneNumber: incomingNumber,
-              riskLevel: verdict.riskLevel,
-              message: verdict.analysisMessage,
-            );
-          } catch (e) {
-            debugPrint('⚠️ Error al lanzar overlay: $e');
-          }
         }
-      } else if (state.status == PhoneStateStatus.CALL_ENDED || state.status == PhoneStateStatus.NOTHING) {
+      } else if (state.status == PhoneStateStatus.CALL_ENDED ||
+          state.status == PhoneStateStatus.NOTHING) {
         service.invoke('call_ended');
 
         try {
           await OverlayService.closeOverlay();
         } catch (e) {
-          debugPrint('⚠️ Error al cerrar overlay: $e');
+          debugPrint('⚠️ Error al cerrar overlay desde BackgroundShield: $e');
         }
       }
     });

@@ -7,6 +7,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
+import '../../services/security/overlay_service.dart';
+
 class OverlayCard extends StatefulWidget {
   const OverlayCard({super.key});
 
@@ -19,20 +21,35 @@ class _OverlayCardState extends State<OverlayCard> {
   String _riskLevel = 'CORTAFUEGOS';
   String _message = 'JOSH Security evaluando paquete entrante.';
   String? _agentReasoning;
+  int _lastTimestamp = 0;
   StreamSubscription? _overlaySubscription;
 
   @override
   void initState() {
     super.initState();
+    _initOverlayListener();
+  }
+
+  void _initOverlayListener() {
     _overlaySubscription = FlutterOverlayWindow.overlayListener.listen((data) {
       if (data is Map && mounted) {
-        setState(() {
-          _phoneNumber = data['phone_number'] ?? _phoneNumber;
-          _riskLevel = data['risk_level'] ?? _riskLevel;
-          _message = data['message'] ?? _message;
-          _agentReasoning = data['agent_reasoning'];
-        });
+        final int currentTimestamp = data['timestamp'] is int ? data['timestamp'] : 0;
+
+        // Evitar procesar eventos obsoletos o acumulados en caché
+        if (currentTimestamp >= _lastTimestamp || currentTimestamp == 0) {
+          _lastTimestamp = currentTimestamp;
+          _updateUI(data);
+        }
       }
+    });
+  }
+
+  void _updateUI(Map data) {
+    setState(() {
+      _phoneNumber = data['phone_number']?.toString() ?? _phoneNumber;
+      _riskLevel = data['risk_level']?.toString() ?? _riskLevel;
+      _message = data['message']?.toString() ?? _message;
+      _agentReasoning = data['agent_reasoning']?.toString();
     });
   }
 
@@ -43,9 +60,22 @@ class _OverlayCardState extends State<OverlayCard> {
   }
 
   Color _getRiskColor() {
-    if (_riskLevel == 'CRÍTICO') return Colors.redAccent;
-    if (_riskLevel == 'ADVERTENCIA') return Colors.amberAccent;
-    return Colors.cyanAccent;
+    switch (_riskLevel) {
+      case 'CRÍTICO':
+      case 'PELIGRO':
+      case 'ALTO':
+        return Colors.redAccent;
+      case 'ADVERTENCIA':
+      case 'MEDIO':
+      case 'SOSPECHOSO':
+        return Colors.amberAccent;
+      case 'SEGURO':
+      case 'BAJO':
+      case 'LIMPIO':
+        return Colors.greenAccent;
+      default:
+        return Colors.cyanAccent;
+    }
   }
 
   @override
@@ -90,7 +120,8 @@ class _OverlayCardState extends State<OverlayCard> {
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.white70),
-                      onPressed: () async => await FlutterOverlayWindow.closeOverlay(),
+                      onPressed: () async =>
+                          await OverlayService.closeOverlay(),
                     ),
                   ],
                 ),
@@ -106,7 +137,10 @@ class _OverlayCardState extends State<OverlayCard> {
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: riskColor.withAlpha(40),
                     borderRadius: BorderRadius.circular(6),
@@ -126,7 +160,8 @@ class _OverlayCardState extends State<OverlayCard> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
-                if (_agentReasoning != null && _agentReasoning!.isNotEmpty) ...[
+                if (_agentReasoning != null &&
+                    _agentReasoning!.trim().isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
@@ -168,8 +203,12 @@ class _OverlayCardState extends State<OverlayCard> {
                       foregroundColor: Colors.black,
                     ),
                     icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('ENTENDIDO', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () async => await FlutterOverlayWindow.closeOverlay(),
+                    label: const Text(
+                      'ENTENDIDO',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () async =>
+                        await OverlayService.closeOverlay(),
                   ),
                 ),
               ],
