@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phishing_engine.dart
-// MOTOR HEURÍSTICO Y AGÉNTICO DE DETECCIÓN DE PHISHING Y NUMERACIÓN ANÓMALA
+// MOTOR HEURÍSTICO DE DETECCIÓN DE PHISHING Y NUMERACIÓN ANÓMALA
 // JOSH SECURITY v6.0-AGENTIC
 // ====================================================================================================
 
@@ -9,7 +9,7 @@ import 'dart:math';
 class PhishingEngine {
   PhishingEngine();
 
-  static final Set<String> officialWhitelist = {
+  static const Set<String> officialWhitelist = <String>{
     'google.com',
     'youtube.com',
     'github.com',
@@ -55,19 +55,56 @@ class PhishingEngine {
     'contraloria.gov.co',
   };
 
-  int levenshtein(String a, String b) {
-    if (a == b) return 0;
-    if (a.isEmpty) return b.length;
-    if (b.isEmpty) return a.length;
+  static const List<String> _brandKeywords = <String>[
+    'google',
+    'facebook',
+    'bancolombia',
+    'nequi',
+    'davivienda',
+    'daviplata',
+    'lulobank',
+    'login',
+    'seguro',
+    'verificacion',
+    'soporte',
+  ];
 
-    List<int> previous = List.generate(b.length + 1, (i) => i);
-    List<int> current = List.filled(b.length + 1, 0);
+  static final RegExp _numericPattern = RegExp(r'^\+?\d+$');
+  static final RegExp _repeatedDigitPattern = RegExp(r'^(\d)\1+$');
+  static final RegExp _leetspeakPattern = RegExp(
+    r'go0gle|banc0lombia|paypa1|micr0soft|f4cebook|nequ1|d4vivienda',
+  );
+  static final RegExp _suspiciousTldPattern = RegExp(
+    r'\.comi\.co|\.com\.[a-z]{2}\.[a-z]{2}$|\.com\.[a-z]{2}$',
+  );
+
+  int levenshtein(String a, String b) {
+    if (a == b) {
+      return 0;
+    }
+
+    if (a.isEmpty) {
+      return b.length;
+    }
+
+    if (b.isEmpty) {
+      return a.length;
+    }
+
+    List<int> previous = List<int>.generate(
+      b.length + 1,
+      (int index) => index,
+    );
+    List<int> current = List<int>.filled(
+      b.length + 1,
+      0,
+    );
 
     for (int i = 0; i < a.length; i++) {
       current[0] = i + 1;
 
       for (int j = 0; j < b.length; j++) {
-        final cost = a[i] == b[j] ? 0 : 1;
+        final int cost = a[i] == b[j] ? 0 : 1;
 
         current[j + 1] = min(
           min(
@@ -78,168 +115,178 @@ class PhishingEngine {
         );
       }
 
-      previous = List<int>.from(current);
+      final List<int> swap = previous;
+      previous = current;
+      current = swap;
     }
 
-    return current.last;
+    return previous.last;
   }
 
   Map<String, dynamic> analyze(String inputUrl) {
-    String clean = inputUrl.trim().toLowerCase();
+    final String clean = inputUrl.trim().toLowerCase();
 
-    // ------------------------------------------------------------------------------------------------
-    // REGLA 0: VALIDACIÓN DE NUMERACIÓN TELEFÓNICA O CADENAS DE DÍGITOS
-    // ------------------------------------------------------------------------------------------------
-    final isNumeric = RegExp(r'^\+?\d+$').hasMatch(clean);
-    if (isNumeric) {
-      final digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
-
-      // Patrón de dígitos repetidos sintéticos (ej: 888888888888888888)
-      if (RegExp(r'^(\d)\1+$').hasMatch(digitsOnly)) {
-        return {
-          "score": 90.0,
-          "verdict": "CRÍTICO",
-          "reason": "Anomalía Estructural: Patrón numérico sintético con dígitos repetidos (Spoofing)."
-        };
-      }
-
-      // Longitud fuera de estándares E.164 (menos de 7 o más de 15 dígitos)
-      if (digitsOnly.length < 7 || digitsOnly.length > 15) {
-        return {
-          "score": 75.0,
-          "verdict": "SOSPECHOSO",
-          "reason": "Longitud Anómala: Numeración fuera de estándar telefónico (${digitsOnly.length} dígitos)."
-        };
-      }
-    }
-
-    // ------------------------------------------------------------------------------------------------
-    // REGLA 1: DETECCIÓN DE SUPLANTACIÓN TIPOGRÁFICA / LEETSPEAK EN MARCAS (Ej. Go0gle, Banc0lombia)
-    // ------------------------------------------------------------------------------------------------
-    if (RegExp(r'go0gle|banc0lombia|paypa1|micr0soft|f4cebook|nequ1|d4vivienda').hasMatch(clean)) {
-      return {
-        "score": 95.0,
-        "verdict": "CRÍTICO",
-        "reason": "Typosquatting Agéntico: Sustitución de caracteres por dígitos en nombre de marca (Leetspeak)."
+    if (clean.isEmpty) {
+      return <String, dynamic>{
+        'score': 95.0,
+        'verdict': 'CRÍTICO',
+        'reason': 'Entrada vacía: no se recibió una URL o dominio válido.',
       };
     }
 
-    bool badProtocol = false;
+    final bool isNumeric = _numericPattern.hasMatch(clean);
 
-    if (clean.startsWith("hht") || clean.startsWith("htps") || clean.startsWith("http//")) {
-      badProtocol = true;
+    if (isNumeric) {
+      final String digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
+
+      if (_repeatedDigitPattern.hasMatch(digitsOnly)) {
+        return <String, dynamic>{
+          'score': 90.0,
+          'verdict': 'CRÍTICO',
+          'reason':
+              'Anomalía Estructural: Patrón numérico sintético con dígitos repetidos (Spoofing).',
+        };
+      }
+
+      if (digitsOnly.length < 7 || digitsOnly.length > 15) {
+        return <String, dynamic>{
+          'score': 75.0,
+          'verdict': 'SOSPECHOSO',
+          'reason':
+              'Longitud Anómala: Numeración fuera de estándar telefónico (${digitsOnly.length} dígitos).',
+        };
+      }
     }
 
-    String url = clean;
-
-    if (!url.contains("://")) {
-      url = "https://$url";
+    if (_leetspeakPattern.hasMatch(clean)) {
+      return <String, dynamic>{
+        'score': 95.0,
+        'verdict': 'CRÍTICO',
+        'reason':
+            'Typosquatting Agéntico: Sustitución de caracteres por dígitos en nombre de marca (Leetspeak).',
+      };
     }
 
-    Uri uri;
+    final bool badProtocol = clean.startsWith('hht') ||
+        clean.startsWith('htps') ||
+        clean.startsWith('http//');
+
+    String normalizedUrl = clean;
+
+    if (!normalizedUrl.contains('://')) {
+      normalizedUrl = 'https://$normalizedUrl';
+    }
+
+    final Uri uri;
 
     try {
-      uri = Uri.parse(url);
+      uri = Uri.parse(normalizedUrl);
     } catch (_) {
-      return {
-        "score": 95.0,
-        "verdict": "CRÍTICO",
-        "reason": "Estructura Malformada: URL o dominio sintácticamente inválido."
+      return <String, dynamic>{
+        'score': 95.0,
+        'verdict': 'CRÍTICO',
+        'reason':
+            'Estructura Malformada: URL o dominio sintácticamente inválido.',
       };
     }
 
-    String host = uri.host;
+    String host = uri.host.toLowerCase().trim();
 
-    if (host.contains(":")) {
-      host = host.split(":").first;
+    if (host.isEmpty) {
+      return <String, dynamic>{
+        'score': 95.0,
+        'verdict': 'CRÍTICO',
+        'reason': 'Estructura Malformada: no se pudo identificar el dominio.',
+      };
     }
 
-    // ------------------------------------------------------------------------------------------------
-    // REGLA 2: DOMINIOS Y TLDs SOSPECHOSOS O DE SEGUNDO NIVEL ALTERADOS (Ej. Bancolombia.comi.co)
-    // ------------------------------------------------------------------------------------------------
-    if (RegExp(r'\.comi\.co|\.com\.[a-z]{2}\.[a-z]{2}$|\.com\.[a-z]{2}$').hasMatch(host) &&
+    if (_suspiciousTldPattern.hasMatch(host) &&
         !officialWhitelist.contains(host)) {
-      return {
-        "score": 88.0,
-        "verdict": "CRÍTICO",
-        "reason": "Dominio Sospechoso: TLD no estándar o extensión bancaria alterada."
+      return <String, dynamic>{
+        'score': 88.0,
+        'verdict': 'CRÍTICO',
+        'reason':
+            'Dominio Sospechoso: TLD no estándar o extensión bancaria alterada.',
       };
     }
 
-    if (officialWhitelist.contains(host) || host.endsWith(".gov.co")) {
-      return {
-        "score": badProtocol ? 35.0 : 2.0,
-        "verdict": badProtocol ? "SOSPECHOSO" : "SEGURO",
-        "reason": badProtocol ? "Dominio oficial con protocolo alterado." : "Dominio oficial verificado."
+    if (officialWhitelist.contains(host) || host.endsWith('.gov.co')) {
+      return <String, dynamic>{
+        'score': badProtocol ? 35.0 : 2.0,
+        'verdict': badProtocol ? 'SOSPECHOSO' : 'SEGURO',
+        'reason': badProtocol
+            ? 'Dominio oficial con protocolo alterado.'
+            : 'Dominio oficial verificado.',
       };
     }
 
-    const brands = [
-      "google",
-      "facebook",
-      "bancolombia",
-      "nequi",
-      "davivienda",
-      "daviplata",
-      "lulobank",
-      "login",
-      "seguro",
-      "verificacion",
-      "soporte"
-    ];
+    for (final String brand in _brandKeywords) {
+      final bool containsBrand = host.contains(brand);
+      final bool isOfficialBrandDomain =
+          host == '$brand.com' ||
+          host == '$brand.co' ||
+          host.endsWith('.$brand.com') ||
+          host.endsWith('.$brand.co');
 
-    for (final brand in brands) {
-      if (host.contains(brand) && !host.endsWith("$brand.com") && !host.endsWith("$brand.co")) {
-        return {
-          "score": 97.0,
-          "verdict": "CRÍTICO",
-          "reason": "Suplantación de Marca Identificada: Intento de Phishing imitando a $brand."
+      if (containsBrand && !isOfficialBrandDomain) {
+        return <String, dynamic>{
+          'score': 97.0,
+          'verdict': 'CRÍTICO',
+          'reason':
+              'Suplantación de Marca Identificada: Intento de Phishing imitando a $brand.',
         };
       }
     }
 
-    final current = host.split(".").first;
+    final List<String> hostParts = host.split('.');
+    final String current = hostParts.first;
 
-    for (final official in officialWhitelist) {
-      final base = official.split(".").first;
+    for (final String official in officialWhitelist) {
+      final String base = official.split('.').first;
 
-      if (current.length >= 4 && levenshtein(current, base) <= 2 && current != base) {
-        return {
-          "score": 98.0,
-          "verdict": "CRÍTICO",
-          "reason": "Typosquatting Detectado: Coincidencia de distancia reducida con marca legítima ($base)."
+      if (current.length >= 4 &&
+          current != base &&
+          levenshtein(current, base) <= 2) {
+        return <String, dynamic>{
+          'score': 98.0,
+          'verdict': 'CRÍTICO',
+          'reason':
+              'Typosquatting Detectado: Coincidencia de distancia reducida con marca legítima ($base).',
         };
       }
     }
 
-    if (host.contains("@")) {
-      return {
-        "score": 90.0,
-        "verdict": "CRÍTICO",
-        "reason": "Inyección Maliciosa: Uso de carácter '@' para deconstrucción de dominio."
+    if (normalizedUrl.contains('@')) {
+      return <String, dynamic>{
+        'score': 90.0,
+        'verdict': 'CRÍTICO',
+        'reason':
+            "Inyección Maliciosa: Uso de carácter '@' para deconstrucción de dominio.",
       };
     }
 
-    if (host.split("-").length > 4) {
-      return {
-        "score": 80.0,
-        "verdict": "CRÍTICO",
-        "reason": "Ofuscación de Dominio: Subdominios con múltiples guiones de enmascaramiento."
+    if (hostParts.any((String part) => part.split('-').length > 4)) {
+      return <String, dynamic>{
+        'score': 80.0,
+        'verdict': 'CRÍTICO',
+        'reason':
+            'Ofuscación de Dominio: Segmento con múltiples guiones de enmascaramiento.',
       };
     }
 
     if (badProtocol) {
-      return {
-        "score": 75.0,
-        "verdict": "SOSPECHOSO",
-        "reason": "Protocolo Inseguro o Alterado en la conexión."
+      return <String, dynamic>{
+        'score': 75.0,
+        'verdict': 'SOSPECHOSO',
+        'reason': 'Protocolo Inseguro o Alterado en la conexión.',
       };
     }
 
-    return {
-      "score": 45.0,
-      "verdict": "SOSPECHOSO",
-      "reason": "Dominio no verificado en la lista blanca de reputación local."
+    return <String, dynamic>{
+      'score': 45.0,
+      'verdict': 'SOSPECHOSO',
+      'reason':
+          'Dominio no verificado en la lista blanca de reputación local.',
     };
   }
 }
