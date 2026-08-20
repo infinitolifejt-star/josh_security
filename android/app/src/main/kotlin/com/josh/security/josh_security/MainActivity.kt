@@ -27,6 +27,9 @@ class MainActivity : FlutterActivity() {
         private const val KEY_PENDING_LIST =
             "pending_apks_json"
 
+        private const val REQUEST_PHONE_PERMISSIONS =
+            4100
+
         private const val REQUEST_CALL_LOG =
             4101
     }
@@ -38,9 +41,7 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(
         savedInstanceState: Bundle?
     ) {
-        super.onCreate(
-            savedInstanceState
-        )
+        super.onCreate(savedInstanceState)
 
         requestRequiredPhonePermissions()
     }
@@ -48,10 +49,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(
         flutterEngine: FlutterEngine
     ) {
-
-        super.configureFlutterEngine(
-            flutterEngine
-        )
+        super.configureFlutterEngine(flutterEngine)
 
         // ==========================================================================================
         // APK CHANNEL
@@ -66,9 +64,7 @@ class MainActivity : FlutterActivity() {
         ApkInstallReceiver.methodChannel =
             apkChannel
 
-        apkChannel?.setMethodCallHandler {
-                call,
-                result ->
+        apkChannel?.setMethodCallHandler { call, result ->
 
             when (call.method) {
 
@@ -96,7 +92,6 @@ class MainActivity : FlutterActivity() {
                 }
 
                 else -> {
-
                     result.notImplemented()
                 }
             }
@@ -116,11 +111,13 @@ class MainActivity : FlutterActivity() {
             phoneChannel
         )
 
-        phoneChannel?.setMethodCallHandler {
-                call,
-                result ->
+        phoneChannel?.setMethodCallHandler { call, result ->
 
             when (call.method) {
+
+                // ----------------------------------------------------------------------------------
+                // LLAMADA PENDIENTE
+                // ----------------------------------------------------------------------------------
 
                 "getPendingCall" -> {
 
@@ -145,6 +142,10 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                // ----------------------------------------------------------------------------------
+                // LIMPIAR LLAMADA PENDIENTE
+                // ----------------------------------------------------------------------------------
+
                 "clearPendingCall" -> {
 
                     try {
@@ -153,9 +154,7 @@ class MainActivity : FlutterActivity() {
                             applicationContext
                         )
 
-                        result.success(
-                            true
-                        )
+                        result.success(true)
 
                     } catch (e: Exception) {
 
@@ -167,13 +166,15 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                // ----------------------------------------------------------------------------------
+                // PERMISO CALL LOG
+                // ----------------------------------------------------------------------------------
+
                 "requestCallLogPermission" -> {
 
                     requestCallLogPermission()
 
-                    result.success(
-                        true
-                    )
+                    result.success(true)
                 }
 
                 "isCallLogPermissionGranted" -> {
@@ -184,7 +185,6 @@ class MainActivity : FlutterActivity() {
                 }
 
                 else -> {
-
                     result.notImplemented()
                 }
             }
@@ -192,7 +192,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ==============================================================================================
-    // PERMISOS
+    // PERMISOS TELEFÓNICOS
     // ==============================================================================================
 
     private fun requestRequiredPhonePermissions() {
@@ -206,7 +206,6 @@ class MainActivity : FlutterActivity() {
                 Manifest.permission.READ_PHONE_STATE
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-
             permissions.add(
                 Manifest.permission.READ_PHONE_STATE
             )
@@ -219,7 +218,6 @@ class MainActivity : FlutterActivity() {
                 Manifest.permission.READ_PHONE_NUMBERS
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-
             permissions.add(
                 Manifest.permission.READ_PHONE_NUMBERS
             )
@@ -230,10 +228,14 @@ class MainActivity : FlutterActivity() {
             ActivityCompat.requestPermissions(
                 this,
                 permissions.toTypedArray(),
-                4100
+                REQUEST_PHONE_PERMISSIONS
             )
         }
     }
+
+    // ==============================================================================================
+    // READ CALL LOG
+    // ==============================================================================================
 
     private fun requestCallLogPermission() {
 
@@ -289,18 +291,15 @@ class MainActivity : FlutterActivity() {
         try {
 
             val jsonArray =
-                JSONArray(
-                    jsonString
-                )
+                JSONArray(jsonString)
 
             for (
                 i in 0 until jsonArray.length()
             ) {
 
                 val obj =
-                    jsonArray.optJSONObject(
-                        i
-                    ) ?: continue
+                    jsonArray.optJSONObject(i)
+                        ?: continue
 
                 val packageName =
                     obj.optString(
@@ -330,9 +329,7 @@ class MainActivity : FlutterActivity() {
             }
 
             prefs.edit()
-                .remove(
-                    KEY_PENDING_LIST
-                )
+                .remove(KEY_PENDING_LIST)
                 .apply()
 
         } catch (e: Exception) {
@@ -355,20 +352,14 @@ class MainActivity : FlutterActivity() {
             ApkInstallReceiver.methodChannel ===
             apkChannel
         ) {
-
-            ApkInstallReceiver.methodChannel =
-                null
+            ApkInstallReceiver.methodChannel = null
         }
 
-        PhoneCallReceiver.setMethodChannel(
-            null
-        )
+        PhoneCallReceiver.setMethodChannel(null)
 
-        apkChannel =
-            null
+        apkChannel = null
 
-        phoneChannel =
-            null
+        phoneChannel = null
 
         super.cleanUpFlutterEngine(
             flutterEngine

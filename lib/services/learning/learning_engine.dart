@@ -11,14 +11,14 @@ class HeuristicEvent {
   final String riskLevel;
   final String identifier;
 
-  HeuristicEvent({
+  const HeuristicEvent({
     required this.timestamp,
     required this.riskLevel,
     required this.identifier,
   });
 }
 
-/// Cerebro heurístico local de Centinela para detectar patrones de ataque dirigidos
+/// Cerebro heurístico local de JOSH Security para detectar patrones de ataque dirigidos
 class LearningEngine {
   // Patrón Singleton para acceso global único y seguro
   static final LearningEngine _instance = LearningEngine._internal();
@@ -26,25 +26,29 @@ class LearningEngine {
   LearningEngine._internal();
 
   // Historial en memoria volátil de eventos recientes de seguridad (Ventana Móvil)
-  final List<HeuristicEvent> _recentEvents = [];
+  final List<HeuristicEvent> _recentEvents = <HeuristicEvent>[];
 
   // Configuración de la heurística local
   static const int _timeWindowMinutes = 5;
   static const int _stressThresholdEvents = 3;
 
   // Biases del motor de aprendizaje optimizados con inmutabilidad
-  final Map<String, double> _biases = const {
-    "global": 0.0,
+  final Map<String, double> _biases = const <String, double>{
+    'global': 0.0,
   };
 
   /// Ajusta el Score final calculando las desviaciones globales aprendidas (Escala 0.0 - 100.0)
   double adjustScore(double score) {
-    final double adjusted = score + (_biases["global"] ?? 0.0);
+    final double adjusted = score + (_biases['global'] ?? 0.0);
     return adjusted.clamp(0.0, 100.0);
   }
 
   /// Actualiza dinámicamente la matriz de reputación comunitaria local según confirmación de fraude
-  void updateCommunityScore(Map<String, double> matrix, String identifier, bool isFraud) {
+  void updateCommunityScore(
+    Map<String, double> matrix,
+    String identifier,
+    bool isFraud,
+  ) {
     final String cleanKey = identifier.trim();
     if (cleanKey.isEmpty) return;
 
@@ -57,8 +61,9 @@ class LearningEngine {
     final DateTime now = DateTime.now();
 
     // 1. Limpiar primero eventos viejos fuera de la ventana táctica de 5 minutos
-    _recentEvents.removeWhere((event) =>
-      now.difference(event.timestamp).inMinutes >= _timeWindowMinutes
+    _recentEvents.removeWhere(
+      (HeuristicEvent event) =>
+          now.difference(event.timestamp).inMinutes >= _timeWindowMinutes,
     );
 
     // 2. Registrar el evento actual únicamente si representa sospecha o riesgo real
@@ -90,7 +95,7 @@ class LearningEngine {
     }
 
     // 5. Aplicar multiplicador y acotar estrictamente a límites de interfaz (0 - 100)
-    final double finalScore = (baseScore * anomalyMultiplier);
+    final double finalScore = baseScore * anomalyMultiplier;
     return adjustScore(finalScore);
   }
 

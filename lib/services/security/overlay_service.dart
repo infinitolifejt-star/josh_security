@@ -32,7 +32,8 @@ class OverlayService {
   static Future<T> _serialized<T>(
     Future<T> Function() action,
   ) async {
-    final Future<void> previous = _operationLock;
+    final Future<void> previous =
+        _operationLock;
 
     final Completer<void> current =
         Completer<void>();
@@ -52,25 +53,27 @@ class OverlayService {
   static Future<bool> requestPermission() async {
     try {
       final bool granted =
-          await FlutterOverlayWindow.isPermissionGranted();
+          await FlutterOverlayWindow
+              .isPermissionGranted();
 
       if (granted) {
         return true;
       }
 
       final bool? result =
-          await FlutterOverlayWindow.requestPermission();
+          await FlutterOverlayWindow
+              .requestPermission();
 
       return result ?? false;
-    } catch (e, stackTrace) {
+    } catch (error, stackTrace) {
       _trace(
-        'Error solicitando permiso overlay: $e',
+        'Error solicitando permiso overlay: $error',
       );
 
       developer.log(
         'Error solicitando permiso overlay.',
         name: 'josh.security.overlay',
-        error: e,
+        error: error,
         stackTrace: stackTrace,
       );
 
@@ -80,10 +83,11 @@ class OverlayService {
 
   static Future<bool> isPermissionGranted() async {
     try {
-      return await FlutterOverlayWindow.isPermissionGranted();
-    } catch (e) {
+      return await FlutterOverlayWindow
+          .isPermissionGranted();
+    } catch (error) {
       _trace(
-        'Error comprobando permiso overlay: $e',
+        'Error comprobando permiso overlay: $error',
       );
 
       return false;
@@ -92,10 +96,11 @@ class OverlayService {
 
   static Future<bool> isActive() async {
     try {
-      return await FlutterOverlayWindow.isActive();
-    } catch (e) {
+      return await FlutterOverlayWindow
+          .isActive();
+    } catch (error) {
       _trace(
-        'Error comprobando estado overlay: $e',
+        'Error comprobando estado overlay: $error',
       );
 
       return false;
@@ -108,14 +113,14 @@ class OverlayService {
     required String message,
     String? agentReasoning,
   }) async {
-    await _serialized<void>(() async {
-      await _showInternal(
+    await _serialized<void>(
+      () => _showInternal(
         phoneNumber: phoneNumber,
         riskLevel: riskLevel,
         message: message,
         agentReasoning: agentReasoning,
-      );
-    });
+      ),
+    );
   }
 
   static Future<void> _showInternal({
@@ -131,12 +136,14 @@ class OverlayService {
 
     try {
       final bool permissionGranted =
-          await FlutterOverlayWindow.isPermissionGranted();
+          await FlutterOverlayWindow
+              .isPermissionGranted();
 
       if (!permissionGranted) {
         _trace(
           'Permiso de overlay no concedido.',
         );
+
         return;
       }
 
@@ -148,11 +155,13 @@ class OverlayService {
         'agent_reasoning':
             agentReasoning ?? '',
         'timestamp':
-            DateTime.now().millisecondsSinceEpoch,
+            DateTime.now()
+                .millisecondsSinceEpoch,
       };
 
       bool active =
-          await FlutterOverlayWindow.isActive();
+          await FlutterOverlayWindow
+              .isActive();
 
       if (!active) {
         await FlutterOverlayWindow.showOverlay(
@@ -162,8 +171,10 @@ class OverlayService {
               '$riskLevel: $phoneNumber',
           flag: OverlayFlag.defaultFlag,
           visibility:
-              NotificationVisibility.visibilitySecret,
-          positionGravity: PositionGravity.auto,
+              NotificationVisibility
+                  .visibilitySecret,
+          positionGravity:
+              PositionGravity.auto,
           height: 450,
           width: WindowSize.matchParent,
         );
@@ -173,13 +184,15 @@ class OverlayService {
         );
 
         active =
-            await FlutterOverlayWindow.isActive();
+            await FlutterOverlayWindow
+                .isActive();
       }
 
       if (!active) {
         _trace(
           'Android no confirmó overlay activo.',
         );
+
         return;
       }
 
@@ -190,21 +203,22 @@ class OverlayService {
         _trace(
           'No fue posible enviar el payload al overlay.',
         );
+
         return;
       }
 
       _trace(
         'Overlay sincronizado correctamente.',
       );
-    } catch (e, stackTrace) {
+    } catch (error, stackTrace) {
       _trace(
-        'Error mostrando overlay: $e',
+        'Error mostrando overlay: $error',
       );
 
       developer.log(
         'Error mostrando overlay.',
         name: 'josh.security.overlay',
-        error: e,
+        error: error,
         stackTrace: stackTrace,
       );
     }
@@ -213,16 +227,17 @@ class OverlayService {
   static Future<bool> _sendPayload(
     Map<String, dynamic> payload,
   ) async {
-    for (int attempt = 1; attempt <= 3; attempt++) {
+    for (int attempt = 1;
+        attempt <= 3;
+        attempt++) {
       try {
-        await FlutterOverlayWindow.shareData(
-          payload,
-        );
+        await FlutterOverlayWindow
+            .shareData(payload);
 
         return true;
-      } catch (e) {
+      } catch (error) {
         _trace(
-          'Payload intento $attempt falló: $e',
+          'Payload intento $attempt falló: $error',
         );
 
         if (attempt < 3) {
@@ -237,32 +252,36 @@ class OverlayService {
   }
 
   static Future<void> closeOverlay() async {
-    await _serialized<void>(() async {
-      try {
-        final bool active =
-            await FlutterOverlayWindow.isActive();
+    await _serialized<void>(
+      () async {
+        try {
+          final bool active =
+              await FlutterOverlayWindow
+                  .isActive();
 
-        if (!active) {
-          return;
+          if (!active) {
+            return;
+          }
+
+          await FlutterOverlayWindow
+              .closeOverlay();
+
+          _trace(
+            'Overlay cerrado correctamente.',
+          );
+        } catch (error, stackTrace) {
+          _trace(
+            'Error cerrando overlay: $error',
+          );
+
+          developer.log(
+            'Error cerrando overlay.',
+            name: 'josh.security.overlay',
+            error: error,
+            stackTrace: stackTrace,
+          );
         }
-
-        await FlutterOverlayWindow.closeOverlay();
-
-        _trace(
-          'Overlay cerrado correctamente.',
-        );
-      } catch (e, stackTrace) {
-        _trace(
-          'Error cerrando overlay: $e',
-        );
-
-        developer.log(
-          'Error cerrando overlay.',
-          name: 'josh.security.overlay',
-          error: e,
-          stackTrace: stackTrace,
-        );
-      }
-    });
+      },
+    );
   }
 }

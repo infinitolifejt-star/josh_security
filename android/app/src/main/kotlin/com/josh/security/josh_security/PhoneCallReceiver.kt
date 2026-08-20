@@ -6,9 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
-import android.provider.CallLog
 import android.os.Handler
 import android.os.Looper
+import android.provider.CallLog
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -18,7 +18,8 @@ class PhoneCallReceiver : BroadcastReceiver() {
 
     companion object {
 
-        private const val TAG = "PhoneCallReceiver"
+        private const val TAG =
+            "PhoneCallReceiver"
 
         private const val PREFS_NAME =
             "josh_security_phone_calls"
@@ -33,24 +34,35 @@ class PhoneCallReceiver : BroadcastReceiver() {
             "pending_active"
 
         @Volatile
-        private var flutterMethodChannel: MethodChannel? = null
+        private var flutterMethodChannel: MethodChannel? =
+            null
 
-        private var isIncoming = false
+        @Volatile
+        private var isIncoming =
+            false
 
-        private var activeNumber: String? = null
+        @Volatile
+        private var activeNumber: String? =
+            null
 
-        private var ringingStartedAt = 0L
+        @Volatile
+        private var ringingStartedAt =
+            0L
 
-        private var callGeneration = 0L
+        @Volatile
+        private var callGeneration =
+            0L
 
         // ==========================================================================================
-        // PUBLICACIÓN DEL CANAL
+        // METHOD CHANNEL
         // ==========================================================================================
 
         fun setMethodChannel(
             channel: MethodChannel?
         ) {
-            flutterMethodChannel = channel
+
+            flutterMethodChannel =
+                channel
 
             Log.d(
                 TAG,
@@ -59,7 +71,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
         }
 
         // ==========================================================================================
-        // EVENTO PENDIENTE
+        // PENDING CALL
         // ==========================================================================================
 
         fun getPendingCall(
@@ -103,7 +115,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
         }
 
         // ==========================================================================================
-        // LIMPIAR EVENTO PENDIENTE
+        // CLEAR PENDING CALL
         // ==========================================================================================
 
         fun clearPendingCall(
@@ -142,22 +154,22 @@ class PhoneCallReceiver : BroadcastReceiver() {
             return
         }
 
-        Log.e(
+        Log.d(
             TAG,
             "=================================================="
         )
 
-        Log.e(
+        Log.d(
             TAG,
             "PHONE STATE BROADCAST RECIBIDO"
         )
 
-        Log.e(
+        Log.d(
             TAG,
             "ACTION = ${intent.action}"
         )
 
-        Log.e(
+        Log.d(
             TAG,
             "=================================================="
         )
@@ -171,7 +183,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
 
             TelephonyManager.EXTRA_STATE_RINGING -> {
 
-                Log.e(
+                Log.d(
                     TAG,
                     "PHONE STATE = RINGING"
                 )
@@ -184,7 +196,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
 
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
 
-                Log.e(
+                Log.d(
                     TAG,
                     "PHONE STATE = OFFHOOK"
                 )
@@ -194,7 +206,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
 
             TelephonyManager.EXTRA_STATE_IDLE -> {
 
-                Log.e(
+                Log.d(
                     TAG,
                     "PHONE STATE = IDLE"
                 )
@@ -236,7 +248,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
                 TelephonyManager.EXTRA_INCOMING_NUMBER
             )
 
-        Log.e(
+        Log.d(
             TAG,
             "Número recibido directamente = $directNumber"
         )
@@ -247,9 +259,9 @@ class PhoneCallReceiver : BroadcastReceiver() {
             )
         ) {
 
-            Log.e(
+            Log.d(
                 TAG,
-                "Número válido recibido directamente: $directNumber"
+                "Número válido recibido directamente."
             )
 
             publishIncomingNumber(
@@ -260,7 +272,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
             return
         }
 
-        Log.e(
+        Log.d(
             TAG,
             "No llegó número directamente."
         )
@@ -270,7 +282,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
                 context
             )
 
-        Log.e(
+        Log.d(
             TAG,
             "Número obtenido de CallLog = $immediateNumber"
         )
@@ -305,11 +317,10 @@ class PhoneCallReceiver : BroadcastReceiver() {
             return
         }
 
-        Log.e(
+        Log.d(
             TAG,
-            "LLAMADA ENTRANTE EN CURSO: ${
-                activeNumber ?: "Número desconocido"
-            }"
+            "LLAMADA ENTRANTE EN CURSO: " +
+                "${activeNumber ?: "Número desconocido"}"
         )
     }
 
@@ -325,7 +336,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
             return
         }
 
-        Log.e(
+        Log.d(
             TAG,
             "LLAMADA FINALIZADA / IDLE"
         )
@@ -342,7 +353,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
     }
 
     // ==============================================================================================
-    // FALLBACK CALL LOG
+    // CALL LOG FALLBACK
     // ==============================================================================================
 
     private fun scheduleCallLogFallback(
@@ -394,9 +405,10 @@ class PhoneCallReceiver : BroadcastReceiver() {
                     )
                 ) {
 
-                    Log.e(
+                    Log.d(
                         TAG,
-                        "Número recuperado desde CallLog en $delay ms: $number"
+                        "Número recuperado desde CallLog " +
+                            "en $delay ms: $number"
                     )
 
                     publishIncomingNumber(
@@ -425,7 +437,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
                 return@postDelayed
             }
 
-            Log.e(
+            Log.d(
                 TAG,
                 "No fue posible obtener el número."
             )
@@ -453,7 +465,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
 
-            Log.e(
+            Log.d(
                 TAG,
                 "READ_CALL_LOG NO concedido."
             )
@@ -570,6 +582,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
             "null",
             "número oculto",
             "numero oculto" -> {
+
                 return false
             }
         }
@@ -615,30 +628,38 @@ class PhoneCallReceiver : BroadcastReceiver() {
         activeNumber =
             phoneNumber
 
-        Log.e(
+        Log.d(
             TAG,
             "=================================================="
         )
 
-        Log.e(
+        Log.d(
             TAG,
             "NÚMERO ENTRANTE DETECTADO"
         )
 
-        Log.e(
+        Log.d(
             TAG,
             "NÚMERO = $phoneNumber"
         )
 
-        Log.e(
+        Log.d(
             TAG,
             "=================================================="
         )
+
+        // ------------------------------------------------------------------------------------------
+        // SIEMPRE GUARDAMOS PRIMERO.
+        // ------------------------------------------------------------------------------------------
 
         savePendingCall(
             context,
             phoneNumber
         )
+
+        // ------------------------------------------------------------------------------------------
+        // DESPUÉS INTENTAMOS NOTIFICAR A FLUTTER.
+        // ------------------------------------------------------------------------------------------
 
         notifyFlutterCallIntercepted(
             phoneNumber
@@ -646,7 +667,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
     }
 
     // ==============================================================================================
-    // GUARDAR LLAMADA PENDIENTE
+    // GUARDAR PENDING
     // ==============================================================================================
 
     private fun savePendingCall(
@@ -677,14 +698,14 @@ class PhoneCallReceiver : BroadcastReceiver() {
             )
             .apply()
 
-        Log.e(
+        Log.d(
             TAG,
             "Llamada guardada como evento pendiente."
         )
     }
 
     // ==============================================================================================
-    // FLUTTER
+    // FLUTTER - LLAMADA ENTRANTE
     // ==============================================================================================
 
     private fun notifyFlutterCallIntercepted(
@@ -696,25 +717,14 @@ class PhoneCallReceiver : BroadcastReceiver() {
 
         if (channel == null) {
 
-            Log.e(
-                TAG,
-                "=================================================="
-            )
-
-            Log.e(
+            Log.d(
                 TAG,
                 "MethodChannel NO DISPONIBLE."
             )
 
-            Log.e(
+            Log.d(
                 TAG,
                 "La llamada quedó guardada para Flutter."
-            )
-
-            Log.e(
-                TAG,
-                "=================================================="
-
             )
 
             return
@@ -737,7 +747,7 @@ class PhoneCallReceiver : BroadcastReceiver() {
                     payload
                 )
 
-                Log.e(
+                Log.d(
                     TAG,
                     "Evento enviado correctamente a Flutter."
                 )
@@ -749,6 +759,9 @@ class PhoneCallReceiver : BroadcastReceiver() {
                     "Error enviando evento a Flutter: ${e.message}",
                     e
                 )
+
+                // El pending YA fue guardado antes.
+                // No necesitamos volver a escribirlo aquí.
             }
         }
     }

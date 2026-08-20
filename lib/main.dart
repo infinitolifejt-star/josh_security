@@ -72,7 +72,6 @@ Future<void> main() async {
     debugPrint(
       '⚠️ [JOSH SHIELD] Error inicializando servicio: $e',
     );
-
     debugPrint(stackTrace.toString());
   }
 
@@ -93,7 +92,6 @@ Future<void> main() async {
     debugPrint(
       '⚠️ [JOSH OVERLAY] Error solicitando permiso: $e',
     );
-
     debugPrint(stackTrace.toString());
   }
 
@@ -116,7 +114,6 @@ Future<void> main() async {
     debugPrint(
       '⚠️ [JOSH ENGINE] Error inicializando SecurityProvider: $e',
     );
-
     debugPrint(stackTrace.toString());
   }
 
@@ -134,7 +131,6 @@ Future<void> main() async {
     debugPrint(
       '⚠️ [JOSH MAIN] Error leyendo onboarding: $e',
     );
-
     debugPrint(stackTrace.toString());
   }
 
@@ -208,6 +204,13 @@ Future<void> _requestRuntimePermissions() async {
           '📞 [JOSH PERMISSIONS] Solicitud de READ_CALL_LOG enviada.',
         );
       }
+    } on PlatformException catch (e, stackTrace) {
+      debugPrint(
+        '⚠️ [JOSH PERMISSIONS] Error Android CALL LOG: '
+        '${e.code} - ${e.message}',
+      );
+
+      debugPrint(stackTrace.toString());
     } catch (e, stackTrace) {
       debugPrint(
         '⚠️ [JOSH PERMISSIONS] Error solicitando CALL LOG: $e',
@@ -262,6 +265,12 @@ class JoshSecurityApp extends StatefulWidget {
 // ====================================================================================================
 
 class _JoshSecurityAppState extends State<JoshSecurityApp> {
+  // ================================================================================================
+  // CONTROL DE DUPLICADOS
+  // ================================================================================================
+
+  final Set<String> _callsBeingProcessed = <String>{};
+
   // ================================================================================================
   // INIT
   // ================================================================================================
@@ -331,32 +340,48 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
   Future<void> _handleIncomingCallEvent(
     MethodCall call,
   ) async {
-    if (call.arguments is! Map) {
+    final dynamic arguments = call.arguments;
+
+    if (arguments is! Map) {
       debugPrint(
         '⚠️ [JOSH PHONE] onCallIntercepted sin argumentos válidos.',
       );
       return;
     }
 
-    final Map<dynamic, dynamic> data =
-        call.arguments as Map<dynamic, dynamic>;
-
     final String phoneNumber =
-        data['phoneNumber']?.toString().trim() ??
-            '';
-
-    final String normalizedNumber =
-        phoneNumber.isEmpty
-            ? 'Número Oculto'
-            : phoneNumber;
+        _extractPhoneNumber(arguments);
 
     debugPrint(
-      '📞 [JOSH PHONE] Número entrante: $normalizedNumber',
+      '📞 [JOSH PHONE] Número entrante: $phoneNumber',
     );
 
-    await _processIncomingCall(
-      normalizedNumber,
-    );
+    final bool processed =
+        await _processIncomingCall(phoneNumber);
+
+    // ----------------------------------------------------------------------------------------------
+    // IMPORTANTE:
+    // Si el evento fue procesado correctamente, eliminamos el respaldo pendiente.
+    // Así evitamos reprocesar la misma llamada al abrir/reanudar la aplicación.
+    // ----------------------------------------------------------------------------------------------
+
+    if (processed) {
+      try {
+        await _phoneChannel.invokeMethod(
+          'clearPendingCall',
+        );
+
+        debugPrint(
+          '📞 [JOSH PHONE] Pending call limpiado después del procesamiento.',
+        );
+      } catch (e, stackTrace) {
+        debugPrint(
+          '⚠️ [JOSH PHONE] No fue posible limpiar pending call: $e',
+        );
+
+        debugPrint(stackTrace.toString());
+      }
+    }
   }
 
   // ================================================================================================
@@ -385,30 +410,41 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
       }
 
       final String phoneNumber =
-          result['phoneNumber']?.toString().trim() ??
-              '';
-
-      final String normalizedNumber =
-          phoneNumber.isEmpty
-              ? 'Número Oculto'
-              : phoneNumber;
+          _extractPhoneNumber(result);
 
       debugPrint(
         '📞 [JOSH PHONE] Llamada pendiente recuperada: '
-        '$normalizedNumber',
+        '$phoneNumber',
       );
 
-      await _processIncomingCall(
-        normalizedNumber,
-      );
+      final bool processed =
+          await _processIncomingCall(phoneNumber);
 
-      await _phoneChannel.invokeMethod(
-        'clearPendingCall',
-      );
+      // --------------------------------------------------------------------------------------------
+      // SOLO SE LIMPIA SI EL PROCESAMIENTO TERMINÓ CORRECTAMENTE
+      // --------------------------------------------------------------------------------------------
 
+      if (processed) {
+        await _phoneChannel.invokeMethod(
+          'clearPendingCall',
+        );
+
+        debugPrint(
+          '📞 [JOSH PHONE] Llamada pendiente limpiada.',
+        );
+      } else {
+        debugPrint(
+          '⚠️ [JOSH PHONE] Llamada pendiente conservada '
+          'porque el procesamiento no terminó correctamente.',
+        );
+      }
+    } on PlatformException catch (e, stackTrace) {
       debugPrint(
-        '📞 [JOSH PHONE] Llamada pendiente limpiada.',
+        '⚠️ [JOSH PHONE] Error Android recuperando llamada pendiente: '
+        '${e.code} - ${e.message}',
       );
+
+      debugPrint(stackTrace.toString());
     } catch (e, stackTrace) {
       debugPrint(
         '⚠️ [JOSH PHONE] Error recuperando llamada pendiente: $e',
@@ -422,40 +458,55 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
   // PROCESAR LLAMADA
   // ================================================================================================
 
-  Future<void> _processIncomingCall(
+  Future<bool> _processIncomingCall(
     String phoneNumber,
   ) async {
+    final String normalizedNumber =
+        _normalizePhoneNumber(phoneNumber);
+
     debugPrint(
-      '🛡️ [JOSH PHONE] Procesando llamada: $phoneNumber',
+      '🛡️ [JOSH PHONE] Procesando llamada: $normalizedNumber',
     );
 
-    if (phoneNumber.trim().isEmpty) {
+    if (normalizedNumber.isEmpty) {
       debugPrint(
         '⚠️ [JOSH PHONE] Número vacío. No se procesa.',
       );
-      return;
+      return false;
     }
 
     // ----------------------------------------------------------------------------------------------
-    // IMPORTANTE:
-    // El overlay puede funcionar aunque la pantalla Flutter no esté visible.
-    // Sin embargo, para ejecutar el análisis mediante SecurityProvider
-    // necesitamos que el árbol Provider siga disponible.
+    // EVITAR DUPLICADOS
     // ----------------------------------------------------------------------------------------------
 
-    if (!mounted) {
+    if (_callsBeingProcessed.contains(normalizedNumber)) {
       debugPrint(
-        '⚠️ [JOSH PHONE] Activity Flutter no está montada.',
+        'ℹ️ [JOSH PHONE] Llamada ya está siendo procesada. '
+        'Evento duplicado ignorado: $normalizedNumber',
       );
 
-      await _showFallbackOverlay(
-        phoneNumber,
-      );
-
-      return;
+      return true;
     }
+
+    _callsBeingProcessed.add(normalizedNumber);
 
     try {
+      // --------------------------------------------------------------------------------------------
+      // SI FLUTTER NO ESTÁ MONTADO
+      // --------------------------------------------------------------------------------------------
+
+      if (!mounted) {
+        debugPrint(
+          '⚠️ [JOSH PHONE] Activity Flutter no está montada.',
+        );
+
+        await _showFallbackOverlay(
+          normalizedNumber,
+        );
+
+        return false;
+      }
+
       // --------------------------------------------------------------------------------------------
       // SECURITY PROVIDER
       // --------------------------------------------------------------------------------------------
@@ -475,22 +526,42 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
       );
 
       await provider.executeAuditoria(
-        phoneNumber,
+        normalizedNumber,
         0,
       );
+
+      if (!mounted) {
+        debugPrint(
+          '⚠️ [JOSH PHONE] Widget desmontado después del análisis.',
+        );
+
+        await _showFallbackOverlay(
+          normalizedNumber,
+        );
+
+        return false;
+      }
 
       // --------------------------------------------------------------------------------------------
       // RESULTADO
       // --------------------------------------------------------------------------------------------
 
       final double riskScore =
-          provider.vulnerabilityScore;
+          _safeRiskScore(
+        provider.vulnerabilityScore,
+      );
 
       final String verdict =
-          provider.verdictText;
+          _safeText(
+        provider.verdictText,
+        fallback: 'LLAMADA ANALIZADA',
+      );
 
       final String reasoning =
-          provider.agentReasoningText;
+          _safeText(
+        provider.agentReasoningText,
+        fallback: 'Sin razonamiento adicional disponible.',
+      );
 
       debugPrint(
         '🧠 [JOSH PHONE] Riesgo: '
@@ -514,7 +585,7 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
       );
 
       await OverlayService.showWarningOverlay(
-        phoneNumber: phoneNumber,
+        phoneNumber: normalizedNumber,
         riskLevel: verdict,
         message: _buildOverlayMessage(
           riskScore,
@@ -526,6 +597,8 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
       debugPrint(
         '🪟 [JOSH OVERLAY] Solicitud de overlay completada.',
       );
+
+      return true;
     } catch (e, stackTrace) {
       debugPrint(
         '❌ [JOSH PHONE] Error procesando llamada: $e',
@@ -534,8 +607,12 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
       debugPrint(stackTrace.toString());
 
       await _showFallbackOverlay(
-        phoneNumber,
+        normalizedNumber,
       );
+
+      return false;
+    } finally {
+      _callsBeingProcessed.remove(normalizedNumber);
     }
   }
 
@@ -554,7 +631,8 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
       await OverlayService.showWarningOverlay(
         phoneNumber: phoneNumber,
         riskLevel: 'LLAMADA ENTRANTE',
-        message: 'Llamada recibida. Centinela activo.',
+        message:
+            'Llamada recibida. Centinela activo.',
         agentReasoning:
             'No fue posible completar el análisis automático.',
       );
@@ -569,6 +647,99 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
 
       debugPrint(stackTrace.toString());
     }
+  }
+
+  // ================================================================================================
+  // EXTRACCIÓN SEGURA DEL NÚMERO
+  // ================================================================================================
+
+  String _extractPhoneNumber(
+    Map<dynamic, dynamic> data,
+  ) {
+    final dynamic raw =
+        data['phoneNumber'] ??
+        data['phone_number'] ??
+        data['number'] ??
+        data['phone'];
+
+    if (raw == null) {
+      return 'Número Oculto';
+    }
+
+    final String value =
+        raw.toString().trim();
+
+    return value.isEmpty
+        ? 'Número Oculto'
+        : value;
+  }
+
+  // ================================================================================================
+  // NORMALIZACIÓN
+  // ================================================================================================
+
+  String _normalizePhoneNumber(
+    String value,
+  ) {
+    final String normalized =
+        value.trim();
+
+    if (normalized.isEmpty) {
+      return 'Número Oculto';
+    }
+
+    return normalized;
+  }
+
+  // ================================================================================================
+  // SCORE SEGURO
+  // ================================================================================================
+
+  double _safeRiskScore(
+    dynamic value,
+  ) {
+    if (value is num) {
+      final double score =
+          value.toDouble();
+
+      if (!score.isFinite) {
+        return 0.0;
+      }
+
+      return score.clamp(0.0, 100.0);
+    }
+
+    if (value is String) {
+      final double? parsed =
+          double.tryParse(value);
+
+      if (parsed != null &&
+          parsed.isFinite) {
+        return parsed.clamp(0.0, 100.0);
+      }
+    }
+
+    return 0.0;
+  }
+
+  // ================================================================================================
+  // TEXTO SEGURO
+  // ================================================================================================
+
+  String _safeText(
+    dynamic value, {
+    required String fallback,
+  }) {
+    if (value == null) {
+      return fallback;
+    }
+
+    final String text =
+        value.toString().trim();
+
+    return text.isEmpty
+        ? fallback
+        : text;
   }
 
   // ================================================================================================
@@ -620,7 +791,10 @@ class _JoshSecurityAppState extends State<JoshSecurityApp> {
 
   @override
   void dispose() {
+    _callsBeingProcessed.clear();
+
     _phoneChannel.setMethodCallHandler(null);
+
     super.dispose();
   }
 }

@@ -40,12 +40,22 @@ class CallSecurityEngine {
   static const Set<String> _hiddenValues = <String>{
     '',
     'unknown',
+    'unknown number',
+    'unknown caller',
     'desconocido',
+    'numero desconocido',
+    'número desconocido',
     'private',
+    'private number',
     'privado',
+    'numero privado',
+    'número privado',
     'restricted',
+    'restricted number',
     'restringido',
     'oculto',
+    'numero oculto',
+    'número oculto',
     'hidden',
     'null',
     'n/a',
@@ -56,17 +66,21 @@ class CallSecurityEngine {
     String rawNumber,
     String cleanDigits,
   ) {
-    final String lower = rawNumber.trim().toLowerCase();
+    final String normalized =
+        rawNumber.trim().toLowerCase();
 
-    if (_hiddenValues.contains(lower) || cleanDigits.isEmpty) {
+    if (_hiddenValues.contains(normalized) ||
+        cleanDigits.isEmpty) {
       return PhoneValidationStatus.hiddenOrUnknown;
     }
 
-    if (cleanDigits.length >= 3 && cleanDigits.length <= 6) {
+    if (cleanDigits.length >= 3 &&
+        cleanDigits.length <= 6) {
       return PhoneValidationStatus.shortCode;
     }
 
-    if (cleanDigits.length < 7 || cleanDigits.length > 15) {
+    if (cleanDigits.length < 7 ||
+        cleanDigits.length > 15) {
       return PhoneValidationStatus.invalidFormat;
     }
 
@@ -78,9 +92,11 @@ class CallSecurityEngine {
       return false;
     }
 
-    final String first = digits[0];
+    final String firstDigit = digits[0];
 
-    if (digits.split('').every((String value) => value == first)) {
+    if (digits.split('').every(
+          (String digit) => digit == firstDigit,
+        )) {
       return true;
     }
 
@@ -88,10 +104,16 @@ class CallSecurityEngine {
       return false;
     }
 
-    final String pattern = digits.substring(0, 2);
+    final String pattern =
+        digits.substring(0, 2);
+
     int matches = 0;
 
-    for (int i = 0; i <= digits.length - 2; i += 2) {
+    for (
+      int i = 0;
+      i <= digits.length - 2;
+      i += 2
+    ) {
       if (digits.substring(i, i + 2) != pattern) {
         break;
       }
@@ -118,8 +140,9 @@ class CallSecurityEngine {
 
       if (matches <= 3) {
         score += 15;
+
         reasons.add(
-          "Indicador de ingeniería social detectado: '$pattern'",
+          "Indicador de ingeniería social detectado: '$pattern'.",
         );
       }
     }
@@ -128,7 +151,10 @@ class CallSecurityEngine {
   }
 
   String _normalizeForComparison(String value) {
-    return value.replaceAll(RegExp(r'\D'), '');
+    return value.replaceAll(
+      RegExp(r'\D'),
+      '',
+    );
   }
 
   Map<String, dynamic> analyze({
@@ -138,7 +164,8 @@ class CallSecurityEngine {
   }) {
     final String raw = phoneNumber.trim();
 
-    final String digits = _normalizeForComparison(raw);
+    final String digits =
+        _normalizeForComparison(raw);
 
     final String context = <String>[
       contactName ?? '',
@@ -146,15 +173,20 @@ class CallSecurityEngine {
     ].join(' ').toLowerCase();
 
     final PhoneValidationStatus validation =
-        _evaluateValidationStatus(raw, digits);
+        _evaluateValidationStatus(
+      raw,
+      digits,
+    );
 
     int score = 0;
 
-    final List<String> reasons = <String>[];
+    final List<String> reasons =
+        <String>[];
 
     switch (validation) {
       case PhoneValidationStatus.hiddenOrUnknown:
         score += 40;
+
         reasons.add(
           'Número oculto, privado o no identificado.',
         );
@@ -162,13 +194,15 @@ class CallSecurityEngine {
 
       case PhoneValidationStatus.invalidFormat:
         score += 35;
+
         reasons.add(
-          'Anomalía de formato: longitud incompatible con la estructura internacional esperada.',
+          'Anomalía de formato: longitud incompatible con una estructura telefónica válida.',
         );
         break;
 
       case PhoneValidationStatus.shortCode:
         score += 25;
+
         reasons.add(
           'Estructura correspondiente a código corto no verificado.',
         );
@@ -178,7 +212,11 @@ class CallSecurityEngine {
         break;
     }
 
-    final String normalizedRaw = raw.replaceAll(' ', '');
+    final String normalizedRaw =
+        raw.replaceAll(
+      RegExp(r'[\s()-]'),
+      '',
+    );
 
     if (normalizedRaw.startsWith('+999') ||
         normalizedRaw.startsWith('+000') ||
@@ -186,7 +224,7 @@ class CallSecurityEngine {
       score += 45;
 
       reasons.add(
-        'Prefijo de red no asignado o altamente sospechoso.',
+        'Prefijo telefónico no válido o altamente sospechoso.',
       );
     }
 
@@ -205,22 +243,24 @@ class CallSecurityEngine {
 
     score = min(score, 100);
 
-    late final String verdict;
-    late final String statusLabel;
+    final String verdict;
+    final String statusLabel;
 
     if (score >= 80) {
-      verdict = 'AMENAZA_CONFIRMADA';
-      statusLabel = '🔴 ALTO RIESGO / AMENAZA';
+      verdict = 'RIESGO_MUY_ALTO';
+      statusLabel = '🔴 RIESGO MUY ALTO';
     } else if (score >= 60) {
       verdict = 'ALTO_RIESGO';
       statusLabel = '🟠 ALTO RIESGO';
     } else if (score >= 40) {
       verdict = 'ADVERTENCIA';
       statusLabel = '🟡 ADVERTENCIA PREVENTIVA';
-    } else if (validation == PhoneValidationStatus.invalidFormat) {
+    } else if (validation ==
+        PhoneValidationStatus.invalidFormat) {
       verdict = 'ANOMALIA_FORMATO';
       statusLabel = '🔵 ANOMALÍA DE FORMATO';
-    } else if (validation == PhoneValidationStatus.shortCode) {
+    } else if (validation ==
+        PhoneValidationStatus.shortCode) {
       verdict = 'SHORTCODE_NO_VERIFICADO';
       statusLabel = '🟡 CÓDIGO CORTO NO VERIFICADO';
     } else {
@@ -235,7 +275,8 @@ class CallSecurityEngine {
       'verdict': verdict,
       'status_label': statusLabel,
       'reasons': reasons,
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp':
+          DateTime.now().toIso8601String(),
     };
   }
 }

@@ -1,9 +1,3 @@
-// ====================================================================================================
-// ARCHIVO: lib/services/security/phishing_engine.dart
-// MOTOR HEURÍSTICO DE DETECCIÓN DE PHISHING Y NUMERACIÓN ANÓMALA
-// JOSH SECURITY v6.0-AGENTIC
-// ====================================================================================================
-
 import 'dart:math';
 
 class PhishingEngine {
@@ -70,12 +64,17 @@ class PhishingEngine {
   ];
 
   static final RegExp _numericPattern = RegExp(r'^\+?\d+$');
+
   static final RegExp _repeatedDigitPattern = RegExp(r'^(\d)\1+$');
+
   static final RegExp _leetspeakPattern = RegExp(
     r'go0gle|banc0lombia|paypa1|micr0soft|f4cebook|nequ1|d4vivienda',
+    caseSensitive: false,
   );
+
   static final RegExp _suspiciousTldPattern = RegExp(
     r'\.comi\.co|\.com\.[a-z]{2}\.[a-z]{2}$|\.com\.[a-z]{2}$',
+    caseSensitive: false,
   );
 
   int levenshtein(String a, String b) {
@@ -95,6 +94,7 @@ class PhishingEngine {
       b.length + 1,
       (int index) => index,
     );
+
     List<int> current = List<int>.filled(
       b.length + 1,
       0,
@@ -115,9 +115,9 @@ class PhishingEngine {
         );
       }
 
-      final List<int> swap = previous;
+      final List<int> temp = previous;
       previous = current;
-      current = swap;
+      current = temp;
     }
 
     return previous.last;
@@ -127,49 +127,45 @@ class PhishingEngine {
     final String clean = inputUrl.trim().toLowerCase();
 
     if (clean.isEmpty) {
-      return <String, dynamic>{
-        'score': 95.0,
-        'verdict': 'CRÍTICO',
-        'reason': 'Entrada vacía: no se recibió una URL o dominio válido.',
-      };
+      return _result(
+        score: 95.0,
+        verdict: 'CRÍTICO',
+        reason: 'Entrada vacía: no se recibió una URL o dominio válido.',
+      );
     }
 
-    final bool isNumeric = _numericPattern.hasMatch(clean);
-
-    if (isNumeric) {
+    if (_numericPattern.hasMatch(clean)) {
       final String digitsOnly = clean.replaceAll(RegExp(r'\D'), '');
 
       if (_repeatedDigitPattern.hasMatch(digitsOnly)) {
-        return <String, dynamic>{
-          'score': 90.0,
-          'verdict': 'CRÍTICO',
-          'reason':
-              'Anomalía Estructural: Patrón numérico sintético con dígitos repetidos (Spoofing).',
-        };
+        return _result(
+          score: 90.0,
+          verdict: 'CRÍTICO',
+          reason:
+              'Anomalía estructural: patrón numérico sintético con dígitos repetidos.',
+        );
       }
 
       if (digitsOnly.length < 7 || digitsOnly.length > 15) {
-        return <String, dynamic>{
-          'score': 75.0,
-          'verdict': 'SOSPECHOSO',
-          'reason':
-              'Longitud Anómala: Numeración fuera de estándar telefónico (${digitsOnly.length} dígitos).',
-        };
+        return _result(
+          score: 75.0,
+          verdict: 'SOSPECHOSO',
+          reason:
+              'Longitud anómala: numeración fuera del estándar telefónico (${digitsOnly.length} dígitos).',
+        );
       }
     }
 
     if (_leetspeakPattern.hasMatch(clean)) {
-      return <String, dynamic>{
-        'score': 95.0,
-        'verdict': 'CRÍTICO',
-        'reason':
-            'Typosquatting Agéntico: Sustitución de caracteres por dígitos en nombre de marca (Leetspeak).',
-      };
+      return _result(
+        score: 95.0,
+        verdict: 'CRÍTICO',
+        reason:
+            'Typosquatting detectado: sustitución de caracteres por dígitos en una marca.',
+      );
     }
 
-    final bool badProtocol = clean.startsWith('hht') ||
-        clean.startsWith('htps') ||
-        clean.startsWith('http//');
+    final bool badProtocol = _hasBadProtocol(clean);
 
     String normalizedUrl = clean;
 
@@ -182,59 +178,61 @@ class PhishingEngine {
     try {
       uri = Uri.parse(normalizedUrl);
     } catch (_) {
-      return <String, dynamic>{
-        'score': 95.0,
-        'verdict': 'CRÍTICO',
-        'reason':
-            'Estructura Malformada: URL o dominio sintácticamente inválido.',
-      };
+      return _result(
+        score: 95.0,
+        verdict: 'CRÍTICO',
+        reason: 'Estructura malformada: URL o dominio inválido.',
+      );
     }
 
-    String host = uri.host.toLowerCase().trim();
+    final String host = uri.host.toLowerCase().trim();
 
     if (host.isEmpty) {
-      return <String, dynamic>{
-        'score': 95.0,
-        'verdict': 'CRÍTICO',
-        'reason': 'Estructura Malformada: no se pudo identificar el dominio.',
-      };
+      return _result(
+        score: 95.0,
+        verdict: 'CRÍTICO',
+        reason: 'Estructura malformada: no se pudo identificar el dominio.',
+      );
     }
 
     if (_suspiciousTldPattern.hasMatch(host) &&
         !officialWhitelist.contains(host)) {
-      return <String, dynamic>{
-        'score': 88.0,
-        'verdict': 'CRÍTICO',
-        'reason':
-            'Dominio Sospechoso: TLD no estándar o extensión bancaria alterada.',
-      };
+      return _result(
+        score: 88.0,
+        verdict: 'CRÍTICO',
+        reason:
+            'Dominio sospechoso: TLD o extensión potencialmente alterada.',
+      );
     }
 
     if (officialWhitelist.contains(host) || host.endsWith('.gov.co')) {
-      return <String, dynamic>{
-        'score': badProtocol ? 35.0 : 2.0,
-        'verdict': badProtocol ? 'SOSPECHOSO' : 'SEGURO',
-        'reason': badProtocol
+      return _result(
+        score: badProtocol ? 35.0 : 2.0,
+        verdict: badProtocol ? 'SOSPECHOSO' : 'SEGURO',
+        reason: badProtocol
             ? 'Dominio oficial con protocolo alterado.'
             : 'Dominio oficial verificado.',
-      };
+      );
     }
 
     for (final String brand in _brandKeywords) {
-      final bool containsBrand = host.contains(brand);
+      if (!host.contains(brand)) {
+        continue;
+      }
+
       final bool isOfficialBrandDomain =
           host == '$brand.com' ||
           host == '$brand.co' ||
           host.endsWith('.$brand.com') ||
           host.endsWith('.$brand.co');
 
-      if (containsBrand && !isOfficialBrandDomain) {
-        return <String, dynamic>{
-          'score': 97.0,
-          'verdict': 'CRÍTICO',
-          'reason':
-              'Suplantación de Marca Identificada: Intento de Phishing imitando a $brand.',
-        };
+      if (!isOfficialBrandDomain) {
+        return _result(
+          score: 97.0,
+          verdict: 'CRÍTICO',
+          reason:
+              'Suplantación de marca identificada: posible phishing imitando a $brand.',
+        );
       }
     }
 
@@ -247,46 +245,66 @@ class PhishingEngine {
       if (current.length >= 4 &&
           current != base &&
           levenshtein(current, base) <= 2) {
-        return <String, dynamic>{
-          'score': 98.0,
-          'verdict': 'CRÍTICO',
-          'reason':
-              'Typosquatting Detectado: Coincidencia de distancia reducida con marca legítima ($base).',
-        };
+        return _result(
+          score: 98.0,
+          verdict: 'CRÍTICO',
+          reason:
+              'Typosquatting detectado: dominio similar a una marca legítima ($base).',
+        );
       }
     }
 
-    if (normalizedUrl.contains('@')) {
-      return <String, dynamic>{
-        'score': 90.0,
-        'verdict': 'CRÍTICO',
-        'reason':
-            "Inyección Maliciosa: Uso de carácter '@' para deconstrucción de dominio.",
-      };
+    if (uri.userInfo.isNotEmpty || normalizedUrl.contains('@')) {
+      return _result(
+        score: 90.0,
+        verdict: 'CRÍTICO',
+        reason:
+            'Estructura sospechosa: uso del carácter @ para ocultar el dominio real.',
+      );
     }
 
-    if (hostParts.any((String part) => part.split('-').length > 4)) {
-      return <String, dynamic>{
-        'score': 80.0,
-        'verdict': 'CRÍTICO',
-        'reason':
-            'Ofuscación de Dominio: Segmento con múltiples guiones de enmascaramiento.',
-      };
+    if (hostParts.any(
+      (String part) => part.split('-').length > 4,
+    )) {
+      return _result(
+        score: 80.0,
+        verdict: 'CRÍTICO',
+        reason:
+            'Ofuscación de dominio: segmento con múltiples guiones.',
+      );
     }
 
     if (badProtocol) {
-      return <String, dynamic>{
-        'score': 75.0,
-        'verdict': 'SOSPECHOSO',
-        'reason': 'Protocolo Inseguro o Alterado en la conexión.',
-      };
+      return _result(
+        score: 75.0,
+        verdict: 'SOSPECHOSO',
+        reason: 'Protocolo inseguro o alterado.',
+      );
     }
 
-    return <String, dynamic>{
-      'score': 45.0,
-      'verdict': 'SOSPECHOSO',
-      'reason':
+    return _result(
+      score: 45.0,
+      verdict: 'SOSPECHOSO',
+      reason:
           'Dominio no verificado en la lista blanca de reputación local.',
+    );
+  }
+
+  bool _hasBadProtocol(String value) {
+    return value.startsWith('hht') ||
+        value.startsWith('htps') ||
+        value.startsWith('http//');
+  }
+
+  Map<String, dynamic> _result({
+    required double score,
+    required String verdict,
+    required String reason,
+  }) {
+    return <String, dynamic>{
+      'score': score.clamp(0.0, 100.0),
+      'verdict': verdict,
+      'reason': reason,
     };
   }
 }

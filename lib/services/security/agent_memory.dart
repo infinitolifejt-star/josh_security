@@ -1,70 +1,89 @@
-// ====================================================================================================
-// ARCHIVO: lib/services/security/agent_memory.dart
-// COMPONENTE: Memoria Contextual e Historial del Agente Centinela
-// ====================================================================================================
-
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 class AgentMemory {
+  static const String _databaseName = 'josh_agent_memory.db';
+  static const int _databaseVersion = 1;
+
   static Database? _database;
 
   static Future<Database> get database async {
-    if (_database != null) {
-      return _database!;
-    }
-
-    _database = await _initDB();
-    return _database!;
+    return _database ??= await _initDatabase();
   }
 
-  static Future<Database> _initDB() async {
-    final String dbPath = await getDatabasesPath();
-    final String path = join(dbPath, 'josh_agent_memory.db');
+  static Future<Database> _initDatabase() async {
+    final String databasesPath = await getDatabasesPath();
+    final String path = join(databasesPath, _databaseName);
 
     return openDatabase(
       path,
-      version: 1,
-      onCreate: (Database db, int version) async {
-        await db.execute('''
-CREATE TABLE memory_context (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  target TEXT UNIQUE,
-  vector_type TEXT,
-  occurrences INTEGER,
-  last_seen TEXT,
-  highest_risk REAL,
-  user_decision TEXT
-)
-''');
-
-        await db.execute('''
-CREATE TABLE agent_decisions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  target TEXT,
-  heuristic_score REAL,
-  agent_score REAL,
-  verdict TEXT,
-  reasoning TEXT,
-  timestamp TEXT
-)
-''');
-      },
+      version: _databaseVersion,
+      onCreate: _onCreate,
     );
+  }
+
+  static Future<void> _onCreate(
+    Database db,
+    int version,
+  ) async {
+    await db.execute('''
+      CREATE TABLE memory_context (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target TEXT UNIQUE NOT NULL,
+        vector_type TEXT NOT NULL,
+        occurrences INTEGER NOT NULL DEFAULT 0,
+        last_seen TEXT NOT NULL,
+        highest_risk REAL NOT NULL DEFAULT 0,
+        user_decision TEXT NOT NULL DEFAULT 'PENDING'
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE agent_decisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target TEXT NOT NULL,
+        heuristic_score REAL NOT NULL,
+        agent_score REAL NOT NULL,
+        verdict TEXT NOT NULL,
+        reasoning TEXT NOT NULL,
+        timestamp TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX idx_memory_context_target
+      ON memory_context(target)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX idx_agent_decisions_target
+      ON agent_decisions(target)
+    ''');
   }
 
   static Future<Map<String, dynamic>?> getTargetContext(
     String target,
   ) async {
+    final String normalizedTarget = target.trim();
+
+    if (normalizedTarget.isEmpty) {
+      return null;
+    }
+
     final Database db = await database;
-    final List<Map<String, dynamic>> result = await db.query(
+
+    final List<Map<String, dynamic>> rows = await db.query(
       'memory_context',
       where: 'target = ?',
-      whereArgs: <dynamic>[target],
+      whereArgs: <dynamic>[normalizedTarget],
       limit: 1,
     );
 
-    return result.isEmpty ? null : result.first;
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return rows.first;
   }
 
   static Future<void> updateContextMemory(
@@ -72,42 +91,63 @@ CREATE TABLE agent_decisions (
     String vectorType,
     double riskScore,
   ) async {
+    final String normalizedTarget = target.trim();
+
+    if (normalizedTarget.isEmpty) {
+      return;
+    }
+
     final Database db = await database;
-    final Map<String, dynamic>? existing =
-        await getTargetContext(target);
+
+    final double safeRisk = riskScore.isFinite
+        ? riskScore.clamp(0.0, 100.0)
+        : 0.0;
+
     final String now = DateTime.now().toIso8601String();
-    final double safeRisk = riskScore.clamp(0.0, 100.0);
+
+    final Map<String, dynamic>? existing =
+        await getTargetContext(normalizedTarget);
 
     if (existing == null) {
       await db.insert(
         'memory_context',
         <String, dynamic>{
-          'target': target,
-          'vector_type': vectorType,
+          'target': normalizedTarget,
+          'vector_type': vectorType.trim().isEmpty
+              ? 'UNKNOWN'
+              : vectorType.trim(),
           'occurrences': 1,
           'last_seen': now,
           'highest_risk': safeRisk,
           'user_decision': 'PENDING',
         },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
+
       return;
     }
 
-    final int occurrences = _readInt(existing['occurrences']);
-    final double previousRisk = _readDouble(existing['highest_risk']);
+    final int occurrences =
+        _readInt(existing['occurrences']);
+
+    final double previousRisk =
+        _readDouble(existing['highest_risk']);
+
     final double highestRisk =
-        previousRisk > safeRisk ? previousRisk : safeRisk;
+        safeRisk > previousRisk ? safeRisk : previousRisk;
 
     await db.update(
       'memory_context',
       <String, dynamic>{
-        'vector_type': vectorType,
+        'vector_type': vectorType.trim().isEmpty
+            ? 'UNKNOWN'
+            : vectorType.trim(),
         'occurrences': occurrences + 1,
         'last_seen': now,
         'highest_risk': highestRisk,
       },
       where: 'target = ?',
-      whereArgs: <dynamic>[target],
+      whereArgs: <dynamic>[normalizedTarget],
     );
   }
 
@@ -118,16 +158,32 @@ CREATE TABLE agent_decisions (
     required String verdict,
     required String reasoning,
   }) async {
+    final String normalizedTarget = target.trim();
+
+    if (normalizedTarget.isEmpty) {
+      return;
+    }
+
     final Database db = await database;
+
+    final double safeHeuristic = heuristicScore.isFinite
+        ? heuristicScore.clamp(0.0, 100.0)
+        : 0.0;
+
+    final double safeAgentScore = agentScore.isFinite
+        ? agentScore.clamp(0.0, 100.0)
+        : 0.0;
 
     await db.insert(
       'agent_decisions',
       <String, dynamic>{
-        'target': target,
-        'heuristic_score': heuristicScore.clamp(0.0, 100.0),
-        'agent_score': agentScore.clamp(0.0, 100.0),
-        'verdict': verdict,
-        'reasoning': reasoning,
+        'target': normalizedTarget,
+        'heuristic_score': safeHeuristic,
+        'agent_score': safeAgentScore,
+        'verdict': verdict.trim().isEmpty
+            ? 'UNKNOWN'
+            : verdict.trim(),
+        'reasoning': reasoning.trim(),
         'timestamp': DateTime.now().toIso8601String(),
       },
     );
@@ -139,13 +195,14 @@ CREATE TABLE agent_decisions (
     }
 
     if (value is num) {
-      return value.toInt() < 0 ? 0 : value.toInt();
+      final int result = value.toInt();
+      return result < 0 ? 0 : result;
     }
 
     if (value is String) {
-      final int? parsed = int.tryParse(value);
-      if (parsed != null) {
-        return parsed < 0 ? 0 : parsed;
+      final int? result = int.tryParse(value);
+      if (result != null) {
+        return result < 0 ? 0 : result;
       }
     }
 
@@ -154,13 +211,20 @@ CREATE TABLE agent_decisions (
 
   static double _readDouble(dynamic value) {
     if (value is num) {
-      return value.toDouble().clamp(0.0, 100.0);
+      final double result = value.toDouble();
+
+      if (!result.isFinite) {
+        return 0.0;
+      }
+
+      return result.clamp(0.0, 100.0);
     }
 
     if (value is String) {
-      final double? parsed = double.tryParse(value);
-      if (parsed != null) {
-        return parsed.clamp(0.0, 100.0);
+      final double? result = double.tryParse(value);
+
+      if (result != null && result.isFinite) {
+        return result.clamp(0.0, 100.0);
       }
     }
 

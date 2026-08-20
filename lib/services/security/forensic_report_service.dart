@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/forensic_report_service.dart
-// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO CENTINELA v4.5.1
+// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO JOSH SECURITY v4.5.1
 // OP-HEURÍSTICA: Motor de Auditoría Inmutable y Compilación de Reportes desde Base de Datos
 // ====================================================================================================
 
@@ -8,9 +8,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:math';
+
 import 'database_service.dart';
-import 'phone_interceptor_service.dart';
 import 'file_scanner_service.dart';
+import 'phone_interceptor_service.dart';
 
 /// Modelado de datos estructurado para el resumen técnico de diagnóstico
 class ForensicReport {
@@ -21,7 +22,7 @@ class ForensicReport {
   final String veredictoFinal;
   final Map<String, dynamic> metadataSistema;
 
-  ForensicReport({
+  const ForensicReport({
     required this.reportId,
     required this.generatedAt,
     required this.integrityHash,
@@ -33,8 +34,9 @@ class ForensicReport {
 
 /// Core del Servicio de Auditoría del Sistema y Registro de Integridad
 class ForensicReportService {
-  // Patrón Singleton para acceso seguro global en el ecosistema Centinela
-  static final ForensicReportService _instance = ForensicReportService._internal();
+  // Patrón Singleton para acceso seguro global en el ecosistema JOSH Security
+  static final ForensicReportService _instance =
+      ForensicReportService._internal();
   factory ForensicReportService() => _instance;
   ForensicReportService._internal();
 
@@ -45,7 +47,10 @@ class ForensicReportService {
   String _generateIntegrityHash() {
     const String chars = 'abcdef0123456789';
     final Random rand = Random();
-    return List.generate(64, (index) => chars[rand.nextInt(chars.length)]).join();
+    return List<String>.generate(
+      64,
+      (int index) => chars[rand.nextInt(chars.length)],
+    ).join();
   }
 
   /// Recupera todos los logs reales guardados en SQLite para alimentar la UI (forensic_history_list)
@@ -59,7 +64,7 @@ class ForensicReportService {
         stackTrace: stackTrace,
         name: 'josh.security.forensic',
       );
-      return [];
+      return <Map<String, dynamic>>[];
     }
   }
 
@@ -70,7 +75,7 @@ class ForensicReportService {
     required FileScanVerdict fileVerdict,
   }) async {
     // Simulación de procesamiento asíncrono para el empaquetado del diagnóstico
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future<void>.delayed(const Duration(milliseconds: 500));
 
     final String timestamp = DateTime.now().toIso8601String();
     final int reportNumber = Random().nextInt(90000) + 10000;
@@ -78,23 +83,26 @@ class ForensicReportService {
     final String hashVerificacion = _generateIntegrityHash();
 
     // Estructuración de logs para auditoría de la aplicación
-    final List<String> logs = [
+    final List<String> logs = <String>[
       'LOG_AUDIT_CALL: Evaluado número [${callVerdict.phoneNumber}] -> Estado: [${callVerdict.riskLevel}] -> Fuente: [${callVerdict.source.name.toUpperCase()}]',
       'LOG_AUDIT_FILE: Evaluado archivo [${fileVerdict.fileName}] (${fileVerdict.fileSizeInMB.toStringAsFixed(2)} MB) -> Estado: [${fileVerdict.riskLevel}] -> Fuente: [${fileVerdict.source.name.toUpperCase()}]',
     ];
 
     // Evaluación global de estado para el dictamen del sistema
     String dictamen = 'SISTEMA_OPERATIVO_SEGURO';
-    if (callVerdict.riskLevel == 'CRÍTICO' || fileVerdict.riskLevel == 'CRÍTICO') {
+    if (callVerdict.riskLevel == 'CRÍTICO' ||
+        fileVerdict.riskLevel == 'CRÍTICO') {
       dictamen = 'AMENAZA_BLOQUEADA_PREVENTIVAMENTE';
-    } else if (callVerdict.riskLevel == 'ADVERTENCIA' || fileVerdict.riskLevel == 'ADVERTENCIA') {
+    } else if (callVerdict.riskLevel == 'ADVERTENCIA' ||
+        fileVerdict.riskLevel == 'ADVERTENCIA') {
       dictamen = 'SUGERENCIA_REVISAR_ALERTAS';
     }
 
-    final Map<String, dynamic> metadata = {
-      'modulo_auditor': 'JOSH Security - Centinela Analytics Engine',
+    final Map<String, dynamic> metadata = <String, dynamic>{
+      'modulo_auditor': 'JOSH Security - Analytics Engine',
       'estandar_seguridad': 'Estructura de Datos Inmutables',
-      'modo_aislamiento_global': (callVerdict.source == DiagnosticSource.local) ? 'ACTIVO' : 'INACTIVO',
+      'modo_aislamiento_global':
+          (callVerdict.source == DiagnosticSource.local) ? 'ACTIVO' : 'INACTIVO',
       'privacidad_datos': 'CERO_DATOS_REALES_HARDCODED',
     };
 
@@ -109,13 +117,13 @@ class ForensicReportService {
 
     // Persistir de forma automática el reporte en la tabla forense relacional
     try {
-      await _dbService.insertForensicLog({
+      await _dbService.insertForensicLog(<String, dynamic>{
         'timestamp': timestamp,
         'service': 'ForensicReportService',
         'activity': 'Compilación de Reporte Automatizado $uniqueId',
         'verdict': dictamen,
         'matched_rule': 'AUTOMATED_REPORT_GENERATION',
-        'extra_data': jsonEncode({
+        'extra_data': jsonEncode(<String, dynamic>{
           'report_id': uniqueId,
           'integrity_hash': hashVerificacion,
           'logs_count': logs.length,
