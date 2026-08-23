@@ -1,123 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
+
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
-    <!-- ========================================================================================== -->
-    <!-- HARDWARE -->
-    <!-- ========================================================================================== -->
 
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
 
-    <!-- ========================================================================================== -->
     <!-- RED -->
-    <!-- ========================================================================================== -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <uses-permission
-        android:name="android.permission.INTERNET" />
-
-    <uses-permission
-        android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-    <!-- ========================================================================================== -->
     <!-- TELEFONÍA -->
-    <!-- ========================================================================================== -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
-    <uses-permission
-        android:name="android.permission.READ_PHONE_STATE" />
-
-    <uses-permission
-        android:name="android.permission.READ_PHONE_NUMBERS" />
-
-    <uses-permission
-        android:name="android.permission.READ_CALL_LOG" />
-
-    <!-- ========================================================================================== -->
     <!-- NOTIFICACIONES -->
-    <!-- ========================================================================================== -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <uses-permission
-        android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- ========================================================================================== -->
     <!-- BOOT -->
-    <!-- ========================================================================================== -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <uses-permission
-        android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- ========================================================================================== -->
     <!-- FOREGROUND SERVICE -->
-    <!-- ========================================================================================== -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
-    <uses-permission
-        android:name="android.permission.FOREGROUND_SERVICE" />
-
-    <uses-permission
-        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-
-    <!-- ========================================================================================== -->
-    <!-- FOREGROUND SERVICE SPECIAL USE -->
-    <!-- ========================================================================================== -->
-
-    <uses-permission
-        android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-
-    <!-- ========================================================================================== -->
     <!-- OVERLAY -->
-    <!-- ========================================================================================== -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <uses-permission
-        android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
-    <uses-permission
-        android:name="android.permission.WAKE_LOCK" />
-
-    <!-- ========================================================================================== -->
     <!-- APK -->
-    <!-- ========================================================================================== -->
-
-    <uses-permission
-        android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
-    <!-- ========================================================================================== -->
     <!-- USAGE STATS -->
-    <!-- ========================================================================================== -->
-
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
-    <!-- ========================================================================================== -->
-    <!-- QUERIES -->
-    <!-- ========================================================================================== -->
-
     <queries>
-
         <intent>
-            <action
-                android:name="android.intent.action.MAIN" />
+            <action android:name="android.intent.action.MAIN" />
         </intent>
 
         <intent>
-            <action
-                android:name="android.intent.action.PROCESS_TEXT" />
-
-            <data
-                android:mimeType="text/plain" />
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
         </intent>
-
     </queries>
-
-    <!-- ========================================================================================== -->
-    <!-- APPLICATION -->
-    <!-- ========================================================================================== -->
 
     <application
         android:name="${applicationName}"
@@ -125,99 +60,58 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true">
 
-        <!-- ====================================================================================== -->
         <!-- FLUTTER BACKGROUND SERVICE -->
-        <!-- ====================================================================================== -->
-
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync"
-            tools:replace="
-                android:exported,
-                android:foregroundServiceType" />
+            tools:replace="android:exported,android:foregroundServiceType" />
 
-        <!-- ====================================================================================== -->
         <!-- OVERLAY -->
-        <!-- ====================================================================================== -->
-
         <service
             android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse"
-            tools:replace="
-                android:exported,
-                android:foregroundServiceType">
+            tools:replace="android:exported,android:foregroundServiceType">
 
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="caller_id_security_overlay" />
-
         </service>
 
-        <!-- ====================================================================================== -->
-        <!-- PHONE CALL RECEIVER -->
-        <!-- ====================================================================================== -->
-
-        <receiver
-            android:name=".PhoneCallReceiver"
-            android:enabled="true"
+        <!-- CALL SCREENING -->
+        <service
+            android:name=".CallScreeningService"
+            android:permission="android.permission.BIND_SCREENING_SERVICE"
             android:exported="true">
 
             <intent-filter>
-
-                <action
-                    android:name="android.intent.action.PHONE_STATE" />
-
+                <action android:name="android.telecom.CallScreeningService" />
             </intent-filter>
+        </service>
 
-        </receiver>
-
-        <!-- ====================================================================================== -->
-        <!-- BOOT RECEIVER -->
-        <!-- ====================================================================================== -->
-
+        <!-- BOOT -->
         <receiver
             android:name="id.flutter.flutter_background_service.BootReceiver"
             android:enabled="true"
             android:exported="true">
 
             <intent-filter>
-
-                <action
-                    android:name="android.intent.action.BOOT_COMPLETED" />
-
-                <action
-                    android:name="android.intent.action.QUICKBOOT_POWERON" />
-
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
-
         </receiver>
 
-        <!-- ====================================================================================== -->
         <!-- MAIN ACTIVITY -->
-        <!-- ====================================================================================== -->
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
-            android:configChanges="
-                orientation|
-                keyboardHidden|
-                keyboard|
-                screenSize|
-                smallestScreenSize|
-                locale|
-                layoutDirection|
-                fontScale|
-                screenLayout|
-                density|
-                uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
             android:showWhenLocked="true"
@@ -228,21 +122,12 @@
                 android:resource="@style/NormalTheme" />
 
             <intent-filter>
-
-                <action
-                    android:name="android.intent.action.MAIN" />
-
-                <category
-                    android:name="android.intent.category.LAUNCHER" />
-
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
         </activity>
 
-        <!-- ====================================================================================== -->
         <!-- FLUTTER -->
-        <!-- ====================================================================================== -->
-
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

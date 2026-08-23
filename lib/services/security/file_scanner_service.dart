@@ -13,7 +13,7 @@ import 'package:crypto/crypto.dart';
 
 import '../reputation/reputation_engine.dart';
 import 'database_service.dart';
-import 'phone_interceptor_service.dart';
+import 'security_models.dart';
 
 class FileScanVerdict {
   final String fileName;
@@ -34,13 +34,11 @@ class FileScanVerdict {
     required this.telemetryDetails,
   });
 
-  double get fileSizeInMB =>
-      fileSizeInBytes / (1024 * 1024);
+  double get fileSizeInMB => fileSizeInBytes / (1024 * 1024);
 
   bool get isCritical => riskScore >= 80;
 
-  bool get isWarning =>
-      riskScore >= 40 && riskScore < 80;
+  bool get isWarning => riskScore >= 40 && riskScore < 80;
 
   bool get isSafe => riskScore < 40;
 
@@ -60,24 +58,21 @@ class FileScanVerdict {
 class FileScannerService {
   FileScannerService._internal();
 
-  static final FileScannerService instance =
-      FileScannerService._internal();
+  static final FileScannerService instance = FileScannerService._internal();
 
   factory FileScannerService() => instance;
 
   final ReputationEngine _reputation = ReputationEngine();
 
-  DatabaseService get _database =>
-      DatabaseService.instance;
+  DatabaseService get _database => DatabaseService.instance;
 
-  static const int maxSafeSizeBytes =
-      15 * 1024 * 1024;
+  static const int maxSafeSizeBytes = 15 * 1024 * 1024;
 
   Future<bool> _hasInternet() async {
     try {
-      final List<InternetAddress> result =
-          await InternetAddress.lookup('google.com')
-              .timeout(
+      final List<InternetAddress> result = await InternetAddress.lookup(
+        'google.com',
+      ).timeout(
         const Duration(seconds: 2),
       );
 
@@ -93,8 +88,7 @@ class FileScannerService {
         return null;
       }
 
-      final Digest hash =
-          await sha256.bind(file.openRead()).first;
+      final Digest hash = await sha256.bind(file.openRead()).first;
 
       return hash.toString();
     } catch (error, stackTrace) {
@@ -112,8 +106,7 @@ class FileScannerService {
   Future<FileScanVerdict> scanLocalFile(
     File file,
   ) async {
-    final String filename =
-        file.path.split(Platform.pathSeparator).last;
+    final String filename = file.path.split(Platform.pathSeparator).last;
 
     int size = 0;
 
@@ -126,36 +119,29 @@ class FileScannerService {
     final bool connected = await _hasInternet();
 
     final DiagnosticSource source =
-        connected
-            ? DiagnosticSource.cloud
-            : DiagnosticSource.local;
+        connected ? DiagnosticSource.cloud : DiagnosticSource.local;
 
-    final int tracking =
-        Random().nextInt(900000) + 100000;
+    final int tracking = Random().nextInt(900000) + 100000;
 
-    final String timestamp =
-        DateTime.now().toIso8601String();
+    final String timestamp = DateTime.now().toIso8601String();
 
     // ------------------------------------------------------------------------
     // CAPA 1: VALIDACIÓN DE TAMAÑO
     // ------------------------------------------------------------------------
 
     if (size > maxSafeSizeBytes) {
-      final FileScanVerdict verdict =
-          FileScanVerdict(
+      final FileScanVerdict verdict = FileScanVerdict(
         fileName: filename,
         fileSizeInBytes: size,
         riskScore: 25,
         riskLevel: 'ADVERTENCIA_TAMAÑO',
-        analysisMessage:
-            'El archivo supera los 15 MB. '
+        analysisMessage: 'El archivo supera los 15 MB. '
             'Se omitió la inspección profunda '
             'por límites perimetrales.',
         source: DiagnosticSource.local,
         telemetryDetails: <String, dynamic>{
           'tracking_id': 'JOSH-$tracking',
-          'matched_rule':
-              'MAX_SIZE_LIMIT_EXCEEDED',
+          'matched_rule': 'MAX_SIZE_LIMIT_EXCEEDED',
           'timestamp': timestamp,
           'size': size,
         },
@@ -181,8 +167,7 @@ class FileScannerService {
         hash = await _sha256(file);
 
         if (hash != null && hash.isNotEmpty) {
-          cloudScore =
-              await _reputation.checkVirusTotal(
+          cloudScore = await _reputation.checkVirusTotal(
             hash,
             isUrl: false,
           );
@@ -200,25 +185,19 @@ class FileScannerService {
     }
 
     if (cloudScore >= 0.05) {
-      final int calculatedRisk =
-          (cloudScore * 100)
-              .toInt()
-              .clamp(80, 100);
+      final int calculatedRisk = (cloudScore * 100).toInt().clamp(80, 100);
 
-      final FileScanVerdict verdict =
-          FileScanVerdict(
+      final FileScanVerdict verdict = FileScanVerdict(
         fileName: filename,
         fileSizeInBytes: size,
         riskScore: calculatedRisk,
         riskLevel: 'CRÍTICO',
-        analysisMessage:
-            'Firma de malware detectada '
+        analysisMessage: 'Firma de malware detectada '
             'por el sistema de reputación.',
         source: source,
         telemetryDetails: <String, dynamic>{
           'tracking_id': 'JOSH-$tracking',
-          'matched_rule':
-              'VIRUSTOTAL_REPUTATION_MATCH',
+          'matched_rule': 'VIRUSTOTAL_REPUTATION_MATCH',
           'risk_raw': cloudScore,
           'hash': hash,
           'timestamp': timestamp,
@@ -237,11 +216,9 @@ class FileScannerService {
     // CAPA 3: EXTENSIÓN EJECUTABLE
     // ------------------------------------------------------------------------
 
-    final String lowerName =
-        filename.toLowerCase();
+    final String lowerName = filename.toLowerCase();
 
-    final bool isExecutable =
-        lowerName.endsWith('.apk') ||
+    final bool isExecutable = lowerName.endsWith('.apk') ||
         lowerName.endsWith('.exe') ||
         lowerName.endsWith('.bat') ||
         lowerName.endsWith('.cmd') ||
@@ -251,21 +228,18 @@ class FileScannerService {
         lowerName.endsWith('.jar');
 
     if (isExecutable) {
-      final FileScanVerdict verdict =
-          FileScanVerdict(
+      final FileScanVerdict verdict = FileScanVerdict(
         fileName: filename,
         fileSizeInBytes: size,
         riskScore: 50,
         riskLevel: 'ADVERTENCIA',
-        analysisMessage:
-            'Archivo con capacidad de ejecución '
+        analysisMessage: 'Archivo con capacidad de ejecución '
             'detectado. Verifique su origen antes '
             'de abrirlo o instalarlo.',
         source: source,
         telemetryDetails: <String, dynamic>{
           'tracking_id': 'JOSH-$tracking',
-          'matched_rule':
-              'EXECUTABLE_EXTENSION_PREVENTIVE',
+          'matched_rule': 'EXECUTABLE_EXTENSION_PREVENTIVE',
           'hash': hash ?? 'OFFLINE',
           'timestamp': timestamp,
         },
@@ -283,14 +257,12 @@ class FileScannerService {
     // CAPA 4: ARCHIVO SIN INDICADORES
     // ------------------------------------------------------------------------
 
-    final FileScanVerdict verdict =
-        FileScanVerdict(
+    final FileScanVerdict verdict = FileScanVerdict(
       fileName: filename,
       fileSizeInBytes: size,
       riskScore: 0,
       riskLevel: 'SIN_AMENAZAS',
-      analysisMessage:
-          'No se encontraron indicadores de compromiso '
+      analysisMessage: 'No se encontraron indicadores de compromiso '
           'en las comprobaciones realizadas.',
       source: source,
       telemetryDetails: <String, dynamic>{
@@ -316,17 +288,16 @@ class FileScannerService {
     try {
       await _database.insertForensicLog(
         <String, dynamic>{
-          'timestamp':
-              DateTime.now().toIso8601String(),
+          'timestamp': DateTime.now().toIso8601String(),
           'service': 'FileScannerService',
-          'activity':
-              'Escaneo de archivo: '
+          'activity': 'Escaneo de archivo: '
               '${verdict.fileName}',
           'verdict': verdict.riskLevel,
           'risk_score': verdict.riskScore,
           'matched_rule': matchedRule,
-          'extra_data':
-              jsonEncode(verdict.telemetryDetails),
+          'extra_data': jsonEncode(
+            verdict.telemetryDetails,
+          ),
         },
       );
     } catch (error, stackTrace) {

@@ -1,8 +1,8 @@
-// ====================================================================================================
+// ============================================================================
 // ARCHIVO: lib/services/security/forensic_report_service.dart
-// REEMPLAZO TOTAL — ENTORNO SINCRONIZADO JOSH SECURITY v4.5.1
-// OP-HEURÍSTICA: Motor de Auditoría Inmutable y Compilación de Reportes desde Base de Datos
-// ====================================================================================================
+// SERVICIO DE AUDITORÍA FORENSE
+// JOSH SECURITY
+// ============================================================================
 
 import 'dart:async';
 import 'dart:convert';
@@ -11,9 +11,9 @@ import 'dart:math';
 
 import 'database_service.dart';
 import 'file_scanner_service.dart';
-import 'phone_interceptor_service.dart';
+import 'security_models.dart';
 
-/// Modelado de datos estructurado para el resumen técnico de diagnóstico
+/// Modelo estructurado de un reporte forense.
 class ForensicReport {
   final String reportId;
   final String generatedAt;
@@ -32,77 +32,111 @@ class ForensicReport {
   });
 }
 
-/// Core del Servicio de Auditoría del Sistema y Registro de Integridad
+/// Servicio central de auditoría y generación de reportes forenses.
 class ForensicReportService {
-  // Patrón Singleton para acceso seguro global en el ecosistema JOSH Security
   static final ForensicReportService _instance =
       ForensicReportService._internal();
+
   factory ForensicReportService() => _instance;
+
   ForensicReportService._internal();
 
-  // Instancia del servicio de persistencia local SQLite
   final DatabaseService _dbService = DatabaseService.instance;
 
-  /// Genera una cadena SHA-256 simulada para validar la inmutabilidad del registro
+  /// Genera un identificador de integridad de 64 caracteres.
+  ///
+  /// Actualmente funciona como identificador local de integridad.
+  /// No representa todavía un hash criptográfico del contenido.
   String _generateIntegrityHash() {
     const String chars = 'abcdef0123456789';
+
     final Random rand = Random();
+
     return List<String>.generate(
       64,
       (int index) => chars[rand.nextInt(chars.length)],
     ).join();
   }
 
-  /// Recupera todos los logs reales guardados en SQLite para alimentar la UI (forensic_history_list)
+  /// Recupera los registros históricos reales almacenados
+  /// en SQLite.
   Future<List<Map<String, dynamic>>> fetchHistoricalLogs() async {
     try {
       return await _dbService.getForensicLogs();
-    } catch (e, stackTrace) {
+    } catch (error, stackTrace) {
       developer.log(
         'ERR_FETCH_HISTORICAL_LOGS_FORENSIC_SERVICE',
-        error: e,
+        error: error,
         stackTrace: stackTrace,
         name: 'josh.security.forensic',
       );
+
       return <Map<String, dynamic>>[];
     }
   }
 
-  /// Compila de forma automatizada un reporte técnico basado en los eventos del HUD
-  /// e inserta el resultado directamente en el historial forense de SQLite
+  /// Genera un reporte técnico utilizando un veredicto telefónico
+  /// y un veredicto de archivo.
   Future<ForensicReport> generateAutomatedReport({
     required CallVerdict callVerdict,
     required FileScanVerdict fileVerdict,
   }) async {
-    // Simulación de procesamiento asíncrono para el empaquetado del diagnóstico
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    // Simulación de empaquetado asíncrono.
+    await Future<void>.delayed(
+      const Duration(milliseconds: 500),
+    );
 
     final String timestamp = DateTime.now().toIso8601String();
+
     final int reportNumber = Random().nextInt(90000) + 10000;
+
     final String uniqueId = 'JOSH-REP-$reportNumber';
+
     final String hashVerificacion = _generateIntegrityHash();
 
-    // Estructuración de logs para auditoría de la aplicación
+    // ------------------------------------------------------------------------
+    // LOGS TÉCNICOS
+    // ------------------------------------------------------------------------
+
     final List<String> logs = <String>[
-      'LOG_AUDIT_CALL: Evaluado número [${callVerdict.phoneNumber}] -> Estado: [${callVerdict.riskLevel}] -> Fuente: [${callVerdict.source.name.toUpperCase()}]',
-      'LOG_AUDIT_FILE: Evaluado archivo [${fileVerdict.fileName}] (${fileVerdict.fileSizeInMB.toStringAsFixed(2)} MB) -> Estado: [${fileVerdict.riskLevel}] -> Fuente: [${fileVerdict.source.name.toUpperCase()}]',
+      'LOG_AUDIT_CALL: Evaluado número '
+          '[${callVerdict.phoneNumber}] -> '
+          'Estado: [${callVerdict.riskLevel}] -> '
+          'Fuente: [${callVerdict.source.name.toUpperCase()}]',
+      'LOG_AUDIT_FILE: Evaluado archivo '
+          '[${fileVerdict.fileName}] '
+          '(${fileVerdict.fileSizeInMB.toStringAsFixed(2)} MB) -> '
+          'Estado: [${fileVerdict.riskLevel}] -> '
+          'Fuente: [${fileVerdict.source.name.toUpperCase()}]',
     ];
 
-    // Evaluación global de estado para el dictamen del sistema
+    // ------------------------------------------------------------------------
+    // DICTAMEN GLOBAL
+    // ------------------------------------------------------------------------
+
     String dictamen = 'SISTEMA_OPERATIVO_SEGURO';
+
     if (callVerdict.riskLevel == 'CRÍTICO' ||
-        fileVerdict.riskLevel == 'CRÍTICO') {
+        fileVerdict.riskLevel == 'CRÍTICO' ||
+        callVerdict.riskScore >= 80 ||
+        fileVerdict.riskScore >= 80) {
       dictamen = 'AMENAZA_BLOQUEADA_PREVENTIVAMENTE';
     } else if (callVerdict.riskLevel == 'ADVERTENCIA' ||
-        fileVerdict.riskLevel == 'ADVERTENCIA') {
+        fileVerdict.riskLevel == 'ADVERTENCIA' ||
+        callVerdict.riskScore >= 40 ||
+        fileVerdict.riskScore >= 40) {
       dictamen = 'SUGERENCIA_REVISAR_ALERTAS';
     }
+
+    // ------------------------------------------------------------------------
+    // METADATA DEL REPORTE
+    // ------------------------------------------------------------------------
 
     final Map<String, dynamic> metadata = <String, dynamic>{
       'modulo_auditor': 'JOSH Security - Analytics Engine',
       'estandar_seguridad': 'Estructura de Datos Inmutables',
       'modo_aislamiento_global':
-          (callVerdict.source == DiagnosticSource.local) ? 'ACTIVO' : 'INACTIVO',
+          callVerdict.source == DiagnosticSource.local ? 'ACTIVO' : 'INACTIVO',
       'privacidad_datos': 'CERO_DATOS_REALES_HARDCODED',
     };
 
@@ -115,25 +149,33 @@ class ForensicReportService {
       metadataSistema: metadata,
     );
 
-    // Persistir de forma automática el reporte en la tabla forense relacional
+    // ------------------------------------------------------------------------
+    // PERSISTENCIA FORENSE
+    // ------------------------------------------------------------------------
+
     try {
-      await _dbService.insertForensicLog(<String, dynamic>{
-        'timestamp': timestamp,
-        'service': 'ForensicReportService',
-        'activity': 'Compilación de Reporte Automatizado $uniqueId',
-        'verdict': dictamen,
-        'matched_rule': 'AUTOMATED_REPORT_GENERATION',
-        'extra_data': jsonEncode(<String, dynamic>{
-          'report_id': uniqueId,
-          'integrity_hash': hashVerificacion,
-          'logs_count': logs.length,
-          'metadata': metadata,
-        }),
-      });
-    } catch (e, stackTrace) {
+      await _dbService.insertForensicLog(
+        <String, dynamic>{
+          'timestamp': timestamp,
+          'service': 'ForensicReportService',
+          'activity': 'Compilación de Reporte '
+              'Automatizado $uniqueId',
+          'verdict': dictamen,
+          'matched_rule': 'AUTOMATED_REPORT_GENERATION',
+          'extra_data': jsonEncode(
+            <String, dynamic>{
+              'report_id': uniqueId,
+              'integrity_hash': hashVerificacion,
+              'logs_count': logs.length,
+              'metadata': metadata,
+            },
+          ),
+        },
+      );
+    } catch (error, stackTrace) {
       developer.log(
         'ERR_PERSISTING_AUTOMATED_REPORT',
-        error: e,
+        error: error,
         stackTrace: stackTrace,
         name: 'josh.security.db',
       );

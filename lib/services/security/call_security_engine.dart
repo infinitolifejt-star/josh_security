@@ -1,5 +1,14 @@
+// ============================================================================
+// ARCHIVO: lib/services/security/call_security_engine.dart
+// MOTOR CENTRAL DE ANÃLISIS TELEFÃ“NICO
+// JOSH SECURITY
+// ============================================================================
+
 import 'dart:math';
 
+import 'security_models.dart';
+
+/// Estado de validaciÃ³n del nÃºmero telefÃ³nico.
 enum PhoneValidationStatus {
   valid,
   invalidFormat,
@@ -7,6 +16,7 @@ enum PhoneValidationStatus {
   hiddenOrUnknown,
 }
 
+/// Motor central de anÃ¡lisis telefÃ³nico de JOSH Security.
 class CallSecurityEngine {
   const CallSecurityEngine();
 
@@ -15,7 +25,7 @@ class CallSecurityEngine {
     'seguridad',
     'soporte',
     'verificacion',
-    'verificación',
+    'verificaciÃ³n',
     'premio',
     'ganaste',
     'urgente',
@@ -23,138 +33,79 @@ class CallSecurityEngine {
     'cuenta',
     'clave',
     'codigo',
-    'código',
+    'cÃ³digo',
     'token',
     'confirmar',
     'actualizar',
     'credito',
-    'crédito',
+    'crÃ©dito',
+    'transferencia',
+    'pago',
+    'contraseÃ±a',
+    'password',
+    'otp',
+    'pin',
+    'tarjeta',
     'inversion',
-    'inversión',
-    'oferta',
-    'wallet',
-    'crypto',
-    'cripto',
+    'inversiÃ³n',
+    'deuda',
+    'cobro',
+    'embargo',
+    'policia',
+    'policÃ­a',
+    'fiscalia',
+    'fiscalÃ­a',
   ];
 
-  static const Set<String> _hiddenValues = <String>{
-    '',
-    'unknown',
-    'unknown number',
-    'unknown caller',
-    'desconocido',
-    'numero desconocido',
-    'número desconocido',
-    'private',
-    'private number',
-    'privado',
-    'numero privado',
-    'número privado',
-    'restricted',
-    'restricted number',
-    'restringido',
-    'oculto',
-    'numero oculto',
-    'número oculto',
-    'hidden',
-    'null',
-    'n/a',
-    'na',
-  };
-
-  PhoneValidationStatus _evaluateValidationStatus(
-    String rawNumber,
-    String cleanDigits,
+  PhoneValidationStatus _validatePhone(
+    String phoneNumber,
   ) {
-    final String normalized =
-        rawNumber.trim().toLowerCase();
-
-    if (_hiddenValues.contains(normalized) ||
-        cleanDigits.isEmpty) {
+    final String normalized = phoneNumber.trim();
+    if (normalized.isEmpty) {
       return PhoneValidationStatus.hiddenOrUnknown;
     }
 
-    if (cleanDigits.length >= 3 &&
-        cleanDigits.length <= 6) {
+    final String digitsOnly = normalized.replaceAll(
+      RegExp(r'[^0-9]'),
+      '',
+    );
+
+    if (digitsOnly.isEmpty) {
+      return PhoneValidationStatus.invalidFormat;
+    }
+
+    if (digitsOnly.length <= 6) {
       return PhoneValidationStatus.shortCode;
     }
 
-    if (cleanDigits.length < 7 ||
-        cleanDigits.length > 15) {
+    if (digitsOnly.length < 7) {
       return PhoneValidationStatus.invalidFormat;
     }
 
     return PhoneValidationStatus.valid;
   }
 
-  bool _hasAnomalousRepetition(String digits) {
-    if (digits.length < 6) {
-      return false;
+  List<String> _findSuspiciousPatterns({
+    String? contactName,
+    String? callText,
+  }) {
+    final String combined = [
+      contactName ?? '',
+      callText ?? '',
+    ].join(' ').toLowerCase();
+    if (combined.trim().isEmpty) {
+      return <String>[];
     }
 
-    final String firstDigit = digits[0];
-
-    if (digits.split('').every(
-          (String digit) => digit == firstDigit,
-        )) {
-      return true;
-    }
-
-    if (digits.length < 8) {
-      return false;
-    }
-
-    final String pattern =
-        digits.substring(0, 2);
-
-    int matches = 0;
-
-    for (
-      int i = 0;
-      i <= digits.length - 2;
-      i += 2
-    ) {
-      if (digits.substring(i, i + 2) != pattern) {
-        break;
-      }
-
-      matches++;
-    }
-
-    return matches >= 4;
-  }
-
-  int _suspiciousContextScore(
-    String context,
-    List<String> reasons,
-  ) {
-    int score = 0;
-    int matches = 0;
+    final List<String> matches = <String>[];
 
     for (final String pattern in suspiciousPatterns) {
-      if (!context.contains(pattern)) {
-        continue;
-      }
-
-      matches++;
-
-      if (matches <= 3) {
-        score += 15;
-
-        reasons.add(
-          "Indicador de ingeniería social detectado: '$pattern'.",
-        );
+      if (combined.contains(pattern) && !matches.contains(pattern)) {
+        matches.add(pattern);
       }
     }
 
-    return score;
-  }
-
-  String _normalizeForComparison(String value) {
-    return value.replaceAll(
-      RegExp(r'\D'),
-      '',
-    );
+    return matches;
   }
 
   Map<String, dynamic> analyze({
@@ -162,49 +113,39 @@ class CallSecurityEngine {
     String? contactName,
     String? callText,
   }) {
-    final String raw = phoneNumber.trim();
-
-    final String digits =
-        _normalizeForComparison(raw);
-
-    final String context = <String>[
-      contactName ?? '',
-      callText ?? '',
-    ].join(' ').toLowerCase();
-
-    final PhoneValidationStatus validation =
-        _evaluateValidationStatus(
-      raw,
-      digits,
+    final String normalized = phoneNumber.trim();
+    final PhoneValidationStatus validation = _validatePhone(
+      normalized,
     );
 
-    int score = 0;
+    final List<String> reasons = <String>[];
 
-    final List<String> reasons =
-        <String>[];
+    final List<String> patternMatches = _findSuspiciousPatterns(
+      contactName: contactName,
+      callText: callText,
+    );
+
+    double score = 0.0;
 
     switch (validation) {
       case PhoneValidationStatus.hiddenOrUnknown:
-        score += 40;
-
+        score = 45.0;
         reasons.add(
-          'Número oculto, privado o no identificado.',
+          'NÃºmero oculto o no disponible.',
         );
         break;
 
       case PhoneValidationStatus.invalidFormat:
-        score += 35;
-
+        score = 35.0;
         reasons.add(
-          'Anomalía de formato: longitud incompatible con una estructura telefónica válida.',
+          'Formato telefÃ³nico no vÃ¡lido.',
         );
         break;
 
       case PhoneValidationStatus.shortCode:
-        score += 25;
-
+        score = 30.0;
         reasons.add(
-          'Estructura correspondiente a código corto no verificado.',
+          'CÃ³digo corto no verificado.',
         );
         break;
 
@@ -212,71 +153,97 @@ class CallSecurityEngine {
         break;
     }
 
-    final String normalizedRaw =
-        raw.replaceAll(
-      RegExp(r'[\s()-]'),
-      '',
-    );
-
-    if (normalizedRaw.startsWith('+999') ||
-        normalizedRaw.startsWith('+000') ||
-        normalizedRaw.startsWith('000')) {
-      score += 45;
+    if (patternMatches.isNotEmpty) {
+      score += min(
+        patternMatches.length * 10.0,
+        45.0,
+      );
 
       reasons.add(
-        'Prefijo telefónico no válido o altamente sospechoso.',
+        'Se detectaron patrones lingÃ¼Ã­sticos '
+        'asociados con solicitudes sensibles.',
       );
     }
 
-    if (_hasAnomalousRepetition(digits)) {
-      score += 50;
+    if (validation == PhoneValidationStatus.valid &&
+        (contactName == null || contactName.trim().isEmpty)) {
+      score += 10.0;
 
       reasons.add(
-        'Patrón numérico altamente repetitivo detectado.',
+        'La llamada no estÃ¡ asociada a un contacto identificado.',
       );
     }
 
-    score += _suspiciousContextScore(
-      context,
-      reasons,
-    );
+    score = score.clamp(0.0, 100.0);
 
-    score = min(score, 100);
+    String verdict;
+    String statusLabel;
 
-    final String verdict;
-    final String statusLabel;
-
-    if (score >= 80) {
-      verdict = 'RIESGO_MUY_ALTO';
-      statusLabel = '🔴 RIESGO MUY ALTO';
-    } else if (score >= 60) {
-      verdict = 'ALTO_RIESGO';
-      statusLabel = '🟠 ALTO RIESGO';
-    } else if (score >= 40) {
+    if (score >= 80.0) {
+      verdict = 'CRÃTICO';
+      statusLabel = 'RIESGO CRÃTICO DETECTADO';
+    } else if (score >= 40.0) {
       verdict = 'ADVERTENCIA';
-      statusLabel = '🟡 ADVERTENCIA PREVENTIVA';
-    } else if (validation ==
-        PhoneValidationStatus.invalidFormat) {
-      verdict = 'ANOMALIA_FORMATO';
-      statusLabel = '🔵 ANOMALÍA DE FORMATO';
-    } else if (validation ==
-        PhoneValidationStatus.shortCode) {
+      statusLabel = 'LLAMADA POTENCIALMENTE SOSPECHOSA';
+    } else if (validation == PhoneValidationStatus.shortCode) {
       verdict = 'SHORTCODE_NO_VERIFICADO';
-      statusLabel = '🟡 CÓDIGO CORTO NO VERIFICADO';
+      statusLabel = 'CÃ“DIGO CORTO NO VERIFICADO';
     } else {
       verdict = 'SIN_AMENAZAS';
-      statusLabel = '🟢 SIN AMENAZAS DETECTADAS';
+      statusLabel = 'SIN AMENAZAS DETECTADAS';
+    }
+
+    if (reasons.isEmpty) {
+      reasons.add(
+        'No se detectaron indicadores heurÃ­sticos relevantes.',
+      );
     }
 
     return <String, dynamic>{
-      'phone': phoneNumber,
+      'phone': normalized,
+      'phoneNumber': normalized,
       'risk_score': score,
+      'riskScore': score,
       'validation_status': validation.name,
       'verdict': verdict,
+      'riskLevel': verdict,
       'status_label': statusLabel,
       'reasons': reasons,
-      'timestamp':
-          DateTime.now().toIso8601String(),
+      'timestamp': DateTime.now().toIso8601String(),
+      'source': DiagnosticSource.local.name,
     };
+  }
+
+  /// Convierte el resultado del motor al modelo compartido.
+  CallVerdict buildVerdict({
+    required String phoneNumber,
+    String? contactName,
+    String? callText,
+  }) {
+    final Map<String, dynamic> result = analyze(
+      phoneNumber: phoneNumber,
+      contactName: contactName,
+      callText: callText,
+    );
+    final double score = (result['riskScore'] as num?)?.toDouble() ?? 0.0;
+
+    final String riskLevel = result['riskLevel']?.toString() ??
+        result['verdict']?.toString() ??
+        'SIN_AMENAZAS';
+
+    final String analysisMessage = result['status_label']?.toString() ??
+        'AnÃ¡lisis telefÃ³nico completado.';
+
+    final String timestamp =
+        result['timestamp']?.toString() ?? DateTime.now().toIso8601String();
+
+    return CallVerdict(
+      phoneNumber: phoneNumber,
+      riskScore: score,
+      riskLevel: riskLevel,
+      analysisMessage: analysisMessage,
+      source: DiagnosticSource.local,
+      timestamp: timestamp,
+    );
   }
 }

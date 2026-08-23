@@ -1,11 +1,12 @@
-// ====================================================================================================
+// ============================================================================
 // ARCHIVO: lib/services/learning/learning_engine.dart
-// CEREBRO HEURÍSTICO Y MOTOR DE APRENDIZAJE ADAPTATIVO EN TIEMPO REAL v4.6
-// ====================================================================================================
+// CEREBRO HEURÍSTICO Y MOTOR DE APRENDIZAJE ADAPTATIVO EN TIEMPO REAL
+// JOSH SECURITY
+// ============================================================================
 
-import '../security/phone_interceptor_service.dart';
+import '../security/security_models.dart';
 
-/// Modelo de evento de seguridad registrado por el motor heurístico local
+/// Evento heurístico registrado por el motor de aprendizaje local.
 class HeuristicEvent {
   final DateTime timestamp;
   final String riskLevel;
@@ -18,55 +19,74 @@ class HeuristicEvent {
   });
 }
 
-/// Cerebro heurístico local de JOSH Security para detectar patrones de ataque dirigidos
+/// Cerebro heurístico local de JOSH Security.
+///
+/// Mantiene una ventana móvil de eventos sospechosos y ajusta el nivel
+/// de riesgo cuando detecta una ráfaga de amenazas.
 class LearningEngine {
-  // Patrón Singleton para acceso global único y seguro
   static final LearningEngine _instance = LearningEngine._internal();
+
   factory LearningEngine() => _instance;
+
   LearningEngine._internal();
 
-  // Historial en memoria volátil de eventos recientes de seguridad (Ventana Móvil)
+  /// Historial volátil de eventos recientes.
   final List<HeuristicEvent> _recentEvents = <HeuristicEvent>[];
 
-  // Configuración de la heurística local
+  /// Ventana temporal de aprendizaje táctico.
   static const int _timeWindowMinutes = 5;
+
+  /// Cantidad de eventos necesarios para activar el multiplicador.
   static const int _stressThresholdEvents = 3;
 
-  // Biases del motor de aprendizaje optimizados con inmutabilidad
+  /// Ajustes globales aprendidos.
+  ///
+  /// Se mantiene preparado para futuras capas de aprendizaje adaptativo.
   final Map<String, double> _biases = const <String, double>{
     'global': 0.0,
   };
 
-  /// Ajusta el Score final calculando las desviaciones globales aprendidas (Escala 0.0 - 100.0)
+  /// Ajusta el score final dentro del rango 0-100.
   double adjustScore(double score) {
     final double adjusted = score + (_biases['global'] ?? 0.0);
+
     return adjusted.clamp(0.0, 100.0);
   }
 
-  /// Actualiza dinámicamente la matriz de reputación comunitaria local según confirmación de fraude
+  /// Actualiza la reputación local de un identificador.
   void updateCommunityScore(
     Map<String, double> matrix,
     String identifier,
     bool isFraud,
   ) {
     final String cleanKey = identifier.trim();
-    if (cleanKey.isEmpty) return;
 
-    // Asigna 100.0 para fraude confirmado o 0.0 para limpio
+    if (cleanKey.isEmpty) {
+      return;
+    }
+
     matrix[cleanKey] = isFraud ? 100.0 : 0.0;
   }
 
-  /// Registra un veredicto en el historial heurístico y retorna el score de riesgo recalculado (0.0 - 100.0)
-  double registerAndEvaluatePattern(CallVerdict verdict) {
+  /// Registra un veredicto y devuelve el score heurístico resultante.
+  double registerAndEvaluatePattern(
+    CallVerdict verdict,
+  ) {
     final DateTime now = DateTime.now();
 
-    // 1. Limpiar primero eventos viejos fuera de la ventana táctica de 5 minutos
+    // ------------------------------------------------------------------------
+    // 1. LIMPIEZA DE EVENTOS FUERA DE LA VENTANA MÓVIL
+    // ------------------------------------------------------------------------
+
     _recentEvents.removeWhere(
       (HeuristicEvent event) =>
           now.difference(event.timestamp).inMinutes >= _timeWindowMinutes,
     );
 
-    // 2. Registrar el evento actual únicamente si representa sospecha o riesgo real
+    // ------------------------------------------------------------------------
+    // 2. REGISTRO DE EVENTOS RELEVANTES
+    // ------------------------------------------------------------------------
+
     if (verdict.riskLevel == 'ADVERTENCIA' || verdict.riskLevel == 'CRÍTICO') {
       _recentEvents.add(
         HeuristicEvent(
@@ -77,15 +97,22 @@ class LearningEngine {
       );
     }
 
-    // 3. Evaluar ráfagas / Ataques coordinados (Análisis de Estrés)
+    // ------------------------------------------------------------------------
+    // 3. DETECCIÓN DE RÁFAGA / CAMPAÑA ACTIVA
+    // ------------------------------------------------------------------------
+
     double anomalyMultiplier = 1.0;
+
     if (_recentEvents.length >= _stressThresholdEvents) {
-      // Multiplicador de elevación por sospecha de campaña activa o extorsión masiva
       anomalyMultiplier = 1.25;
     }
 
-    // 4. Calcular el score base en escala 0.0 - 100.0
-    double baseScore = 0.0;
+    // ------------------------------------------------------------------------
+    // 4. SCORE BASE
+    // ------------------------------------------------------------------------
+
+    double baseScore;
+
     if (verdict.riskLevel == 'CRÍTICO') {
       baseScore = 85.0;
     } else if (verdict.riskLevel == 'ADVERTENCIA') {
@@ -94,15 +121,19 @@ class LearningEngine {
       baseScore = 5.0;
     }
 
-    // 5. Aplicar multiplicador y acotar estrictamente a límites de interfaz (0 - 100)
+    // ------------------------------------------------------------------------
+    // 5. SCORE FINAL
+    // ------------------------------------------------------------------------
+
     final double finalScore = baseScore * anomalyMultiplier;
+
     return adjustScore(finalScore);
   }
 
-  /// Retorna la cantidad de amenazas activas registradas en la ventana móvil actual
+  /// Cantidad de amenazas activas dentro de la ventana móvil.
   int get activeThreatsInWindow => _recentEvents.length;
 
-  /// Reinicia la sesión de aprendizaje heurístico en memoria
+  /// Limpia la sesión de aprendizaje en memoria.
   void clearLearningSession() {
     _recentEvents.clear();
   }
