@@ -1,14 +1,17 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/background_phone_screening.dart
+// ISOLATE Y SCREENING EN SEGUNDO PLANO PARA LLAMADAS ENTRANTE
+// ====================================================================================================
+
 import 'dart:async';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-
 import 'security/phone_interceptor_service.dart';
 
 const MethodChannel _backgroundPhoneChannel =
     MethodChannel('josh_security/background_phone');
 
 late final PhoneInterceptorService _phoneInterceptorService;
-
 bool _initialized = false;
 
 @pragma('vm:entry-point')
@@ -21,20 +24,14 @@ Future<void> backgroundPhoneMain() async {
 }
 
 Future<void> _initializeBackgroundPhone() async {
-  if (_initialized) {
-    return;
-  }
+  if (_initialized) return;
 
   _initialized = true;
-
   _phoneInterceptorService = PhoneInterceptorService();
-
   await _phoneInterceptorService.initialize();
 }
 
-Future<void> _handleBackgroundPhoneMethod(
-  MethodCall call,
-) async {
+Future<void> _handleBackgroundPhoneMethod(MethodCall call) async {
   switch (call.method) {
     case 'incomingCall':
       await _handleIncomingCall(call.arguments);
@@ -46,37 +43,26 @@ Future<void> _handleBackgroundPhoneMethod(
   }
 }
 
-Future<void> _handleIncomingCall(
-  dynamic arguments,
-) async {
-  if (arguments is! Map) {
-    return;
-  }
+Future<void> _handleIncomingCall(dynamic arguments) async {
+  if (arguments is! Map) return;
 
   final dynamic rawNumber = arguments['phoneNumber'];
-
   final String phoneNumber =
       rawNumber?.toString().trim() ?? 'Número Oculto';
 
-  if (phoneNumber.isEmpty) {
-    return;
-  }
+  if (phoneNumber.isEmpty) return;
 
   try {
-    await _phoneInterceptorService.handleIncomingCall(
-      phoneNumber,
-    );
-  } catch (_) {
-    // El servicio nunca debe romper
-    // el proceso de screening.
+    await _phoneInterceptorService.handleIncomingCall(phoneNumber);
+  } catch (e) {
+    debugPrint('⚠️ [JOSH_BACKGROUND_PHONE] Error al procesar llamada entrante: $e');
   }
 }
 
 Future<void> _handleCallEnded() async {
   try {
     await _phoneInterceptorService.handleCallEnded();
-  } catch (_) {
-    // Evitamos que una excepción del
-    // análisis afecte al sistema telefónico.
+  } catch (e) {
+    debugPrint('⚠️ [JOSH_BACKGROUND_PHONE] Error al procesar fin de llamada: $e');
   }
 }

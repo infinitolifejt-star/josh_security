@@ -1,7 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/api_service.dart
-// PUENTE DE CONEXIÓN, CLIENTE SSL PINNING Y MOTOR HEURÍSTICO DE ANÁLISIS DE TELEMETRÍA v5.0
-// Refactorizado y optimizado
+// PUENTE DE CONEXIÓN, CLIENTE SSL PINNING Y MOTOR HEURÍSTICO DE ANÁLISIS DE TELEMETRÍA v6.0
 // ====================================================================================================
 
 import 'dart:convert';
@@ -27,8 +26,7 @@ class ApiService {
 
   static http.Client? _secureClient;
 
-  static const String _cloudUrl =
-      'https://josh-security.onrender.com';
+  static const String _cloudUrl = 'https://josh-security.onrender.com';
 
   static String get _baseUrl => _cloudUrl;
 
@@ -47,44 +45,13 @@ class ApiService {
   // ===========================================================================================
 
   static const List<String> _validColombianPrefixes = [
-    '300',
-    '301',
-    '302',
-    '303',
-    '304',
-    '305',
-    '310',
-    '311',
-    '312',
-    '313',
-    '314',
-    '315',
-    '316',
-    '317',
-    '318',
-    '319',
-    '320',
-    '321',
-    '322',
-    '323',
-    '324',
-    '325',
-    '326',
-    '327',
-    '333',
-    '350',
-    '351',
+    '300', '301', '302', '303', '304', '305', '310', '311', '312', '313',
+    '314', '315', '316', '317', '318', '319', '320', '321', '322', '323',
+    '324', '325', '326', '327', '333', '350', '351',
   ];
 
   static const List<String> _validColombianFixedPrefixes = [
-    '601',
-    '602',
-    '603',
-    '604',
-    '605',
-    '606',
-    '607',
-    '608',
+    '601', '602', '603', '604', '605', '606', '607', '608',
   ];
 
   // ===========================================================================================
@@ -101,7 +68,6 @@ class ApiService {
           await rootBundle.load('assets/certificates/api_cert.pem');
 
       final certBytes = certData.buffer.asUint8List();
-
       final context = SecurityContext(withTrustedRoots: true);
 
       if (certBytes.isNotEmpty) {
@@ -115,9 +81,8 @@ class ApiService {
       _secureClient = IOClient(httpClient);
     } catch (e) {
       debugPrint(
-        '⚠ SSL Pinning no disponible. Se utilizará cliente estándar.\n$e',
+        '⚠️ SSL Pinning no disponible. Se utilizará cliente estándar.\n$e',
       );
-
       _secureClient = http.Client();
     }
 
@@ -125,7 +90,7 @@ class ApiService {
   }
 
   // ===========================================================================================
-  // PUNTO DE ENTRADA
+  // PUNTO DE ENTRADA DE ESCANEO
   // ===========================================================================================
 
   Future<Map<String, dynamic>> scanTarget(
@@ -154,8 +119,7 @@ class ApiService {
         break;
     }
 
-    final result =
-        await _executeNetworkScan(target, normalized);
+    final result = await _executeNetworkScan(target, normalized);
 
     await _syncWithSqlite(
       target,
@@ -175,9 +139,7 @@ class ApiService {
     String type,
   ) async {
     final client = await _getHttpClient();
-
     final endpoint = '$_baseUrl/api/v1/scan';
-
     const retries = 3;
 
     for (int attempt = 0; attempt < retries; attempt++) {
@@ -210,10 +172,8 @@ class ApiService {
           throw http.ClientException('Servidor temporalmente ocupado');
         }
 
-        if (response.statusCode == 200 ||
-            response.statusCode == 201) {
-          final data =
-              jsonDecode(response.body) as Map<String, dynamic>;
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
 
           double score = double.tryParse(
                   data['risk_score']?.toString() ?? '0') ??
@@ -224,10 +184,7 @@ class ApiService {
           }
 
           String classification =
-              data['classification']
-                      ?.toString()
-                      .toUpperCase() ??
-                  'SEGURO';
+              data['classification']?.toString().toUpperCase() ?? 'SEGURO';
 
           if (classification == 'SUSPICIOUS') {
             classification = 'ADVERTENCIA';
@@ -248,8 +205,7 @@ class ApiService {
             'score': score.toStringAsFixed(0),
             'classification': classification,
             'riskLevel': classification,
-            'metrics':
-                data['metrics'] ?? {'network': 1.0},
+            'metrics': data['metrics'] ?? {'network': 1.0},
             'logs': data['logs'] ??
                 data['verdict'] ??
                 'Escaneo Cloud completado.',
@@ -263,10 +219,7 @@ class ApiService {
       } catch (_) {
         if (attempt != retries - 1) {
           await Future.delayed(
-            Duration(
-              seconds:
-                  math.pow(2, attempt + 1).toInt(),
-            ),
+            Duration(seconds: math.pow(2, attempt + 1).toInt()),
           );
         }
       }
@@ -277,6 +230,7 @@ class ApiService {
       'Servidor no disponible',
     );
   }
+
   // ===========================================================================================
   // RUTA ALTERNATIVA DEL BACKEND
   // ===========================================================================================
@@ -303,10 +257,8 @@ class ApiService {
           )
           .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 200 ||
-          response.statusCode == 201) {
-        final data =
-            jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
 
         double score = double.tryParse(
                 data['risk_score']?.toString() ?? '0') ??
@@ -318,19 +270,15 @@ class ApiService {
 
         final classification = score < 30
             ? 'SEGURO'
-            : (score < 70
-                ? 'ADVERTENCIA'
-                : 'CRÍTICO');
+            : (score < 70 ? 'ADVERTENCIA' : 'CRÍTICO');
 
         return {
           'riskScore': _normalize(score),
           'score': score.toStringAsFixed(0),
           'classification': classification,
           'riskLevel': classification,
-          'metrics': data['metrics'] ??
-              {'network': 1.0},
-          'logs':
-              'AUDITORÍA ALTERNATIVA: conexión exitosa.',
+          'metrics': data['metrics'] ?? {'network': 1.0},
+          'logs': 'AUDITORÍA ALTERNATIVA: conexión exitosa.',
         };
       }
     } catch (_) {}
@@ -352,15 +300,12 @@ class ApiService {
       final response = await client
           .get(
             Uri.parse('$_baseUrl/api/v1/history'),
-            headers: const {
-              'Content-Type': 'application/json'
-            },
+            headers: const {'Content-Type': 'application/json'},
           )
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-
         if (decoded is List) {
           return decoded;
         }
@@ -385,7 +330,7 @@ class ApiService {
         'service': type,
         'activity': target,
         'verdict': result['classification'],
-        'matched_rule': 'HEURISTICA_CENTINELA',
+        'matched_rule': 'HEURISTICA_JOSH',
         'extra_data': jsonEncode({
           'score': result['riskScore'],
           'risk_level': result['classification'],
@@ -400,18 +345,13 @@ class ApiService {
 
       await client
           .post(
-            Uri.parse(
-              '$_baseUrl/api/v1/sync',
-            ),
-            headers: const {
-              'Content-Type': 'application/json',
-            },
+            Uri.parse('$_baseUrl/api/v1/sync'),
+            headers: const {'Content-Type': 'application/json'},
             body: jsonEncode({
               'target': target,
               'type': type,
               'risk_score': result['riskScore'],
-              'classification':
-                  result['classification'],
+              'classification': result['classification'],
               'logs': result['logs'],
             }),
           )
@@ -436,7 +376,7 @@ class ApiService {
         'entropy': 0.0,
         'fallback': 1.0,
       },
-      'logs': 'CENTINELA: $reason',
+      'logs': 'JOSH_SECURITY: $reason',
     };
   }
 
@@ -448,34 +388,15 @@ class ApiService {
     String phone,
     List<CallRecord> history,
   ) {
-    final cleanPhone =
-        phone.replaceAll(RegExp(r'\D'), '');
+    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
 
-    final entropy =
-        _entropyEngine.analyzeNumberStructure(
-      cleanPhone,
-    );
+    final entropy = _entropyEngine.analyzeNumberStructure(cleanPhone);
+    final frequency = _entropyEngine.analyzeFrequency(history);
+    final timeRisk = _entropyEngine.analyzeTimeRiskDensity(history);
+    final durationRisk = _entropyEngine.analyzeDurationPattern(history);
+    final community = _communityMatrix[cleanPhone] ?? 0.0;
 
-    final frequency =
-        _entropyEngine.analyzeFrequency(
-      history,
-    );
-
-    final timeRisk =
-        _entropyEngine.analyzeTimeRiskDensity(
-      history,
-    );
-
-    final durationRisk =
-        _entropyEngine.analyzeDurationPattern(
-      history,
-    );
-
-    final community =
-        _communityMatrix[cleanPhone] ?? 0.0;
-
-    double risk =
-        _reputationEngine.computeRiskScore(
+    double risk = _reputationEngine.computeRiskScore(
       entropy: entropy,
       frequency: frequency,
       timeRisk: timeRisk,
@@ -485,39 +406,30 @@ class ApiService {
 
     bool colombian = false;
 
-    for (final prefix
-        in _validColombianPrefixes) {
-      if (cleanPhone.startsWith(prefix) ||
-          cleanPhone.startsWith('57$prefix')) {
+    for (final prefix in _validColombianPrefixes) {
+      if (cleanPhone.startsWith(prefix) || cleanPhone.startsWith('57$prefix')) {
         colombian = true;
         break;
       }
     }
 
     if (!colombian) {
-      for (final prefix
-          in _validColombianFixedPrefixes) {
+      for (final prefix in _validColombianFixedPrefixes) {
         if (cleanPhone.startsWith(prefix) ||
-            cleanPhone.startsWith(
-                '57$prefix')) {
+            cleanPhone.startsWith('57$prefix')) {
           colombian = true;
           break;
         }
       }
     }
 
-    // IMPORTANTE:
-    // Un prefijo colombiano NO hace seguro un número.
-    // Solo evita un castigo automático.
     if (colombian) {
       if (entropy < 40 &&
           frequency < 20 &&
           durationRisk < 20 &&
           timeRisk < 20) {
         risk -= 8;
-      } else if (entropy > 70 ||
-          frequency > 60 ||
-          timeRisk > 60) {
+      } else if (entropy > 70 || frequency > 60 || timeRisk > 60) {
         risk += 12;
       }
     } else {
@@ -527,13 +439,9 @@ class ApiService {
     }
 
     risk = _learningEngine.adjustScore(risk);
-
-    risk = _normalize(risk);
-    // Nunca permitimos salir del rango 0-100.
     risk = _normalize(risk);
 
-    final classification =
-        _reputationEngine.classify(risk);
+    final classification = _reputationEngine.classify(risk);
 
     return AnalysisResult(
       riskScore: risk,
@@ -558,10 +466,9 @@ class ApiService {
     if (value.isNaN || value.isInfinite) {
       return 0.0;
     }
-
     return value.clamp(0.0, 100.0);
   }
 }
 
-/// Alias utilizado por otros módulos.
+/// Alias de compatibilidad utilizado por otros módulos.
 typedef PhoneHeuristicEngine = ApiService;

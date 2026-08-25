@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/forensic_history_list.dart
-// CORRECCIÓN: Corrección de Overflow, Scroll Independiente y reemplazo de Container por SizedBox
+// LISTA FORENSE: Control de Desbordamiento, Scroll Independiente y Renderizado Optimizado
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
@@ -238,10 +238,10 @@ class ForensicHistoryList extends StatelessWidget {
                   ),
                 )
               : SizedBox(
-                  height: 300, // Altura contenida para el área deslizable
+                  height: 300,
                   child: ListView.builder(
                     shrinkWrap: false,
-                    physics: const AlwaysScrollableScrollPhysics(), // Permite scroll suave en la bitácora
+                    physics: const AlwaysScrollableScrollPhysics(),
                     itemCount: dbLogs.length,
                     itemBuilder: (context, index) {
                       final rawItem = dbLogs[index];
@@ -259,7 +259,7 @@ class ForensicHistoryList extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFF1C2541),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: cardColor.withValues(alpha: 0.2)),
+                          border: Border.all(color: cardColor.withAlpha((0.2 * 255).round())),
                         ),
                         child: InkWell(
                           onTap: () => _mostrarDetalleForense(context, rawItem, score, verdict),
@@ -267,7 +267,7 @@ class ForensicHistoryList extends StatelessWidget {
                             children: [
                               CircleAvatar(
                                 radius: 18,
-                                backgroundColor: cardColor.withValues(alpha: 0.1),
+                                backgroundColor: cardColor.withAlpha((0.1 * 255).round()),
                                 child: Icon(
                                   getCardIcon(score, vector),
                                   color: cardColor,
@@ -317,7 +317,7 @@ class ForensicHistoryList extends StatelessWidget {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: cardColor.withValues(alpha: 0.15),
+                                      color: cardColor.withAlpha((0.15 * 255).round()),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(

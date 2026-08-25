@@ -37,13 +37,16 @@ class HudDisplay extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xFF1C2541),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: hudColor.withAlpha((0.4 * 255).round()), width: 2),
+            border: Border.all(
+              color: hudColor.withAlpha((0.4 * 255).round()),
+              width: 2,
+            ),
             boxShadow: [
               BoxShadow(
                 color: hudColor.withAlpha((glowIntensity * 255).round()),
                 blurRadius: 20,
                 spreadRadius: 2,
-              )
+              ),
             ],
           ),
           child: Column(
@@ -73,12 +76,15 @@ class HudDisplay extends StatelessWidget {
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: hudColor.withAlpha((0.4 * 255).round()), width: 1.5),
+                  border: Border.all(
+                    color: hudColor.withAlpha((0.4 * 255).round()),
+                    width: 1.5,
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: hudColor.withAlpha((0.1 * 255).round()),
                       blurRadius: 12,
-                    )
+                    ),
                   ],
                 ),
                 child: RotationTransition(
@@ -120,7 +126,9 @@ class HudDisplay extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0B132B).withAlpha((0.6 * 255).round()),
+                    color: const Color(0xFF0B132B).withAlpha(
+                      (0.6 * 255).round(),
+                    ),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: hudColor.withAlpha((0.3 * 255).round()),

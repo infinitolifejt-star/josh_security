@@ -1,30 +1,36 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/secure_logger.dart
-// COMPONENTE: Motor Criptográfico de Integridad de Logs para JOSH Security
+// COMPONENTE: Motor Criptográfico de Integridad de Logs para JOSH Security v6.0
 // ====================================================================================================
 
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 class SecureLogger {
-  // Constructor constante para permitir la instanciación eficiente en memoria
   const SecureLogger();
 
-  /// Calcula de forma privada el hash SHA-256 blindando el procesamiento de bits
-  String _hash(String input) {
+  /// Calcula el hash SHA-256 blindando el procesamiento de bits
+  static String _hash(String input) {
     final List<int> bytes = utf8.encode(input);
     return sha256.convert(bytes).toString();
   }
 
-  /// Crea un bloque de registro seguro uniendo los datos con la estampa de tiempo y su firma criptográfica en JSON estructurado
+  /// Genera un identificador pseudo-UUID v4 simple para correlación local
+  static String _generateUuidV4() {
+    final DateTime now = DateTime.now();
+    final String microseconds = now.microsecondsSinceEpoch.toRadixString(16);
+    final String signature = _hash(microseconds);
+    return '${signature.substring(0, 8)}-${signature.substring(8, 12)}-4${signature.substring(13, 16)}-'
+        '${signature.substring(16, 20)}-${signature.substring(20, 32)}';
+  }
+
+  /// Crea un bloque de registro seguro uniendo los datos con la estampa de tiempo y su firma criptográfica
   Map<String, String> createSecureLog(String data) {
-    // Anclaje temporal inmutable para evitar desincronizaciones en la pila asíncrona
     final String timestamp = DateTime.now().toIso8601String();
+    final String logId = _generateUuidV4();
 
-    // TODO: [DEUDA TÉCNICA - CENTINELA] Integrar un UID criptográfico correlativo (UUID v4) por cada registro generado para mitigar ataques de replicación u omisión en los reportes forenses de la Fase 3.
-
-    // Serialización estricta en JSON para neutralizar inyecciones de delimitadores de texto
     final String structuredPayload = jsonEncode({
+      "id": logId,
       "data": data,
       "timestamp": timestamp,
     });
@@ -32,6 +38,7 @@ class SecureLogger {
     final String signature = _hash(structuredPayload);
 
     return {
+      "id": logId,
       "payload": structuredPayload,
       "signature": signature,
     };

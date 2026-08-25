@@ -36,10 +36,12 @@ class CallVerdict {
     required this.timestamp,
   });
 
-  bool get isCritical => riskLevel == 'CRÍTICO' || riskScore >= 80.0;
+  bool get isCritical =>
+      riskLevel == 'CRÍTICO' || riskScore >= 80.0;
 
   bool get isWarning =>
-      riskLevel == 'ADVERTENCIA' || (riskScore >= 40.0 && riskScore < 80.0);
+      riskLevel == 'ADVERTENCIA' ||
+      (riskScore >= 40.0 && riskScore < 80.0);
 
   bool get isSafe => !isCritical && !isWarning;
 

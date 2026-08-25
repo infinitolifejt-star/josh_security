@@ -1,8 +1,14 @@
+﻿// ====================================================================================================
+// ARCHIVO: lib/services/background_shield.dart
+// ESCUDO DE PROTECCIÓN CONTINUA EN SEGUNDO PLANO (ROBUSTO)
+// ====================================================================================================
+
 import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 @pragma('vm:entry-point')
 class BackgroundShield {
@@ -16,6 +22,23 @@ class BackgroundShield {
 
     final service = FlutterBackgroundService();
 
+    // 1. Crear el canal de notificación explícitamente para Android (Vital para evitar el crash de Foreground)
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+        FlutterLocalNotificationsPlugin();
+
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      notificationChannelId,
+      'JOSH Security Background Shield',
+      description: 'Canal oficial para mantener el escudo de seguridad activo.',
+      importance: Importance.low, // Importancia baja para que sea un servicio silencioso y estable
+    );
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    // 2. Configurar el servicio en segundo plano
     await service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: onStart,
@@ -25,9 +48,6 @@ class BackgroundShield {
         initialNotificationTitle: 'JOSH SECURITY',
         initialNotificationContent: 'Escudo de seguridad activo.',
         foregroundServiceNotificationId: notificationId,
-        foregroundServiceTypes: [
-          AndroidForegroundType.dataSync,
-        ],
       ),
       iosConfiguration: IosConfiguration(
         autoStart: true,
@@ -52,7 +72,7 @@ class BackgroundShield {
       service.stopSelf();
     });
 
-    debugPrint('[JOSH SHIELD] Background service iniciado.');
+    debugPrint('[JOSH SHIELD] Servicio de fondo inicializado correctamente.');
 
     Timer.periodic(const Duration(minutes: 5), (timer) {
       debugPrint('[JOSH SHIELD] Servicio de fondo activo.');

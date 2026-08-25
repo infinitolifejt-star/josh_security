@@ -1,89 +1,25 @@
-package com.josh.security.josh_security
+﻿package com.josh.security.josh_security
 
+import android.os.Build
 import android.telecom.Call
 import android.telecom.CallScreeningService
-import android.util.Log
+import androidx.annotation.RequiresApi
 
+@RequiresApi(Build.VERSION_CODES.N)
 class CallScreeningService : CallScreeningService() {
-
-    companion object {
-        private const val TAG = "JoshCallScreening"
-    }
-
     override fun onScreenCall(callDetails: Call.Details) {
+        val phoneNumber = callDetails.handle?.schemeSpecificPart ?: return
 
-        Log.d(TAG, "==========================================")
-        Log.d(TAG, "JOSH CALL SCREENING ACTIVADO")
-        Log.d(TAG, "==========================================")
+        // Notifica el número entrante a Flutter mediante el Bridge
+        JoshPhoneBridge.sendIncomingNumberToFlutter(phoneNumber)
 
-        Log.d(
-            TAG,
-            "Dirección: ${callDetails.callDirection}"
-        )
+        val response = CallResponse.Builder()
+            .setDisallowCall(false)
+            .setRejectCall(false)
+            .setSkipCallLog(false)
+            .setSkipNotification(false)
+            .build()
 
-        /*
-         * Solo nos interesan llamadas entrantes.
-         */
-        if (
-            callDetails.callDirection ==
-            Call.Details.DIRECTION_INCOMING
-        ) {
-
-            val handle = callDetails.handle
-
-            val phoneNumber =
-                handle?.schemeSpecificPart
-                    ?: "Número Oculto"
-
-            Log.d(
-                TAG,
-                "Número: $phoneNumber"
-            )
-
-            /*
-             * Guardamos y notificamos la llamada
-             * directamente desde el servicio.
-             */
-            PhoneCallReceiver.handleScreenedIncomingCall(
-                applicationContext,
-                phoneNumber
-            )
-        }
-
-        /*
-         * IMPORTANTE:
-         *
-         * Respondemos inmediatamente.
-         *
-         * La documentación de Android exige que
-         * respondToCall() se ejecute dentro de 5 segundos.
-         */
-        val response =
-            CallResponse.Builder()
-                .setDisallowCall(false)
-                .setRejectCall(false)
-                .setSilenceCall(false)
-                .setSkipNotification(false)
-                .build()
-
-        respondToCall(
-            callDetails,
-            response
-        )
-
-        Log.d(
-            TAG,
-            "Respuesta de screening enviada."
-        )
-    }
-
-    override fun onDestroy() {
-
-        Log.d(
-            TAG,
-            "CallScreeningService destruido."
-        )
-
-        super.onDestroy()
+        respondToCall(callDetails, response)
     }
 }

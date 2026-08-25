@@ -1,25 +1,27 @@
-// ====================================================================================================
-// ARCHIVO: lib/services/security/database_repository.dart
-// CAPA DE ABSTRACCIÓN PARA PERSISTENCIA LOCAL - JOSH SECURITY v6.0
-// ====================================================================================================
-
 import 'database_service.dart';
 import '../core/phone_threat_intelligence.dart';
 
 class DatabaseRepository {
   DatabaseRepository._internal();
 
-  static final DatabaseRepository instance = DatabaseRepository._internal();
+  static final DatabaseRepository instance =
+      DatabaseRepository._internal();
 
-  final DatabaseService _database = DatabaseService.instance;
+  factory DatabaseRepository() {
+    return instance;
+  }
+
+  final DatabaseService _database =
+      DatabaseService.instance;
 
   // =====================================================================================
-  // INTELIGENCIA DE AMENAZAS TELEFÓNICAS (PHONE THREAT INTELLIGENCE)
+  // INTELIGENCIA DE AMENAZAS TELEFÓNICAS
   // =====================================================================================
 
-  /// Persiste una evaluación completa de inteligencia telefónica en la base de datos local
-  Future<int> saveThreatIntelligence(PhoneThreatIntelligence threat) async {
-    return await _database.insertCallHistory(
+  Future<int> saveThreatIntelligence(
+    PhoneThreatIntelligence threat,
+  ) async {
+    return _database.insertCallHistory(
       phoneNumber: threat.phoneNumber,
       riskScore: threat.riskScore,
       ipqsScore: threat.ipqsScore,
@@ -32,38 +34,92 @@ class DatabaseRepository {
     );
   }
 
-  /// Recupera el historial de llamadas mapeado a modelos PhoneThreatIntelligence
   Future<List<PhoneThreatIntelligence>> getRecentThreats() async {
-    final rawLogs = await _database.getCallHistory();
-    return rawLogs.map((map) {
-      final reasonsString = map['details'] as String? ?? '';
-      return PhoneThreatIntelligence(
-        phoneNumber: map['phoneNumber'] as String? ?? '',
-        riskScore: (map['riskScore'] as num?)?.toDouble() ?? 0.0,
-        ipqsScore: (map['ipqsScore'] as num?)?.toDouble() ?? 0.0,
-        verdict: map['verdict'] as String? ?? 'SIN_AMENAZAS',
-        statusLabel: map['category'] as String? ?? '🟢 SIN AMENAZAS DETECTADAS',
-        confidence: map['confidence'] as String? ?? 'MEDIA',
-        isVoip: false,
-        recentAbuse: (map['riskScore'] as num? ?? 0) >= 80,
-        carrier: map['source'] as String? ?? 'Desconocido',
-        reasons: reasonsString.isNotEmpty ? reasonsString.split(' | ') : [],
-        timestamp: DateTime.fromMillisecondsSinceEpoch(
-          map['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }).toList();
+    final List<Map<String, dynamic>> rawLogs =
+        await _database.getCallHistory();
+
+    return rawLogs.map(
+      (Map<String, dynamic> row) {
+        final String reasonsString =
+            row['details']?.toString() ?? '';
+
+        final double riskScore =
+            _readDouble(row['risk_score']);
+
+        final double ipqsScore =
+            _readDouble(row['ipqs_score']);
+
+        final int timestamp =
+            _readInt(row['timestamp']);
+
+        return PhoneThreatIntelligence(
+          phoneNumber:
+              row['phone_number']?.toString() ?? '',
+
+          riskScore: riskScore,
+
+          ipqsScore: ipqsScore,
+
+          verdict:
+              row['verdict']?.toString() ??
+              'SIN_AMENAZAS',
+
+          statusLabel:
+              row['category']?.toString() ??
+              'SIN AMENAZAS DETECTADAS',
+
+          confidence:
+              row['confidence']?.toString() ??
+              'MEDIA',
+
+          isVoip: false,
+
+          recentAbuse:
+              riskScore >= 80.0,
+
+          carrier:
+              row['source']?.toString() ??
+              'Desconocido',
+
+          reasons:
+              reasonsString.isNotEmpty
+                  ? reasonsString
+                      .split(' | ')
+                      .where(
+                        (String value) =>
+                            value.trim().isNotEmpty,
+                      )
+                      .map(
+                        (String value) =>
+                            value.trim(),
+                      )
+                      .toList()
+                  : <String>[],
+
+          timestamp:
+              timestamp > 0
+                  ? DateTime.fromMillisecondsSinceEpoch(
+                      timestamp,
+                    )
+                  : DateTime.now(),
+        );
+      },
+    ).toList();
   }
 
   // =====================================================================================
   // CACHÉ IPQS
   // =====================================================================================
 
-  Future<int> saveIpqsCache(Map<String, dynamic> data) {
+  Future<int> saveIpqsCache(
+    Map<String, dynamic> data,
+  ) {
     return _database.saveIpqsCache(data);
   }
 
-  Future<Map<String, dynamic>?> getIpqsCache(String phoneNumber) {
+  Future<Map<String, dynamic>?> getIpqsCache(
+    String phoneNumber,
+  ) {
     return _database.getIpqsCache(phoneNumber);
   }
 
@@ -71,7 +127,9 @@ class DatabaseRepository {
   // LOGS FORENSES
   // =====================================================================================
 
-  Future<int> insertForensicLog(Map<String, dynamic> logEntry) {
+  Future<int> insertForensicLog(
+    Map<String, dynamic> logEntry,
+  ) {
     return _database.insertForensicLog(logEntry);
   }
 
@@ -83,7 +141,9 @@ class DatabaseRepository {
   // HISTORIAL GENERAL
   // =====================================================================================
 
-  Future<int> insertScanLog(Map<String, dynamic> log) {
+  Future<int> insertScanLog(
+    Map<String, dynamic> log,
+  ) {
     return _database.insertScanLog(log);
   }
 
@@ -96,7 +156,7 @@ class DatabaseRepository {
   }
 
   // =====================================================================================
-  // HISTORIAL DE LLAMADAS (MÉTODOS RAW)
+  // HISTORIAL DE LLAMADAS
   // =====================================================================================
 
   Future<int> insertCallHistory({
@@ -132,7 +192,7 @@ class DatabaseRepository {
   }
 
   // =====================================================================================
-  // LIMPIEZA GENERAL Y CIERRE
+  // LIMPIEZA GENERAL
   // =====================================================================================
 
   Future<int> clearAllLogs() {
@@ -141,5 +201,64 @@ class DatabaseRepository {
 
   Future<void> close() {
     return _database.close();
+  }
+
+  // =====================================================================================
+  // CONVERSIONES
+  // =====================================================================================
+
+  double _readDouble(
+    dynamic value,
+  ) {
+    if (value is num) {
+      final double result = value.toDouble();
+
+      if (result.isFinite) {
+        return result.clamp(
+          0.0,
+          100.0,
+        );
+      }
+
+      return 0.0;
+    }
+
+    if (value is String) {
+      final double? result =
+          double.tryParse(value);
+
+      if (result != null && result.isFinite) {
+        return result.clamp(
+          0.0,
+          100.0,
+        );
+      }
+    }
+
+    return 0.0;
+  }
+
+  int _readInt(
+    dynamic value,
+  ) {
+    if (value is int) {
+      return value < 0 ? 0 : value;
+    }
+
+    if (value is num) {
+      final int result = value.toInt();
+      return result < 0 ? 0 : result;
+    }
+
+    if (value is String) {
+      final int? result =
+          int.tryParse(value);
+
+      if (result != null) {
+        return result < 0 ? 0 : result;
+      }
+    }
+
+    return 0;
   }
 }

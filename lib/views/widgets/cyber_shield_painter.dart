@@ -11,6 +11,8 @@ class CyberShieldPainter extends CustomPainter {
 
   CyberShieldPainter({required this.glowColor});
 
+  static const MaskFilter _glowBlur = MaskFilter.blur(BlurStyle.normal, 8);
+
   @override
   void paint(Canvas canvas, Size size) {
     final double w = size.width;
@@ -18,10 +20,10 @@ class CyberShieldPainter extends CustomPainter {
 
     // 1. Capa de Sombra Externa (Efecto de brillo)
     final Paint glowPaint = Paint()
-      ..color = glowColor.withValues(alpha: 0.3)
+      ..color = glowColor.withAlpha((0.3 * 255).round())
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      ..maskFilter = _glowBlur;
 
     // 2. Fondo del cuerpo del escudo
     final Paint basePaint = Paint()
@@ -37,7 +39,7 @@ class CyberShieldPainter extends CustomPainter {
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [glowColor, glowColor.withValues(alpha: 0.5)],
+        colors: [glowColor, glowColor.withAlpha((0.5 * 255).round())],
       ).createShader(Rect.fromLTWH(0, 0, w, h))
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.5;
@@ -59,7 +61,7 @@ class CyberShieldPainter extends CustomPainter {
 
     // 5. Detalles de líneas de circuito internas
     final Paint corePaint = Paint()
-      ..color = glowColor.withValues(alpha: 0.2)
+      ..color = glowColor.withAlpha((0.2 * 255).round())
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
