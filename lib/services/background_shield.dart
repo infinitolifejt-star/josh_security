@@ -1,6 +1,6 @@
 ﻿// ====================================================================================================
 // ARCHIVO: lib/services/background_shield.dart
-// ESCUDO DE PROTECCIÓN CONTINUA EN SEGUNDO PLANO (ROBUSTO)
+// ESCUDO DE PROTECCIÓN CONTINUA EN SEGUNDO PLANO (ROBUSTO Y SEGURO)
 // ====================================================================================================
 
 import 'dart:async';
@@ -22,7 +22,7 @@ class BackgroundShield {
 
     final service = FlutterBackgroundService();
 
-    // 1. Crear el canal de notificación explícitamente para Android (Vital para evitar el crash de Foreground)
+    // 1. Crear el canal de notificación explícitamente para Android
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
         FlutterLocalNotificationsPlugin();
 
@@ -30,7 +30,7 @@ class BackgroundShield {
       notificationChannelId,
       'JOSH Security Background Shield',
       description: 'Canal oficial para mantener el escudo de seguridad activo.',
-      importance: Importance.low, // Importancia baja para que sea un servicio silencioso y estable
+      importance: Importance.low, // Servicio silencioso y estable
     );
 
     await flutterLocalNotificationsPlugin
@@ -72,10 +72,11 @@ class BackgroundShield {
       service.stopSelf();
     });
 
-    debugPrint('[JOSH SHIELD] Servicio de fondo inicializado correctamente.');
+    debugPrint('[JOSH SHIELD] Escudo de fondo activo y listo.');
 
+    // Timer secundario de supervisión pasiva
     Timer.periodic(const Duration(minutes: 5), (timer) {
-      debugPrint('[JOSH SHIELD] Servicio de fondo activo.');
+      debugPrint('[JOSH SHIELD] Escudo activo y supervisando sistema...');
     });
   }
 }

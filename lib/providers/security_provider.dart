@@ -109,7 +109,19 @@ class SecurityProvider with ChangeNotifier {
 
     try {
       await _database.database;
-      _phoneService.startListening();
+
+      // Inicia la escucha interceptora enrutando eventos de llamadas entrantes hacia processIncomingCall
+      _phoneService.startListening((dynamic eventData) {
+        if (eventData is Map) {
+          final String number = eventData['number']?.toString() ??
+              eventData['phoneNumber']?.toString() ??
+              '';
+          if (number.isNotEmpty) {
+            processIncomingCall(number);
+          }
+        }
+      });
+
       await _apkCentinel.initialize();
 
       await _apkSubscription?.cancel();

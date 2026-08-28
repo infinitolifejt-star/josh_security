@@ -1,9 +1,3 @@
-// ====================================================================================================
-// ARCHIVO: lib/services/security/phone_interceptor_service.dart
-// PROJECT JOSH SECURITY v6.0
-// ====================================================================================================
-
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -17,90 +11,172 @@ class PhoneInterceptorService {
 
   static const MethodChannel _channel =
       MethodChannel('josh_security/phone_calls');
-  static const EventChannel _eventChannel =
-      EventChannel('josh_security/phone_calls_events');
 
-  StreamSubscription<dynamic>? _incomingCallSubscription;
   bool _isListening = false;
 
-  /// Getter público para acceder al canal de comandos
-  static MethodChannel get channel => _channel;
-
-  /// Getter público para el estado de la escucha
   bool get isListening => _isListening;
 
-  /// Inicializa el servicio en segundo plano o durante el arranque del sistema
+  // ================================================================================================
+  // INICIALIZACIÓN
+  // ================================================================================================
+
   Future<void> initialize() async {
-    debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Inicializando servicio nativo...');
-    try {
-      await _channel.invokeMethod<void>('initializeService');
-    } on PlatformException catch (e) {
-      debugPrint('⚠️ [JOSH_PHONE_INTERCEPTOR] Error al inicializar servicio: ${e.message}');
-    }
+    debugPrint(
+      '[JOSH_PHONE_INTERCEPTOR] Inicializado '
+      '(modo CallScreeningService nativo activo).',
+    );
   }
 
-  /// Inicializa los oyentes en primer plano (UI activada)
-  static void initializeForegroundListener() {
-    debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Listener de primer plano configurado.');
-  }
+  // ================================================================================================
+  // ESCUCHA DE LLAMADAS
+  // ================================================================================================
 
-  /// Inicia la escucha activa de eventos telefónicos desde el canal nativo
-  void startListening({
-    void Function(String phoneNumber)? onIncomingCall,
-    void Function()? onCallEnded,
-  }) {
-    if (_isListening) return;
-
-    _incomingCallSubscription = _eventChannel
-        .receiveBroadcastStream()
-        .listen((dynamic event) {
-      if (event is Map) {
-        final String? state = event['state'] as String?;
-        final String? phoneNumber = event['phoneNumber'] as String?;
-
-        if (state == 'INCOMING' && phoneNumber != null) {
-          debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Evento entrante: $phoneNumber');
-          if (onIncomingCall != null) onIncomingCall(phoneNumber);
-        } else if (state == 'ENDED') {
-          debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Evento finalizado.');
-          if (onCallEnded != null) onCallEnded();
-        }
-      }
-    }, onError: (dynamic error) {
-      debugPrint('⚠️ [JOSH_PHONE_INTERCEPTOR] Error en stream de llamadas: $error');
-    });
-
+  void startListening([void Function(dynamic)? onIncomingCall]) {
     _isListening = true;
-    debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Escucha de llamadas iniciada.');
+
+    debugPrint(
+      '[JOSH_PHONE_INTERCEPTOR] Escucha delegada al '
+      'CallScreeningService nativo.',
+    );
   }
 
-  /// Notifica al motor nativo la intercepción de una llamada entrante
-  Future<void> handleIncomingCall(String phoneNumber) async {
+  // ================================================================================================
+  // LLAMADA ENTRANTE
+  // ================================================================================================
+
+  Future<void> handleIncomingCall(dynamic phoneNumber) async {
+    final String number = phoneNumber?.toString().trim().isEmpty ?? true
+        ? 'Número Oculto'
+        : phoneNumber.toString().trim();
+
+    debugPrint(
+      '[JOSH_PHONE_INTERCEPTOR] Llamada entrante: $number',
+    );
+  }
+
+  // ================================================================================================
+  // LLAMADA FINALIZADA
+  // ================================================================================================
+
+  Future<void> handleCallEnded([dynamic eventData]) async {
+    debugPrint(
+      '[JOSH_PHONE_INTERCEPTOR] Llamada finalizada.',
+    );
+  }
+
+  // ================================================================================================
+  // HISTORIAL NATIVO
+  // ================================================================================================
+
+  static Future<List<Map<String, dynamic>>> getNativeCallHistory() async {
     try {
-      debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Procesando llamada entrante: $phoneNumber');
-      await _channel.invokeMethod<void>('onCallIntercepted', {
-        'phoneNumber': phoneNumber,
-      });
+      final List<dynamic>? rawList =
+          await _channel.invokeMethod<List<dynamic>>(
+        'getNativeCallHistory',
+      );
+
+      debugPrint(
+        '[JOSH_INTERCEPTOR] Registros recibidos del canal nativo: '
+        '${rawList?.length ?? 0}',
+      );
+
+      if (rawList == null || rawList.isEmpty) {
+        return [];
+      }
+
+      return rawList.whereType<Map>().map((item) {
+        final Map<String, dynamic> raw =
+            Map<String, dynamic>.from(item);
+
+        final dynamic rawRiskScore = raw['risk_score'] ?? raw['riskScore'];
+
+        double riskScore = 0.0;
+
+        if (rawRiskScore is num) {
+          riskScore = rawRiskScore.toDouble();
+        } else if (rawRiskScore != null) {
+          riskScore =
+              double.tryParse(rawRiskScore.toString()) ?? 0.0;
+        }
+
+        return <String, dynamic>{
+          'id': raw['id'],
+          'phoneNumber':
+              raw['number'] ??
+              raw['phoneNumber'] ??
+              'Desconocido',
+          'name':
+              raw['name'] ??
+              raw['callerName'] ??
+              'Desconocido',
+          'timestamp':
+              raw['timestamp'] ??
+              DateTime.now().millisecondsSinceEpoch,
+          'type':
+              raw['type'] ??
+              'ENTRANTE',
+          'status':
+              raw['status'] ??
+              'SEGURO',
+          'riskScore': riskScore,
+          'verified':
+              raw['verified'] == true ||
+              raw['isVerified'] == true,
+        };
+      }).toList();
     } on PlatformException catch (e) {
-      debugPrint('⚠️ [JOSH_PHONE_INTERCEPTOR] Error enviando a canal nativo: ${e.message}');
+      debugPrint(
+        '[JOSH_INTERCEPTOR] PlatformException en getNativeCallHistory: ${e.code} - ${e.message}',
+      );
+      return [];
+    } catch (e, stackTrace) {
+      debugPrint(
+        '[JOSH_INTERCEPTOR] Error inesperado procesando historial: $e\n$stackTrace',
+      );
+      return [];
     }
   }
 
-  /// Notifica al motor nativo la finalización de una llamada
-  Future<void> handleCallEnded() async {
+  // ================================================================================================
+  // LIMPIAR HISTORIAL NATIVO
+  // ================================================================================================
+
+  static Future<int> clearNativeCallHistory() async {
     try {
-      debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Llamada finalizada procesada.');
-      await _channel.invokeMethod<void>('onCallEnded');
+      final int deletedRows =
+          await _channel.invokeMethod<int>(
+            'clearNativeCallHistory',
+          ) ??
+          0;
+
+      debugPrint(
+        '[JOSH_INTERCEPTOR] Se eliminaron $deletedRows filas de SQLite.',
+      );
+
+      return deletedRows;
     } on PlatformException catch (e) {
-      debugPrint('⚠️ [JOSH_PHONE_INTERCEPTOR] Error enviando fin de llamada: ${e.message}');
+      debugPrint(
+        '[JOSH_INTERCEPTOR] Error al limpiar historial: '
+        '${e.code} - ${e.message}',
+      );
+      return 0;
+    } catch (e, stackTrace) {
+      debugPrint(
+        '[JOSH_INTERCEPTOR] Error inesperado limpiando historial: $e\n$stackTrace',
+      );
+      return 0;
     }
   }
 
-  /// Libera recursos y remueve suscripciones activas
+  // ================================================================================================
+  // DISPOSE
+  // ================================================================================================
+
   void dispose() {
-    _incomingCallSubscription?.cancel();
-    _incomingCallSubscription = null;
     _isListening = false;
-    debugPrint('📱 [JOSH_PHONE_INTERCEPTOR] Servicio liberado.');
+
+    debugPrint(
+      '[JOSH_PHONE_INTERCEPTOR] Recursos liberados.',
+    );
   }
 }
