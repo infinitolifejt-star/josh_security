@@ -34,7 +34,7 @@ class SecurityProvider with ChangeNotifier {
   StreamSubscription<ApkInstallEvent>? _apkSubscription;
 
   // ================================================================================================
-  // ESTADO
+  // ESTADO INTERNO
   // ================================================================================================
 
   bool _initialized = false;
@@ -44,7 +44,7 @@ class SecurityProvider with ChangeNotifier {
   final bool _cloudAvailable = false;
   int _currentVector = 0;
   double _vulnerabilityScore = 0.0;
-  Color _hudColor = Colors.green;
+  Color _hudColor = const Color(0xFF2ECC71);
 
   String _verdictText = 'SISTEMA OPERATIVO SEGURO';
   String _statusCategory = 'CENTINELA INICIALIZANDO...';
@@ -59,7 +59,7 @@ class SecurityProvider with ChangeNotifier {
   int _callsChecked = 0;
   int _malwarePrevented = 0;
 
-  // BITÁCORA
+  // BITÁCORA Y CONSOLA VISUAL
   final List<String> _forensicLogs = <String>[];
   List<Map<String, dynamic>> _historicalLogs = <Map<String, dynamic>>[];
 
@@ -84,6 +84,7 @@ class SecurityProvider with ChangeNotifier {
   bool get isEnginePatrolling => _isEnginePatrolling;
   bool get cloudAvailable => _cloudAvailable;
   int get currentVector => _currentVector;
+  int get activeTab => _currentVector;
   double get vulnerabilityScore => _vulnerabilityScore;
   Color get hudColor => _hudColor;
   String get verdictText => _verdictText;
@@ -95,11 +96,12 @@ class SecurityProvider with ChangeNotifier {
   int get malwarePrevented => _malwarePrevented;
   String? get selectedFileName => _selectedFileName;
   File? get selectedFile => _selectedFile;
-  List<String> get forensicLogs => List.unmodifiable(_forensicLogs);
-  List<Map<String, dynamic>> get historicalLogs => List.unmodifiable(_historicalLogs);
+  String? get selectedFilePath => _selectedFile?.path;
+  List<String> get forensicLogs => List<String>.unmodifiable(_forensicLogs);
+  List<Map<String, dynamic>> get historicalLogs => List<Map<String, dynamic>>.unmodifiable(_historicalLogs);
 
   // ================================================================================================
-  // INICIALIZACIÓN
+  // INICIALIZACIÓN DE SUBSISTEMAS
   // ================================================================================================
 
   Future<void> initialize() async {
@@ -204,12 +206,12 @@ class SecurityProvider with ChangeNotifier {
   }
 
   // ================================================================================================
-  // CAMBIO DE VECTOR
+  // CAMBIO DE VECTOR DE INSPECCIÓN
   // ================================================================================================
 
   void updateTabState(int tab) {
     _currentVector = tab;
-    const List<String> categories = [
+    const List<String> categories = <String>[
       'ANÁLISIS TELEFÓNICO',
       'ANÁLISIS PHISHING',
       'ANÁLISIS MALWARE',
@@ -222,7 +224,7 @@ class SecurityProvider with ChangeNotifier {
   }
 
   // ================================================================================================
-  // SELECCIÓN DE ARCHIVO
+  // SELECCIÓN DE ARCHIVO LOCAL
   // ================================================================================================
 
   Future<bool> pickLocalFile() async {
@@ -246,7 +248,7 @@ class SecurityProvider with ChangeNotifier {
   }
 
   // ================================================================================================
-  // AUDITORÍA PRINCIPAL
+  // AUDITORÍA PRINCIPAL MULTIVECTOR
   // ================================================================================================
 
   Future<void> executeAuditoria(
@@ -295,7 +297,7 @@ class SecurityProvider with ChangeNotifier {
   }
 
   // ================================================================================================
-  // LLAMADA ENTRANTE
+  // PROCESAMIENTO DE LLAMADA ENTRANTE
   // ================================================================================================
 
   Future<void> processIncomingCall(String phoneNumber) async {
@@ -358,6 +360,9 @@ class SecurityProvider with ChangeNotifier {
       _appendLog('ERROR ANALIZANDO LLAMADA: $e');
       debugPrint('[JOSH PHONE] Error analizando llamada: $e\n$stackTrace');
 
+      // Garantiza que la llamada siempre quede guardada en la base de datos aun si falla la auditoría
+      await _persistAudit(number, 0.0, 'DESCONOCIDO', 'PHONE', 'Error en análisis: $e');
+
       if (showOverlay) {
         try {
           await OverlayService.showWarningOverlay(
@@ -371,7 +376,6 @@ class SecurityProvider with ChangeNotifier {
           debugPrint('[JOSH OVERLAY] Error: $overlayError\n$overlayStack');
         }
       }
-      rethrow;
     }
   }
 
@@ -418,7 +422,7 @@ class SecurityProvider with ChangeNotifier {
   }
 
   // ================================================================================================
-  // UTILERÍAS Y PERSISTENCIA
+  // UTILERÍAS, SERIALIZACIÓN Y PERSISTENCIA
   // ================================================================================================
 
   double _mapFileVerdictToScore(FileScanVerdict verdict) {
@@ -451,7 +455,7 @@ class SecurityProvider with ChangeNotifier {
     final String timestamp = DateTime.now().toIso8601String();
 
     try {
-      await _database.insertScanLog({
+      await _database.insertScanLog(<String, dynamic>{
         'id': DateTime.now().millisecondsSinceEpoch.toString(),
         'timestamp': timestamp,
         'target': target,
@@ -465,7 +469,7 @@ class SecurityProvider with ChangeNotifier {
     }
 
     try {
-      await _database.insertForensicLog({
+      await _database.insertForensicLog(<String, dynamic>{
         'timestamp': timestamp,
         'service': vector,
         'activity': target,
@@ -509,11 +513,11 @@ class SecurityProvider with ChangeNotifier {
     _verdictText = cleanVerdict.isEmpty ? 'DESCONOCIDO' : cleanVerdict;
 
     if (safeScore >= 70) {
-      _hudColor = Colors.red;
+      _hudColor = const Color(0xFFE74C3C); // Rojo para crítico
     } else if (safeScore >= 30) {
-      _hudColor = Colors.orange;
+      _hudColor = const Color(0xFFF39C12); // Naranja para advertencia
     } else {
-      _hudColor = Colors.green;
+      _hudColor = const Color(0xFF2ECC71); // Verde para seguro
     }
 
     if (notify) notifyListeners();
@@ -522,6 +526,7 @@ class SecurityProvider with ChangeNotifier {
   Future<void> clearMasterBitacora() async {
     try {
       await _database.clearAllLogs();
+
       _historicalLogs.clear();
       _forensicLogs.clear();
       _linksChecked = 0;
@@ -530,6 +535,7 @@ class SecurityProvider with ChangeNotifier {
       resetHud(notify: false);
       _statusCategory = 'BITÁCORA LIMPIA';
       _agentReasoningText = 'Agente Centinela activo y listo.';
+      _appendLog('[DATABASE] Bitácora forense y de escaneo despejada.');
     } catch (e, stackTrace) {
       _appendLog('ERROR LIMPIANDO BITÁCORA: $e', notify: false);
       debugPrint('[JOSH DATABASE] Error limpiando: $e\n$stackTrace');
@@ -539,7 +545,7 @@ class SecurityProvider with ChangeNotifier {
 
   void resetHud({bool notify = true}) {
     _vulnerabilityScore = 0.0;
-    _hudColor = Colors.green;
+    _hudColor = const Color(0xFF2ECC71);
     _verdictText = 'SISTEMA OPERATIVO SEGURO';
     _statusCategory = 'CENTINELA OPERATIVO';
     _agentReasoningText = 'Agente Centinela activo y listo.';
@@ -548,6 +554,7 @@ class SecurityProvider with ChangeNotifier {
 
   void clearForensicLogs() {
     _forensicLogs.clear();
+    _appendLog('[CONS] Consola visual despejada.');
     notifyListeners();
   }
 

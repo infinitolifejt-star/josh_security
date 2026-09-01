@@ -1,7 +1,19 @@
+// ============================================================================
+// ARCHIVO: lib/services/security/phishing_engine.dart
+// MOTOR DE DETECCIÓN DE PHISHING CON PERSISTENCIA FORENSE Y ANÁLISIS SINTÁCTICO
+// JOSH SECURITY
+// ============================================================================
+
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math';
+
+import 'database_service.dart';
 
 class PhishingEngine {
   PhishingEngine();
+
+  DatabaseService get _database => DatabaseService.instance;
 
   static const Set<String> officialWhitelist = <String>{
     'google.com',
@@ -57,6 +69,11 @@ class PhishingEngine {
     'davivienda',
     'daviplata',
     'lulobank',
+    'paypal',
+    'microsoft',
+    'apple',
+    'amazon',
+    'netflix',
     'login',
     'seguro',
     'verificacion',
@@ -64,66 +81,66 @@ class PhishingEngine {
   ];
 
   static final RegExp _numericPattern = RegExp(r'^\+?\d+$');
-
   static final RegExp _repeatedDigitPattern = RegExp(r'^(\d)\1+$');
 
-  static final RegExp _leetspeakPattern = RegExp(
-    r'go0gle|banc0lombia|paypa1|micr0soft|f4cebook|nequ1|d4vivienda',
+  static final RegExp _suspiciousTldPattern = RegExp(
+    r'\.comi\.co|\.com\.[a-z]{2}\.[a-z]{2}$|\.ong\.co|\.net\.co|\.org\.co',
     caseSensitive: false,
   );
 
-  static final RegExp _suspiciousTldPattern = RegExp(
-    r'\.comi\.co|\.com\.[a-z]{2}\.[a-z]{2}$|\.com\.[a-z]{2}$',
-    caseSensitive: false,
-  );
+  /// Mapa de homóglifos / leetspeak para desofuscación rápida
+  static const Map<String, String> _homoglyphMap = <String, String>{
+    '0': 'o',
+    '1': 'i',
+    '3': 'e',
+    '4': 'a',
+    '5': 's',
+    '@': 'a',
+    '\$': 's',
+    'vv': 'w',
+    'rn': 'm',
+  };
+
+  /// Normaliza una cadena reemplazando sustituciones homóglifas
+  String _normalizeHomoglyphs(String text) {
+    String normalized = text.toLowerCase();
+    _homoglyphMap.forEach((String key, String value) {
+      normalized = normalized.replaceAll(key, value);
+    });
+    return normalized;
+  }
 
   int levenshtein(String a, String b) {
-    if (a == b) {
-      return 0;
-    }
+    if (a == b) return 0;
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
 
-    if (a.isEmpty) {
-      return b.length;
-    }
-
-    if (b.isEmpty) {
-      return a.length;
-    }
-
-    List<int> previous = List<int>.generate(
-      b.length + 1,
-      (int index) => index,
-    );
-
-    List<int> current = List<int>.filled(
-      b.length + 1,
-      0,
-    );
+    List<int> previous = List<int>.generate(b.length + 1, (int index) => index);
+    List<int> current = List<int>.filled(b.length + 1, 0);
 
     for (int i = 0; i < a.length; i++) {
       current[0] = i + 1;
-
       for (int j = 0; j < b.length; j++) {
         final int cost = a[i] == b[j] ? 0 : 1;
-
         current[j + 1] = min(
-          min(
-            current[j] + 1,
-            previous[j + 1] + 1,
-          ),
+          min(current[j] + 1, previous[j + 1] + 1),
           previous[j] + cost,
         );
       }
-
       final List<int> temp = previous;
       previous = current;
       current = temp;
     }
-
     return previous.last;
   }
 
   Map<String, dynamic> analyze(String inputUrl) {
+    final Map<String, dynamic> res = _evaluate(inputUrl);
+    _persistPhishingLog(inputUrl, res);
+    return res;
+  }
+
+  Map<String, dynamic> _evaluate(String inputUrl) {
     final String clean = inputUrl.trim().toLowerCase();
 
     if (clean.isEmpty) {
@@ -141,8 +158,7 @@ class PhishingEngine {
         return _result(
           score: 90.0,
           verdict: 'CRÍTICO',
-          reason:
-              'Anomalía estructural: patrón numérico sintético con dígitos repetidos.',
+          reason: 'Anomalía estructural: patrón numérico sintético con dígitos repetidos.',
         );
       }
 
@@ -150,23 +166,12 @@ class PhishingEngine {
         return _result(
           score: 75.0,
           verdict: 'SOSPECHOSO',
-          reason:
-              'Longitud anómala: numeración fuera del estándar telefónico (${digitsOnly.length} dígitos).',
+          reason: 'Longitud anómala: numeración fuera del estándar telefónico (${digitsOnly.length} dígitos).',
         );
       }
     }
 
-    if (_leetspeakPattern.hasMatch(clean)) {
-      return _result(
-        score: 95.0,
-        verdict: 'CRÍTICO',
-        reason:
-            'Typosquatting detectado: sustitución de caracteres por dígitos en una marca.',
-      );
-    }
-
     final bool badProtocol = _hasBadProtocol(clean);
-
     String normalizedUrl = clean;
 
     if (!normalizedUrl.contains('://')) {
@@ -174,7 +179,6 @@ class PhishingEngine {
     }
 
     final Uri uri;
-
     try {
       uri = Uri.parse(normalizedUrl);
     } catch (_) {
@@ -195,30 +199,31 @@ class PhishingEngine {
       );
     }
 
-    if (_suspiciousTldPattern.hasMatch(host) &&
-        !officialWhitelist.contains(host)) {
-      return _result(
-        score: 88.0,
-        verdict: 'CRÍTICO',
-        reason:
-            'Dominio sospechoso: TLD o extensión potencialmente alterada.',
-      );
-    }
-
+    // 1. Verificación directa en lista blanca oficial
     if (officialWhitelist.contains(host) || host.endsWith('.gov.co')) {
       return _result(
         score: badProtocol ? 35.0 : 2.0,
         verdict: badProtocol ? 'SOSPECHOSO' : 'SEGURO',
-        reason: badProtocol
-            ? 'Dominio oficial con protocolo alterado.'
-            : 'Dominio oficial verificado.',
+        reason: badProtocol ? 'Dominio oficial con protocolo alterado.' : 'Dominio oficial verificado.',
       );
     }
 
+    // 2. Normalización de homóglifos (ej: g00gle -> google)
+    final String normalizedHost = _normalizeHomoglyphs(host);
+    final bool containsHomoglyphs = normalizedHost != host;
+
+    // 3. Validación de TLDs y extensiones sospechosas
+    if (_suspiciousTldPattern.hasMatch(host)) {
+      return _result(
+        score: 92.0,
+        verdict: 'CRÍTICO',
+        reason: 'Dominio de alto riesgo: extensión o TLD alterado (posible typosquatting).',
+      );
+    }
+
+    // 4. Evaluación de uso indebido de palabras clave de marca
     for (final String brand in _brandKeywords) {
-      if (!host.contains(brand)) {
-        continue;
-      }
+      if (!host.contains(brand) && !normalizedHost.contains(brand)) continue;
 
       final bool isOfficialBrandDomain =
           host == '$brand.com' ||
@@ -230,47 +235,46 @@ class PhishingEngine {
         return _result(
           score: 97.0,
           verdict: 'CRÍTICO',
-          reason:
-              'Suplantación de marca identificada: posible phishing imitando a $brand.',
+          reason: containsHomoglyphs
+              ? 'Suplantación de marca con homóglifos/leetspeak imitando a $brand.'
+              : 'Suplantación de marca identificada: subdominio o TLD no oficial de $brand.',
         );
       }
     }
 
-    final List<String> hostParts = host.split('.');
+    // 5. Análisis Levenshtein contra dominios protegidos
+    final List<String> hostParts = normalizedHost.split('.');
     final String current = hostParts.first;
 
     for (final String official in officialWhitelist) {
       final String base = official.split('.').first;
 
-      if (current.length >= 4 &&
-          current != base &&
-          levenshtein(current, base) <= 2) {
-        return _result(
-          score: 98.0,
-          verdict: 'CRÍTICO',
-          reason:
-              'Typosquatting detectado: dominio similar a una marca legítima ($base).',
-        );
+      if (current.length >= 3 && current != base) {
+        final int dist = levenshtein(current, base);
+        if (dist > 0 && dist <= 2) {
+          return _result(
+            score: 98.0,
+            verdict: 'CRÍTICO',
+            reason: 'Typosquatting detectado: el dominio guarda gran similitud visual/estructural con ($base).',
+          );
+        }
       }
     }
 
+    // 6. Verificación de caracteres de ofuscación y protocolos
     if (uri.userInfo.isNotEmpty || normalizedUrl.contains('@')) {
       return _result(
         score: 90.0,
         verdict: 'CRÍTICO',
-        reason:
-            'Estructura sospechosa: uso del carácter @ para ocultar el dominio real.',
+        reason: 'Estructura sospechosa: uso del carácter @ para ocultar el dominio real.',
       );
     }
 
-    if (hostParts.any(
-      (String part) => part.split('-').length > 4,
-    )) {
+    if (hostParts.any((String part) => part.split('-').length > 3)) {
       return _result(
         score: 80.0,
         verdict: 'CRÍTICO',
-        reason:
-            'Ofuscación de dominio: segmento con múltiples guiones.',
+        reason: 'Ofuscación de dominio: segmento con múltiples guiones consecutivos.',
       );
     }
 
@@ -283,17 +287,14 @@ class PhishingEngine {
     }
 
     return _result(
-      score: 45.0,
+      score: 50.0,
       verdict: 'SOSPECHOSO',
-      reason:
-          'Dominio no verificado en la lista blanca de reputación local.',
+      reason: 'Dominio no verificado en la base de reputación local.',
     );
   }
 
   bool _hasBadProtocol(String value) {
-    return value.startsWith('hht') ||
-        value.startsWith('htps') ||
-        value.startsWith('http//');
+    return value.startsWith('hht') || value.startsWith('htps') || value.startsWith('http//');
   }
 
   Map<String, dynamic> _result({
@@ -306,5 +307,30 @@ class PhishingEngine {
       'verdict': verdict,
       'reason': reason,
     };
+  }
+
+  Future<void> _persistPhishingLog(String url, Map<String, dynamic> result) async {
+    try {
+      await _database.insertForensicLog(<String, dynamic>{
+        'timestamp': DateTime.now().toIso8601String(),
+        'service': 'PhishingEngine',
+        'activity': 'Auditoría URL: $url',
+        'verdict': result['verdict'],
+        'risk_score': (result['score'] as num).toInt(),
+        'matched_rule': 'PHISHING_RULE_EVALUATION',
+        'extra_data': jsonEncode(<String, dynamic>{
+          'target': url,
+          'reason': result['reason'],
+          'type': 'PHISHING',
+        }),
+      });
+    } catch (error, stackTrace) {
+      developer.log(
+        'DATABASE_ERROR_PHISHING',
+        name: 'PhishingEngine',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 }

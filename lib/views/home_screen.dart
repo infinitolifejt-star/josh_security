@@ -362,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (_currentTab == 1) {
       inputIcon = Icons.link;
-      hintText = 'Ingrese dirección URL fraudulenta';
+      hintText = 'Ingrese dirección URL a auditar';
     } else if (_currentTab == 2) {
       inputIcon = Icons.bug_report_outlined;
       hintText =
@@ -378,6 +378,16 @@ class _HomeScreenState extends State<HomeScreen>
             color: Colors.white,
             fontSize: 14,
           ),
+          textInputAction: TextInputAction.search,
+          onSubmitted: (value) {
+            if (value.trim().isNotEmpty && !securityProvider.isLoading) {
+              FocusScope.of(context).unfocus();
+              securityProvider.executeAuditoria(
+                value.trim(),
+                _currentTab,
+              );
+            }
+          },
           decoration: InputDecoration(
             hintText: hintText,
             hintStyle: TextStyle(
@@ -410,10 +420,28 @@ class _HomeScreenState extends State<HomeScreen>
                                 securityProvider.selectedFileName != null) {
                               _targetController.text =
                                   securityProvider.selectedFileName!;
+                              securityProvider.executeAuditoria(
+                                _targetController.text.trim(),
+                                _currentTab,
+                              );
                             }
                           },
                   )
-                : null,
+                : IconButton(
+                    icon: Icon(
+                      Icons.search_rounded,
+                      color: securityProvider.hudColor,
+                    ),
+                    onPressed: securityProvider.isLoading
+                        ? null
+                        : () {
+                            FocusScope.of(context).unfocus();
+                            securityProvider.executeAuditoria(
+                              _targetController.text.trim(),
+                              _currentTab,
+                            );
+                          },
+                  ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(
@@ -427,50 +455,6 @@ class _HomeScreenState extends State<HomeScreen>
                 width: 1.5,
               ),
             ),
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton(
-            onPressed: securityProvider.isLoading
-                ? null
-                : () {
-                    FocusScope.of(context).unfocus();
-
-                    securityProvider.executeAuditoria(
-                      _targetController.text.trim(),
-                      _currentTab,
-                    );
-                  },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: securityProvider.hudColor,
-              foregroundColor: Colors.black,
-              disabledBackgroundColor: Colors.blueGrey[800],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 4,
-            ),
-            child: securityProvider.isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.black,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                : const Text(
-                    'AUDITAR EN CALIENTE',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
           ),
         ),
       ],
