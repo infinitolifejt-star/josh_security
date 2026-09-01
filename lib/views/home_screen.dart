@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/home_screen.dart
-// COMPONENTE: Adaptación de Flujo Híbrido Proactivo Centinela v4.5.8
+// COMPONENTE: Adaptación de Flujo Híbrido Proactivo JOSH v4.5.8
 // OPERACIÓN: HUD, Auto-Scroll, Bitácora, Overlay y activación de Call Screening
 // ====================================================================================================
 
@@ -128,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen>
         SnackBar(
           content: Text(
             granted
-                ? 'Solicitud de Centinela telefónico enviada.'
+                ? 'Solicitud de JOSH telefónico enviada.'
                 : 'No fue posible solicitar el rol de Call Screening.',
           ),
         ),
@@ -158,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen>
         onPressed: _requestCallScreeningRole,
         icon: const Icon(Icons.shield_outlined),
         label: const Text(
-          'ACTIVAR CENTINELA DE LLAMADAS',
+          'ACTIVAR ESCUDO DE LLAMADAS JOSH',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             letterSpacing: 0.8,
@@ -219,8 +219,8 @@ class _HomeScreenState extends State<HomeScreen>
         : const Color(0xFF3498DB);
 
     final String patrolStatusText = isPatrolling
-        ? 'MOTOR CENTINELA: PATRULLANDO'
-        : 'MOTOR CENTINELA: EN ESPERA';
+        ? 'MOTOR JOSH: PATRULLANDO'
+        : 'MOTOR JOSH: EN ESPERA';
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A1128),

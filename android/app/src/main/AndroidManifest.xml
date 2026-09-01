@@ -7,20 +7,25 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
 
     <!-- Permiso Overlay de pantalla -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <!-- Permisos de Servicios en Segundo Plano -->
+    <!-- Permisos de Servicios en Segundo Plano y Ejecución Continua -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:label="JOSH Security"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:persistent="true">
 
         <activity
             android:name=".MainActivity"
@@ -49,6 +54,7 @@
         <service
             android:name=".JoshCallScreeningService"
             android:permission="android.permission.BIND_SCREENING_SERVICE"
+            android:foregroundServiceType="phoneCall"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.telecom.CallScreeningService" />
@@ -73,6 +79,18 @@
                 <action android:name="android.intent.action.PACKAGE_ADDED" />
                 <action android:name="android.intent.action.PACKAGE_REPLACED" />
                 <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Receiver para autoinicio tras reinicio del sistema -->
+        <receiver
+            android:name="id.flutter.flutter_background_service.WatchdogReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 

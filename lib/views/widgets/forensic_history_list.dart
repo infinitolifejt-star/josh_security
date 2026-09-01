@@ -1,191 +1,123 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/forensic_history_list.dart
-// LISTA FORENSE: Control de Desbordamiento, Scroll Independiente y Renderizado Optimizado
+// COMPONENTE: Lista de Historial Forense JOSH
+// OPERACIÓN: Renderizado de registros de auditoría y llamadas procesadas en tiempo real
 // ====================================================================================================
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/security_provider.dart';
+import '../../services/security/phone_interceptor_service.dart';
 
-class ForensicHistoryList extends StatelessWidget {
-  final VoidCallback onClear;
+class ForensicHistoryList extends StatefulWidget {
+  final VoidCallback? onClear;
 
   const ForensicHistoryList({
     super.key,
-    required this.onClear,
+    this.onClear,
   });
 
-  double _calculateHeuristicScore(Map<String, dynamic> rawItem) {
-    if (rawItem['score'] != null) {
-      return (rawItem['score'] as num).toDouble();
-    }
-    if (rawItem['agentRiskScore'] != null) {
-      return (rawItem['agentRiskScore'] as num).toDouble();
-    }
+  @override
+  State<ForensicHistoryList> createState() => _ForensicHistoryListState();
+}
 
-    final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE')
-        .toString()
-        .toUpperCase();
+class _ForensicHistoryListState extends State<ForensicHistoryList> {
+  bool _isLoadingNativeLogs = false;
 
-    switch (verdict) {
-      case 'AMENAZA_BLOQUEADA_PREVENTIVAMENTE':
-      case 'CRÍTICO':
-      case 'PELIGRO':
-        return 85.0;
-      case 'SUGERENCIA_REVISAR_ALERTAS':
-      case 'ADVERTENCIA':
-      case 'SOSPECHOSO':
-        return 45.0;
-      case 'SISTEMA_OPERATIVO_SEGURO':
-      case 'CONFIABLE':
-      case 'SEGURO':
-      default:
-        return 0.0;
+  Future<void> _handleClearAll(SecurityProvider provider) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1C2541),
+          title: const Text(
+            'LIMPIAR HISTORIAL FORENSE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: const Text(
+            '¿Desea eliminar de forma permanente la bitácora local y los registros de llamadas analizadas por JOSH?',
+            style: TextStyle(
+              color: Colors.blueGrey,
+              fontSize: 13,
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text(
+                'CANCELAR',
+                style: TextStyle(color: Colors.grey),
+              ),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE63946),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('ELIMINAR TODO'),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      setState(() {
+        _isLoadingNativeLogs = true;
+      });
+
+      // 1. Limpiar la bitácora visual y provider
+      widget.onClear?.call();
+
+      // 2. Limpiar base de datos nativa SQLite a través del servicio
+      await PhoneInterceptorService.clearNativeCallHistory();
+
+      if (mounted) {
+        setState(() {
+          _isLoadingNativeLogs = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Historial forense purgado correctamente.'),
+            backgroundColor: Color(0xFF1C2541),
+          ),
+        );
+      }
     }
   }
 
-  void _mostrarDetalleForense(BuildContext context, Map<String, dynamic> item, double score, String verdict) {
-    final String target = (item['target'] ?? item['activity'] ?? item['url'] ?? item['phoneNumber'] ?? 'Análisis de perímetro').toString();
-    final String timestamp = (item['timestamp'] ?? item['scanned_at'] ?? 'Sin fecha').toString();
-    final String reasoning = (item['agentReasoning'] ?? item['reason'] ?? 'Evaluación estándar del motor de seguridad').toString();
-    final String vector = (item['vector'] ?? item['service'] ?? 'SEGURIDAD').toString().toUpperCase();
+  Color _getRiskColor(double score) {
+    if (score >= 0.7) return const Color(0xFFE63946); // Amenaza Alta / Crítica
+    if (score >= 0.4) return const Color(0xFFFFB703); // Sospechoso / Medio
+    return const Color(0xFF2ECC71); // Limpio / Seguro
+  }
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF111A35),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFF1C2541)),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.shield_outlined, color: Color(0xFF5BC0BE)),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Detalle de Inspección',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('OBJETIVO / VECTOR', style: TextStyle(color: Color(0xFF5BC0BE), fontSize: 11, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              SelectableText(
-                target,
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('RIESGO ESTRUCTURAL', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
-                      Text(
-                        '${score.toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          color: score >= 70
-                              ? const Color(0xFFFF5252)
-                              : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      const Text('VEREDICTO', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
-                      Text(
-                        verdict,
-                        style: TextStyle(
-                          color: score >= 70
-                              ? const Color(0xFFFF5252)
-                              : (score >= 35 ? const Color(0xFFFFD740) : const Color(0xFF00E676)),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Text('FECHA Y HORA', style: TextStyle(color: Colors.blueGrey, fontSize: 10)),
-              Text('$vector • $timestamp', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-              const SizedBox(height: 16),
-              const Text('RAZONAMIENTO AGÉNTICO / EVIDENCIA', style: TextStyle(color: Color(0xFF5BC0BE), fontSize: 11, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0D1326),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF1C2541)),
-                ),
-                child: Text(
-                  reasoning,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('CERRAR', style: TextStyle(color: Color(0xFF5BC0BE))),
-          ),
-        ],
-      ),
-    );
+  IconData _getRiskIcon(double score) {
+    if (score >= 0.7) return Icons.gpp_bad_rounded;
+    if (score >= 0.4) return Icons.warning_amber_rounded;
+    return Icons.verified_user_rounded;
   }
 
   @override
   Widget build(BuildContext context) {
     final securityProvider = Provider.of<SecurityProvider>(context);
-    final List<Map<String, dynamic>> dbLogs = securityProvider.historicalLogs;
-
-    Color getCardColor(double score) {
-      if (score >= 70) return const Color(0xFFFF5252);
-      if (score >= 35) return const Color(0xFFFFD740);
-      return const Color(0xFF00E676);
-    }
-
-    IconData getCardIcon(double score, String vector) {
-      if (vector.contains('TEL') || vector.contains('PHONE') || vector.contains('CALL')) {
-        return Icons.phone_in_talk_outlined;
-      } else if (vector.contains('URL') || vector.contains('LINK') || vector.contains('PHISHING')) {
-        return Icons.link_rounded;
-      } else if (vector.contains('MALWARE') || vector.contains('BIN')) {
-        return Icons.security_rounded;
-      }
-
-      if (score >= 70) return Icons.gpp_bad_outlined;
-      if (score >= 35) return Icons.report_problem_outlined;
-      return Icons.verified_user_outlined;
-    }
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF111A35),
+        color: const Color(0xFF0B132B),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF1C2541)),
+        border: Border.all(
+          color: const Color(0xFF1C2541),
+        ),
       ),
+      padding: const EdgeInsets.all(14),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -193,151 +125,155 @@ class ForensicHistoryList extends StatelessWidget {
             children: [
               const Row(
                 children: [
-                  Icon(Icons.history_toggle_off, color: Color(0xFF5BC0BE), size: 16),
+                  Icon(
+                    Icons.history_toggle_off_rounded,
+                    color: Color(0xFF5BC0BE),
+                    size: 18,
+                  ),
                   SizedBox(width: 8),
                   Text(
-                    "BITÁCORA INTEGRAL DE RESGUARDO",
+                    'HISTORIAL DE AUDITORÍAS',
                     style: TextStyle(
-                      color: Color(0xFF5BC0BE),
+                      color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                      letterSpacing: 1,
+                      fontSize: 12,
+                      letterSpacing: 0.8,
                     ),
                   ),
                 ],
               ),
-              if (dbLogs.isNotEmpty)
+              if (_isLoadingNativeLogs)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF5BC0BE),
+                  ),
+                )
+              else
                 IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF5252), size: 20),
-                  tooltip: "Limpiar Bitácora Local",
-                  constraints: const BoxConstraints(),
+                  icon: const Icon(
+                    Icons.delete_sweep_outlined,
+                    color: Color(0xFFE63946),
+                    size: 20,
+                  ),
                   padding: EdgeInsets.zero,
-                  onPressed: () async {
-                    await securityProvider.clearMasterBitacora();
-                    onClear();
-                  },
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Limpiar Todo',
+                  onPressed: () => _handleClearAll(securityProvider),
                 ),
             ],
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Divider(color: Color(0xFF1C2541), thickness: 1.5),
+          const SizedBox(height: 8),
+          const Divider(
+            color: Color(0xFF1C2541),
+            height: 1,
           ),
-          dbLogs.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
+          const SizedBox(height: 12),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: PhoneInterceptorService.getNativeCallHistory(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
                   child: Center(
-                    child: Text(
-                      "No hay registros de auditoría en la bitácora local.",
-                      style: TextStyle(
-                        color: Colors.blueGrey[500],
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF5BC0BE),
                     ),
                   ),
-                )
-              : SizedBox(
-                  height: 300,
-                  child: ListView.builder(
-                    shrinkWrap: false,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: dbLogs.length,
-                    itemBuilder: (context, index) {
-                      final rawItem = dbLogs[index];
+                );
+              }
 
-                      final String verdict = (rawItem['verdict'] ?? rawItem['risk_level'] ?? 'CONFIABLE').toString();
-                      final double score = _calculateHeuristicScore(rawItem);
-                      final String vector = (rawItem['vector'] ?? rawItem['service'] ?? 'SEGURIDAD').toString().toUpperCase();
-                      final String target = (rawItem['target'] ?? rawItem['activity'] ?? rawItem['url'] ?? rawItem['phoneNumber'] ?? 'Análisis de perímetro').toString();
-                      final String timestamp = (rawItem['timestamp'] ?? rawItem['scanned_at'] ?? '').toString();
-                      final Color cardColor = getCardColor(score);
+              final nativeRecords = snapshot.data ?? [];
 
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1C2541),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: cardColor.withAlpha((0.2 * 255).round())),
+              if (nativeRecords.isEmpty && securityProvider.forensicLogs.isEmpty) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.shield_outlined,
+                        color: Colors.blueGrey[600],
+                        size: 36,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Sin registros forenses almacenados',
+                        style: TextStyle(
+                          color: Colors.blueGrey[400],
+                          fontSize: 12,
                         ),
-                        child: InkWell(
-                          onTap: () => _mostrarDetalleForense(context, rawItem, score, verdict),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 18,
-                                backgroundColor: cardColor.withAlpha((0.1 * 255).round()),
-                                child: Icon(
-                                  getCardIcon(score, vector),
-                                  color: cardColor,
-                                  size: 18,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      target,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      timestamp.isNotEmpty ? "$vector • $timestamp" : vector,
-                                      style: TextStyle(
-                                        color: Colors.blueGrey[300],
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    score > 0 ? "${score.toStringAsFixed(1)}%" : "OK",
-                                    style: TextStyle(
-                                      color: cardColor,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: cardColor.withAlpha((0.15 * 255).round()),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      verdict.length > 10 ? '${verdict.substring(0, 9)}...' : verdict.toUpperCase(),
-                                      style: TextStyle(
-                                        color: cardColor,
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
+                );
+              }
+
+              return ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: nativeRecords.length,
+                separatorBuilder: (context, index) => const Divider(
+                  color: Color(0xFF1C2541),
+                  height: 12,
                 ),
+                itemBuilder: (context, index) {
+                  final record = nativeRecords[index];
+                  final double riskScore = (record['riskScore'] as num?)?.toDouble() ?? 0.0;
+                  final String number = record['phoneNumber'] ?? 'Desconocido';
+                  final String status = record['status'] ?? 'ANALIZADO';
+                  final Color riskColor = _getRiskColor(riskScore);
+
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: riskColor.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: riskColor.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Icon(
+                        _getRiskIcon(riskScore),
+                        color: riskColor,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      number,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Riesgo: ${(riskScore * 100).toInt()}% | Estado: $status',
+                      style: TextStyle(
+                        color: Colors.blueGrey[300],
+                        fontSize: 11,
+                      ),
+                    ),
+                    trailing: Text(
+                      record['type'] ?? 'LLAMADA',
+                      style: TextStyle(
+                        color: riskColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ],
       ),
     );
