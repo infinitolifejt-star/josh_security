@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/forensic_history_list.dart
 // COMPONENTE: Lista de Historial Forense Universal JOSH
-// OPERACIÓN: Renderizado unificado (Llamadas, Phishing, Archivos/APK)
+// OPERACIÓN: Renderizado unificado (Llamadas, Phishing, Archivos/APK) - Parche de Tipo Seguro
 // ====================================================================================================
 
 import 'dart:convert';
@@ -27,7 +27,6 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
   bool _isLoading = false;
 
   double _extractRiskFromForensicLog(Map<String, dynamic> log) {
-    // 1. Intentar obtener el score directamente si viene en extra_data (JSON)
     final String? extraDataStr = log['extra_data']?.toString();
     if (extraDataStr != null && extraDataStr.isNotEmpty) {
       try {
@@ -42,7 +41,6 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
       }
     }
 
-    // 2. Fallback según el veredicto
     final String verdict = (log['verdict'] ?? '').toString().toUpperCase();
     if (verdict.contains('PELIGRO') || verdict.contains('MALICIOSO') || verdict.contains('MALWARE') || verdict.contains('CRÍTICO')) {
       return 0.9;
@@ -54,26 +52,68 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
       return 0.0;
     }
 
-    return 0.2; // Seguro por defecto
+    return 0.2;
+  }
+
+  int _parseTimestampToMs(dynamic rawTimestamp) {
+    if (rawTimestamp == null) return 0;
+    if (rawTimestamp is int) return rawTimestamp;
+    if (rawTimestamp is num) return rawTimestamp.toInt();
+
+    final String str = rawTimestamp.toString().trim();
+    if (str.isEmpty) return 0;
+
+    // Si es una cadena numérica (ej: "1725000000000")
+    final int? parsedInt = int.tryParse(str);
+    if (parsedInt != null) return parsedInt;
+
+    // Si es fecha ISO-8601 (ej: "2026-09-02T10:00:00.000Z")
+    final DateTime? parsedDate = DateTime.tryParse(str);
+    if (parsedDate != null) return parsedDate.millisecondsSinceEpoch;
+
+    return 0;
   }
 
   Future<List<Map<String, dynamic>>> _loadUnifiedHistory() async {
-    // 1. Cargar Llamadas Nativas
-    final List<Map<String, dynamic>> nativeCalls = await PhoneInterceptorService.getNativeCallHistory();
-    final List<Map<String, dynamic>> formattedCalls = nativeCalls.map((c) {
-      final double score = (c['riskScore'] as num?)?.toDouble() ?? 0.0;
-      final double normalizedScore = score > 1.0 ? score / 100.0 : score;
+    final List<Map<String, dynamic>> formattedCalls = [];
 
-      return <String, dynamic>{
-        'title': c['phoneNumber'] ?? 'Desconocido',
-        'subtitle': 'Riesgo: ${(normalizedScore * 100).toInt()}% | Estado: ${c['status'] ?? 'ANALIZADO'}',
-        'type': 'LLAMADA',
-        'rawScore': normalizedScore,
-        'timestamp': c['timestamp']?.toString() ?? '',
-      };
-    }).toList();
+    // 1. Obtener llamadas de SQLite local
+    try {
+      final List<Map<String, dynamic>> dbCalls = await DatabaseService.instance.getCallHistory();
+      for (final c in dbCalls) {
+        final double score = (c['risk_score'] as num?)?.toDouble() ?? 0.0;
+        final double normalizedScore = score > 1.0 ? score / 100.0 : score;
 
-    // 2. Cargar Logs Forenses (Phishing, Escaneo de Archivos)
+        formattedCalls.add(<String, dynamic>{
+          'title': c['phone_number'] ?? 'Desconocido',
+          'subtitle': 'Riesgo: ${(normalizedScore * 100).toInt()}% | Estado: ${c['verdict'] ?? 'ANALIZADO'}',
+          'type': 'LLAMADA',
+          'rawScore': normalizedScore,
+          'timestamp': c['timestamp'],
+        });
+      }
+    } catch (_) {}
+
+    // 2. Fallback a llamadas nativas si SQLite local no arrojó llamadas
+    if (formattedCalls.isEmpty) {
+      try {
+        final List<Map<String, dynamic>> nativeCalls = await PhoneInterceptorService.getNativeCallHistory();
+        for (final c in nativeCalls) {
+          final double score = (c['riskScore'] as num?)?.toDouble() ?? 0.0;
+          final double normalizedScore = score > 1.0 ? score / 100.0 : score;
+
+          formattedCalls.add(<String, dynamic>{
+            'title': c['phoneNumber'] ?? 'Desconocido',
+            'subtitle': 'Riesgo: ${(normalizedScore * 100).toInt()}% | Estado: ${c['status'] ?? 'ANALIZADO'}',
+            'type': 'LLAMADA',
+            'rawScore': normalizedScore,
+            'timestamp': c['timestamp'],
+          });
+        }
+      } catch (_) {}
+    }
+
+    // 3. Cargar Logs Forenses (Phishing, Escaneo de Archivos)
     final List<Map<String, dynamic>> forensicLogs = await DatabaseService.instance.getForensicLogs();
     final List<Map<String, dynamic>> formattedLogs = forensicLogs.map((l) {
       final double normalizedScore = _extractRiskFromForensicLog(l);
@@ -89,13 +129,17 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
         'subtitle': 'Riesgo: $riskPercentage% | Veredicto: ${l['verdict'] ?? 'INSPECCIONADO'}',
         'type': typeLabel,
         'rawScore': normalizedScore,
-        'timestamp': l['timestamp']?.toString() ?? '',
+        'timestamp': l['timestamp'],
       };
     }).toList();
 
-    // 3. Fusionar y ordenar por fecha (más recientes primero)
+    // 4. Fusionar y ordenar con conversión blindada de fechas
     final List<Map<String, dynamic>> combined = [...formattedCalls, ...formattedLogs];
-    combined.sort((a, b) => (b['timestamp'] as String).compareTo(a['timestamp'] as String));
+    combined.sort((a, b) {
+      final int timeA = _parseTimestampToMs(a['timestamp']);
+      final int timeB = _parseTimestampToMs(b['timestamp']);
+      return timeB.compareTo(timeA); // Más recientes primero
+    });
 
     return combined;
   }
@@ -149,7 +193,7 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
 
       widget.onClear?.call();
       await PhoneInterceptorService.clearNativeCallHistory();
-      await DatabaseService.instance.clearForensicLogs();
+      await DatabaseService.instance.clearAllLogs();
 
       if (mounted) {
         setState(() {

@@ -1,3 +1,9 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/background_phone_screening.dart
+// SERVICIO EN SEGUNDO PLANO - JOSH SECURITY v6.0
+// Intercepción y Persistencia Automática de Llamadas Entrantes
+// ====================================================================================================
+
 import 'package:flutter/foundation.dart';
 import 'security/phone_interceptor_service.dart';
 

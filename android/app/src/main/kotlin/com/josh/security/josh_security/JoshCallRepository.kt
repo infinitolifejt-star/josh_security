@@ -87,22 +87,43 @@ class JoshCallRepository(context: Context) :
             )
 
             if (id == -1L) {
-                Log.e(TAG, "ERROR: SQLite rechazo el INSERT en la tabla $TABLE_CALLS")
+                Log.e(TAG, "ERROR: SQLite rechazó el INSERT en la tabla $TABLE_CALLS")
             }
 
             id
         } catch (e: Exception) {
             Log.e(TAG, "EXCEPCION guardando llamada: ${e.message}", e)
             -1L
-        } finally {
-            db.close()
+        }
+    }
+
+    /**
+     * Actualiza el nivel de riesgo y el estado de una llamada registrada por su ID
+     */
+    fun updateCallRisk(id: Long, status: String, riskScore: Double): Int {
+        val db = writableDatabase
+        return try {
+            val values = ContentValues().apply {
+                put(COLUMN_STATUS, status)
+                put(COLUMN_RISK_SCORE, riskScore)
+            }
+            val rowsAffected = db.update(
+                TABLE_CALLS,
+                values,
+                "$COLUMN_ID = ?",
+                arrayOf(id.toString())
+            )
+            Log.d(TAG, "updateCallRisk() -> id=$id status=$status riskScore=$riskScore (Filas afectadas: $rowsAffected)")
+            rowsAffected
+        } catch (e: Exception) {
+            Log.e(TAG, "Error actualizando riesgo en la llamada id=$id: ${e.message}", e)
+            0
         }
     }
 
     fun getAllCalls(): List<Map<String, Any>> {
         val callList = mutableListOf<Map<String, Any>>()
         val db = readableDatabase
-
         var cursor: android.database.Cursor? = null
 
         try {
@@ -110,9 +131,6 @@ class JoshCallRepository(context: Context) :
                 "SELECT * FROM $TABLE_CALLS ORDER BY $COLUMN_TIMESTAMP DESC",
                 null
             )
-
-            Log.d(TAG, "DB Path = ${db.path}")
-            Log.d(TAG, "getAllCalls() -> Total registros encontrados en DB: ${cursor?.count ?: 0}")
 
             if (cursor != null && cursor.moveToFirst()) {
                 do {
@@ -126,16 +144,13 @@ class JoshCallRepository(context: Context) :
                         "risk_score" to cursor.getDouble(cursor.getColumnIndexOrThrow(COLUMN_RISK_SCORE)),
                         "verified" to (cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_VERIFIED)) == 1)
                     )
-
                     callList.add(item)
                 } while (cursor.moveToNext())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error al ejecutar getAllCalls(): ${e.message}", e)
-            throw e
         } finally {
             cursor?.close()
-            db.close()
         }
 
         return callList
@@ -151,8 +166,6 @@ class JoshCallRepository(context: Context) :
         } catch (e: Exception) {
             Log.e(TAG, "Error al limpiar llamadas: ${e.message}", e)
             0
-        } finally {
-            db.close()
         }
     }
 }

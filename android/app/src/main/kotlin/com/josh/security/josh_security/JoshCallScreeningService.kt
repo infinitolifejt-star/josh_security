@@ -5,11 +5,19 @@ import android.os.Build
 import android.telecom.Call
 import android.telecom.CallScreeningService
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 
 class JoshCallScreeningService : CallScreeningService() {
 
     companion object {
         private const val TAG = "JOSH_CALL_SERVICE"
+        // IP local de tu servidor Python Flask
+        private const val BACKEND_URL = "http://192.168.20.28:5000/api/v1/evaluate_phone"
     }
 
     override fun onScreenCall(callDetails: Call.Details) {
@@ -22,7 +30,7 @@ class JoshCallScreeningService : CallScreeningService() {
         val phoneNumber = if (rawNumber.isBlank()) "Desconocido" else rawNumber
         Log.d(TAG, "Llamada entrante detectada: $phoneNumber")
 
-        // 1. Respuesta inmediata al sistema Telecom para no bloquear la llamada
+        // 1. Responder de inmediato al SO dentro del tiempo de gracia
         val response = CallResponse.Builder()
             .setDisallowCall(false)
             .setRejectCall(false)
@@ -32,31 +40,114 @@ class JoshCallScreeningService : CallScreeningService() {
 
         respondToCall(callDetails, response)
 
-        // 2. Persistencia síncrona en la base de datos SQLite nativa
+        // 2. Guardar registro inicial en SQLite con estado EVALUANDO
+        val repository = JoshCallRepository(applicationContext)
+        var insertedId: Long = -1
         try {
-            val repository = JoshCallRepository(applicationContext)
-            val insertedId = repository.saveCall(
+            insertedId = repository.saveCall(
                 number = phoneNumber,
                 name = "Desconocido",
                 type = "ENTRANTE",
-                status = "SEGURO",
+                status = "EVALUANDO",
                 riskScore = 0.0,
                 isVerified = false
             )
-            Log.d(TAG, "Llamada registrada en DB Nativa con ID: $insertedId")
+            Log.d(TAG, "Llamada registrada temporalmente con ID: $insertedId")
+
+            // Notificar de inmediato a Flutter que hay un nuevo registro en EVALUANDO
+            notifyFlutterRefresh()
         } catch (e: Exception) {
-            Log.e(TAG, "Error registrando llamada en SQLite: ${e.message}", e)
+            Log.e(TAG, "Error registrando llamada preliminar: ${e.message}", e)
         }
 
-        // 3. Lanzar alerta emergente Overlay (si aplica)
+        // 3. Lanzar overlay emergente de Caller ID
+        launchCallerIdOverlay(phoneNumber, "EVALUANDO", 0.0)
+
+        // 4. Evaluar la reputación enviando la petición a security_backend.py
+        if (phoneNumber != "Desconocido" && insertedId != -1L) {
+            CoroutineScope(Dispatchers.IO).launch {
+                fetchBackendAndResult(phoneNumber, insertedId)
+            }
+        }
+    }
+
+    private fun launchCallerIdOverlay(number: String, status: String, riskScore: Double) {
         try {
             val intent = Intent(this, CallerIdActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                putExtra("PHONE_NUMBER", phoneNumber)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra("PHONE_NUMBER", number)
+                putExtra("CALL_STATUS", status)
+                putExtra("RISK_SCORE", riskScore)
             }
             startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Error al lanzar CallerIdActivity: ${e.message}")
+        }
+    }
+
+    private fun fetchBackendAndResult(phoneNumber: String, recordId: Long) {
+        var finalStatus = "ERROR_EVALUACION"
+        var fraudScore = -1.0
+
+        try {
+            val cleanNum = phoneNumber.replace("+", "").replace(" ", "").trim()
+
+            // Petición a tu backend Python en red local
+            val url = URL("$BACKEND_URL?number=$cleanNum")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 4000
+            conn.readTimeout = 4000
+
+            if (conn.responseCode == 200) {
+                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(responseText)
+
+                // Extraer respuesta del endpoint /api/v1/evaluate_phone
+                fraudScore = json.optDouble("score", 0.0)
+                val statusFromBackend = json.optString("status", "SEGURO").uppercase()
+
+                finalStatus = if (statusFromBackend == "SOSPECHOSO" || fraudScore >= 50.0) {
+                    "SOSPECHOSO"
+                } else {
+                    "SEGURO"
+                }
+
+                Log.d(TAG, "Backend evaluado con éxito: RiskScore=$fraudScore, Status=$finalStatus")
+            } else {
+                Log.e(TAG, "Backend Http Error Code: ${conn.responseCode}")
+                finalStatus = "ERROR_EVALUACION"
+                fraudScore = -1.0
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error consultando servidor local Python: ${e.message}")
+            finalStatus = "ERROR_EVALUACION"
+            fraudScore = -1.0
+        } finally {
+            // Actualizar la base de datos con el resultado devuelto por Python/API Ninjas
+            try {
+                val repository = JoshCallRepository(applicationContext)
+                repository.updateCallRisk(recordId, finalStatus, fraudScore)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error actualizando la base de datos final: ${e.message}")
+            }
+
+            // Actualizar el overlay
+            launchCallerIdOverlay(phoneNumber, finalStatus, fraudScore)
+
+            // Notificar a Flutter
+            notifyFlutterRefresh()
+        }
+    }
+
+    private fun notifyFlutterRefresh() {
+        try {
+            val broadcastIntent = Intent("com.josh.security.REFRESH_CALL_LOG").apply {
+                setPackage(packageName)
+            }
+            sendBroadcast(broadcastIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enviando broadcast de refresco: ${e.message}")
         }
     }
 }

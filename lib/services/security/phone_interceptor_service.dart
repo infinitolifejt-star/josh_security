@@ -1,5 +1,13 @@
+// ====================================================================================================
+// ARCHIVO: lib/services/security/phone_interceptor_service.dart
+// RECEPTOR Y PROCESADOR DE LLAMADAS - JOSH SECURITY v6.0
+// Registro Persistente en SQLite (call_history & forensic_logs)
+// ====================================================================================================
+
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'database_service.dart';
 
 class PhoneInterceptorService {
   static final PhoneInterceptorService _instance =
@@ -12,19 +20,73 @@ class PhoneInterceptorService {
   static const MethodChannel _channel =
       MethodChannel('josh_security/phone_calls');
 
+  static const EventChannel _refreshEventChannel =
+      EventChannel('com.josh.security/call_refresh');
+
+  final StreamController<void> _callLogUpdateController =
+      StreamController<void>.broadcast();
+
+  /// Stream para que la interfaz gráfica escuche actualizaciones en vivo del historial
+  Stream<void> get onCallLogUpdated => _callLogUpdateController.stream;
+
+  StreamSubscription? _eventSubscription;
   bool _isListening = false;
 
   bool get isListening => _isListening;
 
   // ================================================================================================
-  // INICIALIZACIÓN
+  // INICIALIZACIÓN Y CONFIGURACIÓN DE CANALES NATIVOS
   // ================================================================================================
 
   Future<void> initialize() async {
+    _setupMethodChannelHandler();
+    _setupNativeRefreshListener();
     debugPrint(
-      '[JOSH_PHONE_INTERCEPTOR] Inicializado '
-      '(modo CallScreeningService nativo activo).',
+      '[JOSH_PHONE_INTERCEPTOR] Inicializado con listener de canal nativo y sincronización en vivo.',
     );
+  }
+
+  void _setupMethodChannelHandler() {
+    _channel.setMethodCallHandler((MethodCall call) async {
+      debugPrint('[JOSH_PHONE_INTERCEPTOR] Método nativo invocado: ${call.method}');
+      switch (call.method) {
+        case 'onIncomingCall':
+          final dynamic phoneNumber = call.arguments;
+          await handleIncomingCall(phoneNumber);
+          break;
+        case 'onCallEnded':
+          await handleCallEnded(call.arguments);
+          break;
+        default:
+          debugPrint('[JOSH_PHONE_INTERCEPTOR] Método no implementado: ${call.method}');
+          break;
+      }
+    });
+  }
+
+  void _setupNativeRefreshListener() {
+    _eventSubscription?.cancel();
+    try {
+      _eventSubscription = _refreshEventChannel
+          .receiveBroadcastStream()
+          .listen(
+            (dynamic event) {
+              debugPrint(
+                '[JOSH_PHONE_INTERCEPTOR] Notificación de refresco recibida desde Android.',
+              );
+              _callLogUpdateController.add(null);
+            },
+            onError: (dynamic error) {
+              debugPrint(
+                '[JOSH_PHONE_INTERCEPTOR] Error en EventChannel de refresco: $error',
+              );
+            },
+          );
+    } catch (e) {
+      debugPrint(
+        '[JOSH_PHONE_INTERCEPTOR] EventChannel no disponible: $e',
+      );
+    }
   }
 
   // ================================================================================================
@@ -33,15 +95,16 @@ class PhoneInterceptorService {
 
   void startListening([void Function(dynamic)? onIncomingCall]) {
     _isListening = true;
+    _setupMethodChannelHandler();
+    _setupNativeRefreshListener();
 
     debugPrint(
-      '[JOSH_PHONE_INTERCEPTOR] Escucha delegada al '
-      'CallScreeningService nativo.',
+      '[JOSH_PHONE_INTERCEPTOR] Escucha delegada y canales sincronizados con CallScreeningService.',
     );
   }
 
   // ================================================================================================
-  // LLAMADA ENTRANTE
+  // LLAMADA ENTRANTE (CON CACHÉ SQLITE Y ANÁLISIS DE REPUTACIÓN)
   // ================================================================================================
 
   Future<void> handleIncomingCall(dynamic phoneNumber) async {
@@ -49,9 +112,67 @@ class PhoneInterceptorService {
         ? 'Número Oculto'
         : phoneNumber.toString().trim();
 
+    final int currentTimestamp = DateTime.now().millisecondsSinceEpoch;
+
     debugPrint(
-      '[JOSH_PHONE_INTERCEPTOR] Llamada entrante: $number',
+      '[JOSH_PHONE_INTERCEPTOR] Registrando llamada entrante: $number',
     );
+
+    double fraudScore = 0.0;
+    String carrier = 'Desconocido';
+    String verdict = 'EVALUADO';
+    String details = 'Llamada interceptada en tiempo real por JOSH';
+    bool isVoip = false;
+    bool recentAbuse = false;
+
+    try {
+      if (number != 'Número Oculto') {
+        // Consultar en la caché local SQLite
+        final cachedData = await DatabaseService.instance.getIpqsCache(number);
+
+        if (cachedData != null) {
+          fraudScore = (cachedData['fraud_score'] as num?)?.toDouble() ?? 0.0;
+          carrier = cachedData['carrier']?.toString() ?? 'Desconocido';
+          isVoip = (cachedData['is_voip'] as int?) == 1;
+          recentAbuse = (cachedData['recent_abuse'] as int?) == 1;
+          verdict = (fraudScore >= 75.0 || recentAbuse) ? 'SPAM / RIESGO' : 'SEGURO';
+          details = 'Evaluación recuperada desde la caché local SQLite';
+        } else {
+          details = 'Análisis procesado localmente por servicio nativo';
+        }
+      }
+
+      // 1. Guardar en la tabla de historial de llamadas
+      await DatabaseService.instance.insertCallHistory(
+        phoneNumber: number,
+        riskScore: fraudScore,
+        ipqsScore: fraudScore,
+        confidence: 'ALTA',
+        verdict: verdict,
+        category: 'Entrante',
+        details: '$details (Operador: $carrier${isVoip ? ' | Línea VOIP' : ''})',
+        source: 'CallScreeningService',
+        timestamp: currentTimestamp,
+      );
+
+      // 2. Registrar en la bitácora forense unificada
+      await DatabaseService.instance.insertForensicLog({
+        'timestamp': DateTime.now().toIso8601String(),
+        'service': 'PhoneInterceptorService',
+        'activity': 'Llamada Entrante: $number',
+        'verdict': verdict,
+        'matched_rule': 'INCOMING_CALL_SCREENING',
+        'extra_data':
+            '{"phoneNumber": "$number", "score": $fraudScore, "carrier": "$carrier", "isVoip": $isVoip, "recentAbuse": $recentAbuse}',
+      });
+
+      // 3. Notificar a la interfaz de usuario de Flutter
+      _callLogUpdateController.add(null);
+    } catch (e, stackTrace) {
+      debugPrint(
+        '[JOSH_PHONE_INTERCEPTOR] Error procesando la llamada: $e\n$stackTrace',
+      );
+    }
   }
 
   // ================================================================================================
@@ -62,6 +183,7 @@ class PhoneInterceptorService {
     debugPrint(
       '[JOSH_PHONE_INTERCEPTOR] Llamada finalizada.',
     );
+    _callLogUpdateController.add(null);
   }
 
   // ================================================================================================
@@ -85,8 +207,7 @@ class PhoneInterceptorService {
       }
 
       return rawList.whereType<Map>().map((item) {
-        final Map<String, dynamic> raw =
-            Map<String, dynamic>.from(item);
+        final Map<String, dynamic> raw = Map<String, dynamic>.from(item);
 
         final dynamic rawRiskScore = raw['risk_score'] ?? raw['riskScore'];
 
@@ -95,33 +216,21 @@ class PhoneInterceptorService {
         if (rawRiskScore is num) {
           riskScore = rawRiskScore.toDouble();
         } else if (rawRiskScore != null) {
-          riskScore =
-              double.tryParse(rawRiskScore.toString()) ?? 0.0;
+          riskScore = double.tryParse(rawRiskScore.toString()) ?? 0.0;
         }
 
         return <String, dynamic>{
           'id': raw['id'],
           'phoneNumber':
-              raw['number'] ??
-              raw['phoneNumber'] ??
-              'Desconocido',
-          'name':
-              raw['name'] ??
-              raw['callerName'] ??
-              'Desconocido',
+              raw['number'] ?? raw['phoneNumber'] ?? 'Desconocido',
+          'name': raw['name'] ?? raw['callerName'] ?? 'Desconocido',
           'timestamp':
-              raw['timestamp'] ??
-              DateTime.now().millisecondsSinceEpoch,
-          'type':
-              raw['type'] ??
-              'ENTRANTE',
-          'status':
-              raw['status'] ??
-              'SEGURO',
+              raw['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
+          'type': raw['type'] ?? 'ENTRANTE',
+          'status': raw['status'] ?? 'SEGURO',
           'riskScore': riskScore,
           'verified':
-              raw['verified'] == true ||
-              raw['isVerified'] == true,
+              raw['verified'] == true || raw['isVerified'] == true,
         };
       }).toList();
     } on PlatformException catch (e) {
@@ -145,9 +254,9 @@ class PhoneInterceptorService {
     try {
       final int deletedRows =
           await _channel.invokeMethod<int>(
-            'clearNativeCallHistory',
-          ) ??
-          0;
+                'clearNativeCallHistory',
+              ) ??
+              0;
 
       debugPrint(
         '[JOSH_INTERCEPTOR] Se eliminaron $deletedRows filas de SQLite.',
@@ -156,8 +265,7 @@ class PhoneInterceptorService {
       return deletedRows;
     } on PlatformException catch (e) {
       debugPrint(
-        '[JOSH_INTERCEPTOR] Error al limpiar historial: '
-        '${e.code} - ${e.message}',
+        '[JOSH_INTERCEPTOR] Error al limpiar historial: ${e.code} - ${e.message}',
       );
       return 0;
     } catch (e, stackTrace) {
@@ -174,6 +282,8 @@ class PhoneInterceptorService {
 
   void dispose() {
     _isListening = false;
+    _eventSubscription?.cancel();
+    _callLogUpdateController.close();
 
     debugPrint(
       '[JOSH_PHONE_INTERCEPTOR] Recursos liberados.',

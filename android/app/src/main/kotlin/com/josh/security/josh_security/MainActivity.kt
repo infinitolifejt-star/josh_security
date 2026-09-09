@@ -1,27 +1,33 @@
 package com.josh.security.josh_security
 
 import android.app.role.RoleManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 
     companion object {
-        private const val CHANNEL = "josh_security/phone_calls"
+        private const val METHOD_CHANNEL = "josh_security/phone_calls"
+        private const val EVENT_CHANNEL = "com.josh.security/call_refresh"
         private const val REQUEST_CODE_SET_DEFAULT_CALL_SCREENING = 1002
     }
 
     private var pendingResult: MethodChannel.Result? = null
+    private var callRefreshReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        // 1. Configuración del MethodChannel para llamadas de control y DB
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestCallScreeningRole" -> {
                     requestCallScreeningRole(result)
@@ -66,6 +72,39 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+
+        // 2. Configuración del EventChannel para actualizaciones de llamadas en vivo
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    callRefreshReceiver = object : BroadcastReceiver() {
+                        override fun onReceive(context: Context?, intent: Intent?) {
+                            Log.d("JOSH_MAIN", "Broadcast de actualización de llamadas recibido. Notificando a Flutter...")
+                            events?.success("REFRESH")
+                        }
+                    }
+
+                    val filter = IntentFilter("com.josh.security.REFRESH_CALL_LOG")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        // Se utiliza RECEIVER_EXPORTED para permitir la transmisión desde el servicio nativo
+                        registerReceiver(callRefreshReceiver, filter, Context.RECEIVER_EXPORTED)
+                    } else {
+                        registerReceiver(callRefreshReceiver, filter)
+                    }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    callRefreshReceiver?.let {
+                        try {
+                            unregisterReceiver(it)
+                        } catch (e: Exception) {
+                            Log.e("JOSH_MAIN", "Error desregistrando BroadcastReceiver: ${e.message}")
+                        }
+                        callRefreshReceiver = null
+                    }
+                }
+            }
+        )
     }
 
     private fun requestCallScreeningRole(result: MethodChannel.Result) {
@@ -100,6 +139,16 @@ class MainActivity : FlutterActivity() {
             val isHeld = isCallScreeningRoleHeld()
             pendingResult?.success(isHeld)
             pendingResult = null
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        callRefreshReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+            callRefreshReceiver = null
         }
     }
 }
