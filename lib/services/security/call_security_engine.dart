@@ -1,6 +1,6 @@
 // ============================================================================
 // ARCHIVO: lib/services/security/call_security_engine.dart
-// MOTOR CENTRAL DE ANÃLISIS TELEFÃ“NICO
+// MOTOR CENTRAL DE ANÁLISIS TELEFÓNICO
 // JOSH SECURITY
 // ============================================================================
 
@@ -8,7 +8,7 @@ import 'dart:math';
 
 import 'security_models.dart';
 
-/// Estado de validaciÃ³n del nÃºmero telefÃ³nico.
+/// Estado de validación del número telefónico.
 enum PhoneValidationStatus {
   valid,
   invalidFormat,
@@ -16,7 +16,7 @@ enum PhoneValidationStatus {
   hiddenOrUnknown,
 }
 
-/// Motor central de anÃ¡lisis telefÃ³nico de JOSH Security.
+/// Motor central de análisis telefónico de JOSH Security.
 class CallSecurityEngine {
   const CallSecurityEngine();
 
@@ -25,7 +25,7 @@ class CallSecurityEngine {
     'seguridad',
     'soporte',
     'verificacion',
-    'verificaciÃ³n',
+    'verificación',
     'premio',
     'ganaste',
     'urgente',
@@ -33,28 +33,28 @@ class CallSecurityEngine {
     'cuenta',
     'clave',
     'codigo',
-    'cÃ³digo',
+    'código',
     'token',
     'confirmar',
     'actualizar',
     'credito',
-    'crÃ©dito',
+    'crédito',
     'transferencia',
     'pago',
-    'contraseÃ±a',
+    'contraseña',
     'password',
     'otp',
     'pin',
     'tarjeta',
     'inversion',
-    'inversiÃ³n',
+    'inversión',
     'deuda',
     'cobro',
     'embargo',
     'policia',
-    'policÃ­a',
+    'policía',
     'fiscalia',
-    'fiscalÃ­a',
+    'fiscalía',
   ];
 
   PhoneValidationStatus _validatePhone(
@@ -70,16 +70,12 @@ class CallSecurityEngine {
       '',
     );
 
-    if (digitsOnly.isEmpty) {
+    if (digitsOnly.isEmpty || digitsOnly.length < 3) {
       return PhoneValidationStatus.invalidFormat;
     }
 
     if (digitsOnly.length <= 6) {
       return PhoneValidationStatus.shortCode;
-    }
-
-    if (digitsOnly.length < 7) {
-      return PhoneValidationStatus.invalidFormat;
     }
 
     return PhoneValidationStatus.valid;
@@ -131,21 +127,21 @@ class CallSecurityEngine {
       case PhoneValidationStatus.hiddenOrUnknown:
         score = 45.0;
         reasons.add(
-          'NÃºmero oculto o no disponible.',
+          'Número oculto o no disponible.',
         );
         break;
 
       case PhoneValidationStatus.invalidFormat:
         score = 35.0;
         reasons.add(
-          'Formato telefÃ³nico no vÃ¡lido.',
+          'Formato telefónico no válido.',
         );
         break;
 
       case PhoneValidationStatus.shortCode:
         score = 30.0;
         reasons.add(
-          'CÃ³digo corto no verificado.',
+          'Código corto no verificado.',
         );
         break;
 
@@ -160,7 +156,7 @@ class CallSecurityEngine {
       );
 
       reasons.add(
-        'Se detectaron patrones lingÃ¼Ã­sticos '
+        'Se detectaron patrones lingüísticos '
         'asociados con solicitudes sensibles.',
       );
     }
@@ -170,7 +166,7 @@ class CallSecurityEngine {
       score += 10.0;
 
       reasons.add(
-        'La llamada no estÃ¡ asociada a un contacto identificado.',
+        'La llamada no está asociada a un contacto identificado.',
       );
     }
 
@@ -180,14 +176,14 @@ class CallSecurityEngine {
     String statusLabel;
 
     if (score >= 80.0) {
-      verdict = 'CRÃTICO';
-      statusLabel = 'RIESGO CRÃTICO DETECTADO';
+      verdict = 'CRÍTICO';
+      statusLabel = 'RIESGO CRÍTICO DETECTADO';
     } else if (score >= 40.0) {
       verdict = 'ADVERTENCIA';
       statusLabel = 'LLAMADA POTENCIALMENTE SOSPECHOSA';
     } else if (validation == PhoneValidationStatus.shortCode) {
       verdict = 'SHORTCODE_NO_VERIFICADO';
-      statusLabel = 'CÃ“DIGO CORTO NO VERIFICADO';
+      statusLabel = 'CÓDIGO CORTO NO VERIFICADO';
     } else {
       verdict = 'SIN_AMENAZAS';
       statusLabel = 'SIN AMENAZAS DETECTADAS';
@@ -195,7 +191,7 @@ class CallSecurityEngine {
 
     if (reasons.isEmpty) {
       reasons.add(
-        'No se detectaron indicadores heurÃ­sticos relevantes.',
+        'No se detectaron indicadores heurísticos relevantes.',
       );
     }
 
@@ -232,7 +228,7 @@ class CallSecurityEngine {
         'SIN_AMENAZAS';
 
     final String analysisMessage = result['status_label']?.toString() ??
-        'AnÃ¡lisis telefÃ³nico completado.';
+        'Análisis telefónico completado.';
 
     final String timestamp =
         result['timestamp']?.toString() ?? DateTime.now().toIso8601String();

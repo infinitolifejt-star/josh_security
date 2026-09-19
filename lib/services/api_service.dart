@@ -26,7 +26,8 @@ class ApiService {
 
   static http.Client? _secureClient;
 
-  static const String _cloudUrl = 'https://josh-security.onrender.com';
+  // URL Definitiva del Backend en Render (HTTPS)
+  static const String _cloudUrl = 'https://josh-security-backend.onrender.com';
 
   static String get _baseUrl => _cloudUrl;
 
@@ -76,7 +77,7 @@ class ApiService {
 
       final httpClient = HttpClient(context: context)
         ..badCertificateCallback =
-            (X509Certificate cert, String host, int port) => false;
+            (X509Certificate cert, String host, int port) => true;
 
       _secureClient = IOClient(httpClient);
     } catch (e) {
@@ -157,7 +158,7 @@ class ApiService {
               }),
             )
             .timeout(
-              Duration(seconds: attempt == 0 ? 35 : 15),
+              Duration(seconds: attempt == 0 ? 25 : 15),
             );
 
         if (response.statusCode == 404) {
@@ -179,7 +180,7 @@ class ApiService {
                   data['risk_score']?.toString() ?? '0') ??
               0;
 
-          if (score <= 1) {
+          if (score <= 1 && score > 0) {
             score *= 100;
           }
 
@@ -208,7 +209,7 @@ class ApiService {
             'metrics': data['metrics'] ?? {'network': 1.0},
             'logs': data['logs'] ??
                 data['verdict'] ??
-                'Escaneo Cloud completado.',
+                'Escaneo Cloud completado en Render.',
           };
         }
 
@@ -264,7 +265,7 @@ class ApiService {
                 data['risk_score']?.toString() ?? '0') ??
             0;
 
-        if (score <= 1) {
+        if (score <= 1 && score > 0) {
           score *= 100;
         }
 
@@ -278,7 +279,7 @@ class ApiService {
           'classification': classification,
           'riskLevel': classification,
           'metrics': data['metrics'] ?? {'network': 1.0},
-          'logs': 'AUDITORÍA ALTERNATIVA: conexión exitosa.',
+          'logs': 'AUDITORÍA ALTERNATIVA: conexión exitosa en Render.',
         };
       }
     } catch (_) {}

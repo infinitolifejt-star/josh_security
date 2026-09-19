@@ -4,6 +4,7 @@
 // JOSH SECURITY
 // ============================================================================
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:math';
@@ -136,7 +137,7 @@ class PhishingEngine {
 
   Map<String, dynamic> analyze(String inputUrl) {
     final Map<String, dynamic> res = _evaluate(inputUrl);
-    _persistPhishingLog(inputUrl, res);
+    unawaited(_persistPhishingLog(inputUrl, res));
     return res;
   }
 
@@ -228,8 +229,10 @@ class PhishingEngine {
       final bool isOfficialBrandDomain =
           host == '$brand.com' ||
           host == '$brand.co' ||
+          host == '$brand.com.co' ||
           host.endsWith('.$brand.com') ||
-          host.endsWith('.$brand.co');
+          host.endsWith('.$brand.co') ||
+          host.endsWith('.$brand.com.co');
 
       if (!isOfficialBrandDomain) {
         return _result(

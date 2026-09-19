@@ -1,12 +1,13 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
 // RECEPTOR Y PROCESADOR DE LLAMADAS - JOSH SECURITY v6.0
-// Registro Persistente en SQLite (call_history & forensic_logs)
+// Registro Persistente en SQLite (call_history & forensic_logs) + Conectividad Cloud Render
 // ====================================================================================================
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../api_service.dart';
 import 'database_service.dart';
 
 class PhoneInterceptorService {
@@ -25,6 +26,8 @@ class PhoneInterceptorService {
 
   final StreamController<void> _callLogUpdateController =
       StreamController<void>.broadcast();
+
+  final ApiService _apiService = ApiService();
 
   /// Stream para que la interfaz gráfica escuche actualizaciones en vivo del historial
   Stream<void> get onCallLogUpdated => _callLogUpdateController.stream;
@@ -104,7 +107,7 @@ class PhoneInterceptorService {
   }
 
   // ================================================================================================
-  // LLAMADA ENTRANTE (CON CACHÉ SQLITE Y ANÁLISIS DE REPUTACIÓN)
+  // LLAMADA ENTRANTE (CON CACHÉ SQLITE Y ANÁLISIS CLOUD RENDER)
   // ================================================================================================
 
   Future<void> handleIncomingCall(dynamic phoneNumber) async {
@@ -115,19 +118,19 @@ class PhoneInterceptorService {
     final int currentTimestamp = DateTime.now().millisecondsSinceEpoch;
 
     debugPrint(
-      '[JOSH_PHONE_INTERCEPTOR] Registrando llamada entrante: $number',
+      '[JOSH_PHONE_INTERCEPTOR] Registrando y evaluando llamada entrante: $number',
     );
 
     double fraudScore = 0.0;
     String carrier = 'Desconocido';
-    String verdict = 'EVALUADO';
+    String verdict = 'SEGURO';
     String details = 'Llamada interceptada en tiempo real por JOSH';
     bool isVoip = false;
     bool recentAbuse = false;
 
     try {
       if (number != 'Número Oculto') {
-        // Consultar en la caché local SQLite
+        // 1. Consultar en la caché local SQLite primero
         final cachedData = await DatabaseService.instance.getIpqsCache(number);
 
         if (cachedData != null) {
@@ -138,11 +141,15 @@ class PhoneInterceptorService {
           verdict = (fraudScore >= 75.0 || recentAbuse) ? 'SPAM / RIESGO' : 'SEGURO';
           details = 'Evaluación recuperada desde la caché local SQLite';
         } else {
-          details = 'Análisis procesado localmente por servicio nativo';
+          // 2. Si no existe en la caché, realizar escaneo directo contra el Backend en Render
+          final cloudScan = await _apiService.scanTarget('SPAM', number);
+          fraudScore = (cloudScan['riskScore'] as num?)?.toDouble() ?? 0.0;
+          verdict = cloudScan['classification']?.toString() ?? 'SEGURO';
+          details = cloudScan['logs']?.toString() ?? 'Evaluado en tiempo real con API Cloud Render';
         }
       }
 
-      // 1. Guardar en la tabla de historial de llamadas
+      // 3. Guardar en la tabla de historial de llamadas
       await DatabaseService.instance.insertCallHistory(
         phoneNumber: number,
         riskScore: fraudScore,
@@ -155,7 +162,7 @@ class PhoneInterceptorService {
         timestamp: currentTimestamp,
       );
 
-      // 2. Registrar en la bitácora forense unificada
+      // 4. Registrar en la bitácora forense unificada
       await DatabaseService.instance.insertForensicLog({
         'timestamp': DateTime.now().toIso8601String(),
         'service': 'PhoneInterceptorService',
@@ -166,7 +173,7 @@ class PhoneInterceptorService {
             '{"phoneNumber": "$number", "score": $fraudScore, "carrier": "$carrier", "isVoip": $isVoip, "recentAbuse": $recentAbuse}',
       });
 
-      // 3. Notificar a la interfaz de usuario de Flutter
+      // 5. Notificar a la interfaz de usuario de Flutter
       _callLogUpdateController.add(null);
     } catch (e, stackTrace) {
       debugPrint(

@@ -16,8 +16,8 @@ class JoshCallScreeningService : CallScreeningService() {
 
     companion object {
         private const val TAG = "JOSH_CALL_SERVICE"
-        // IP local de tu servidor Python Flask
-        private const val BACKEND_URL = "http://192.168.20.28:5000/api/v1/evaluate_phone"
+        // Servidor Backend en producción (Render)
+        private const val BACKEND_URL = "https://josh-security-backend.onrender.com/api/v1/evaluate_phone"
     }
 
     override fun onScreenCall(callDetails: Call.Details) {
@@ -74,14 +74,19 @@ class JoshCallScreeningService : CallScreeningService() {
     private fun launchCallerIdOverlay(number: String, status: String, riskScore: Double) {
         try {
             val intent = Intent(this, CallerIdActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                )
                 putExtra("PHONE_NUMBER", number)
                 putExtra("CALL_STATUS", status)
                 putExtra("RISK_SCORE", riskScore)
             }
             startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "Error al lanzar CallerIdActivity: ${e.message}")
+            Log.e(TAG, "Error al lanzar CallerIdActivity: ${e.message}", e)
         }
     }
 
@@ -92,12 +97,12 @@ class JoshCallScreeningService : CallScreeningService() {
         try {
             val cleanNum = phoneNumber.replace("+", "").replace(" ", "").trim()
 
-            // Petición a tu backend Python en red local
+            // Petición a backend desplegado en Render (HTTPS)
             val url = URL("$BACKEND_URL?number=$cleanNum")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
-            conn.connectTimeout = 4000
-            conn.readTimeout = 4000
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
 
             if (conn.responseCode == 200) {
                 val responseText = conn.inputStream.bufferedReader().use { it.readText() }
@@ -120,11 +125,11 @@ class JoshCallScreeningService : CallScreeningService() {
                 fraudScore = -1.0
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error consultando servidor local Python: ${e.message}")
+            Log.e(TAG, "Error consultando servidor Render: ${e.message}")
             finalStatus = "ERROR_EVALUACION"
             fraudScore = -1.0
         } finally {
-            // Actualizar la base de datos con el resultado devuelto por Python/API Ninjas
+            // Actualizar la base de datos con el resultado devuelto
             try {
                 val repository = JoshCallRepository(applicationContext)
                 repository.updateCallRisk(recordId, finalStatus, fraudScore)
