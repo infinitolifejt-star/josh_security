@@ -128,6 +128,13 @@ def index_endpoint():
     return jsonify({"status": "online", "project": "JOSH Security Backend", "engine_version": "6.0.0"}), 200
 
 
+@app.route("/ping", methods=["GET"])
+@app.route("/api/v1/ping", methods=["GET"])
+def ping_endpoint():
+    """Endpoint ultra ligero para despertar Render (Cold Start Preventivo)"""
+    return jsonify({"status": "awake", "timestamp": datetime.now().isoformat()}), 200
+
+
 @app.route("/api/v1/evaluate_phone", methods=["GET", "POST"])
 def evaluate_phone_endpoint():
     """Endpoint consultado por el servicio de llamadas nativo en Flutter/Kotlin."""

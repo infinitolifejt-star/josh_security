@@ -1,5 +1,6 @@
 ﻿// ====================================================================================================
 // ARCHIVO: lib/services/background_shield.dart
+// JOSH SECURITY
 // ESCUDO DE PROTECCIÓN CONTINUA EN SEGUNDO PLANO (ROBUSTO Y SEGURO)
 // ====================================================================================================
 
@@ -20,9 +21,9 @@ class BackgroundShield {
   static Future<void> initializeService() async {
     WidgetsFlutterBinding.ensureInitialized();
 
-    final service = FlutterBackgroundService();
+    final FlutterBackgroundService service = FlutterBackgroundService();
 
-    // 1. Crear el canal de notificación explícitamente para Android
+    // 1. Crear el canal de notificación explícitamente para Android desde el Isolate Principal UI
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
         FlutterLocalNotificationsPlugin();
 
@@ -61,22 +62,35 @@ class BackgroundShield {
 
   @pragma('vm:entry-point')
   static Future<bool> onIosBackground(ServiceInstance service) async {
+    WidgetsFlutterBinding.ensureInitialized();
+    DartPluginRegistrant.ensureInitialized();
     return true;
   }
 
   @pragma('vm:entry-point')
   static void onStart(ServiceInstance service) async {
+    WidgetsFlutterBinding.ensureInitialized();
     DartPluginRegistrant.ensureInitialized();
+
+    if (service is AndroidServiceInstance) {
+      service.on('setAsForeground').listen((event) {
+        service.setAsForegroundService();
+      });
+
+      service.on('setAsBackground').listen((event) {
+        service.setAsBackgroundService();
+      });
+    }
 
     service.on('stopService').listen((event) {
       service.stopSelf();
     });
 
-    debugPrint('[JOSH SHIELD] Escudo de fondo activo y listo.');
+    debugPrint('🛡️ [JOSH SHIELD] Escudo de fondo activo y listo.');
 
     // Timer secundario de supervisión pasiva
-    Timer.periodic(const Duration(minutes: 5), (timer) {
-      debugPrint('[JOSH SHIELD] Escudo activo y supervisando sistema...');
+    Timer.periodic(const Duration(minutes: 5), (Timer timer) {
+      debugPrint('🛡️ [JOSH SHIELD] Escudo activo y supervisando sistema...');
     });
   }
 }

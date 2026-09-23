@@ -41,49 +41,8 @@ void overlayMain() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ----------------------------------------------------------------------------------------------
-  // BACKGROUND SHIELD
-  // ----------------------------------------------------------------------------------------------
-  try {
-    await BackgroundShield.initializeService();
-    debugPrint('🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.');
-  } catch (e, stackTrace) {
-    debugPrint('⚠️ [JOSH SHIELD] Error inicializando servicio: $e');
-    debugPrint(stackTrace.toString());
-  }
-
-  // ----------------------------------------------------------------------------------------------
-  // OVERLAY PERMISSION CHECK
-  // ----------------------------------------------------------------------------------------------
-  try {
-    final bool overlayGranted = await OverlayService.requestPermission();
-    debugPrint(
-      overlayGranted
-          ? '🪟 [JOSH OVERLAY] Permiso concedido.'
-          : '⚠️ [JOSH OVERLAY] Permiso no concedido.',
-    );
-  } catch (e, stackTrace) {
-    debugPrint('⚠️ [JOSH OVERLAY] Error solicitando permiso: $e');
-    debugPrint(stackTrace.toString());
-  }
-
-  // ----------------------------------------------------------------------------------------------
-  // SECURITY PROVIDER
-  // ----------------------------------------------------------------------------------------------
-  final SecurityProvider securityProvider = SecurityProvider();
+  // 1. Carga rápida de SharedPreferences para decidir la pantalla inicial
   bool onboardingVisto = false;
-
-  try {
-    await securityProvider.initialize();
-    debugPrint('📊 [JOSH ENGINE] SecurityProvider inicializado.');
-  } catch (e, stackTrace) {
-    debugPrint('⚠️ [JOSH ENGINE] Error inicializando SecurityProvider: $e');
-    debugPrint(stackTrace.toString());
-  }
-
-  // ----------------------------------------------------------------------------------------------
-  // PREFERENCIAS
-  // ----------------------------------------------------------------------------------------------
   try {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     onboardingVisto = prefs.getBool('onboarding_visto') ?? false;
@@ -92,9 +51,10 @@ Future<void> main() async {
     debugPrint(stackTrace.toString());
   }
 
-  // ----------------------------------------------------------------------------------------------
-  // APP INVOCATION
-  // ----------------------------------------------------------------------------------------------
+  // 2. Instanciamos el Provider
+  final SecurityProvider securityProvider = SecurityProvider();
+
+  // 3. Montamos la aplicación DE INMEDIATO para dibujar el primer frame y evitar congelar la UI
   runApp(
     MultiProvider(
       providers: [
@@ -104,6 +64,7 @@ Future<void> main() async {
       ],
       child: JoshSecurityApp(
         mostrarOnboarding: !onboardingVisto,
+        securityProvider: securityProvider,
       ),
     ),
   );
@@ -113,13 +74,68 @@ Future<void> main() async {
 // APP STRUCT
 // ====================================================================================================
 
-class JoshSecurityApp extends StatelessWidget {
+class JoshSecurityApp extends StatefulWidget {
   final bool mostrarOnboarding;
+  final SecurityProvider securityProvider;
 
   const JoshSecurityApp({
     super.key,
     required this.mostrarOnboarding,
+    required this.securityProvider,
   });
+
+  @override
+  State<JoshSecurityApp> createState() => _JoshSecurityAppState();
+}
+
+class _JoshSecurityAppState extends State<JoshSecurityApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Ejecuta la inicialización de servicios pesados en segundo plano justo después del primer renderizado
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initServices();
+    });
+  }
+
+  Future<void> _initServices() async {
+    // ----------------------------------------------------------------------------------------------
+    // BACKGROUND SHIELD
+    // ----------------------------------------------------------------------------------------------
+    try {
+      await BackgroundShield.initializeService();
+      debugPrint('🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.');
+    } catch (e, stackTrace) {
+      debugPrint('⚠️ [JOSH SHIELD] Error inicializando servicio: $e');
+      debugPrint(stackTrace.toString());
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // OVERLAY PERMISSION CHECK
+    // ----------------------------------------------------------------------------------------------
+    try {
+      final bool overlayGranted = await OverlayService.requestPermission();
+      debugPrint(
+        overlayGranted
+            ? '🪟 [JOSH OVERLAY] Permiso concedido.'
+            : '⚠️ [JOSH OVERLAY] Permiso no concedido.',
+      );
+    } catch (e, stackTrace) {
+      debugPrint('⚠️ [JOSH OVERLAY] Error solicitando permiso: $e');
+      debugPrint(stackTrace.toString());
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // SECURITY PROVIDER
+    // ----------------------------------------------------------------------------------------------
+    try {
+      await widget.securityProvider.initialize();
+      debugPrint('📊 [JOSH ENGINE] SecurityProvider inicializado.');
+    } catch (e, stackTrace) {
+      debugPrint('⚠️ [JOSH ENGINE] Error inicializando SecurityProvider: $e');
+      debugPrint(stackTrace.toString());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +148,7 @@ class JoshSecurityApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0F172A),
         useMaterial3: true,
       ),
-      home: mostrarOnboarding
+      home: widget.mostrarOnboarding
           ? const OnboardingScreen()
           : const HomeScreen(),
     );

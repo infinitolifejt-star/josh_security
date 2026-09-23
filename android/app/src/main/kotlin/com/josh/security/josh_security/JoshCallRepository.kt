@@ -94,6 +94,8 @@ class JoshCallRepository(context: Context) :
         } catch (e: Exception) {
             Log.e(TAG, "EXCEPCION guardando llamada: ${e.message}", e)
             -1L
+        } finally {
+            db.close() // Libera la conexión writable
         }
     }
 
@@ -118,39 +120,41 @@ class JoshCallRepository(context: Context) :
         } catch (e: Exception) {
             Log.e(TAG, "Error actualizando riesgo en la llamada id=$id: ${e.message}", e)
             0
+        } finally {
+            db.close() // Libera la conexión writable
         }
     }
 
     fun getAllCalls(): List<Map<String, Any>> {
         val callList = mutableListOf<Map<String, Any>>()
         val db = readableDatabase
-        var cursor: android.database.Cursor? = null
 
         try {
-            cursor = db.rawQuery(
+            // El bloque .use {} cierra automáticamente el Cursor al terminar la lectura
+            db.rawQuery(
                 "SELECT * FROM $TABLE_CALLS ORDER BY $COLUMN_TIMESTAMP DESC",
                 null
-            )
-
-            if (cursor != null && cursor.moveToFirst()) {
-                do {
-                    val item = mapOf(
-                        "id" to cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_ID)),
-                        "number" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_NUMBER)) ?: ""),
-                        "name" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_NAME)) ?: "Desconocido"),
-                        "timestamp" to cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP)),
-                        "type" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TYPE)) ?: "ENTRANTE"),
-                        "status" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_STATUS)) ?: "SEGURO"),
-                        "risk_score" to cursor.getDouble(cursor.getColumnIndexOrThrow(COLUMN_RISK_SCORE)),
-                        "verified" to (cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_VERIFIED)) == 1)
-                    )
-                    callList.add(item)
-                } while (cursor.moveToNext())
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    do {
+                        val item = mapOf(
+                            "id" to cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_ID)),
+                            "number" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_NUMBER)) ?: ""),
+                            "name" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_NAME)) ?: "Desconocido"),
+                            "timestamp" to cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP)),
+                            "type" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TYPE)) ?: "ENTRANTE"),
+                            "status" to (cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_STATUS)) ?: "SEGURO"),
+                            "risk_score" to cursor.getDouble(cursor.getColumnIndexOrThrow(COLUMN_RISK_SCORE)),
+                            "verified" to (cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_VERIFIED)) == 1)
+                        )
+                        callList.add(item)
+                    } while (cursor.moveToNext())
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error al ejecutar getAllCalls(): ${e.message}", e)
         } finally {
-            cursor?.close()
+            db.close() // Libera la conexión readable
         }
 
         return callList
@@ -166,6 +170,8 @@ class JoshCallRepository(context: Context) :
         } catch (e: Exception) {
             Log.e(TAG, "Error al limpiar llamadas: ${e.message}", e)
             0
+        } finally {
+            db.close() // Libera la conexión writable
         }
     }
 }

@@ -98,7 +98,8 @@ class SecurityProvider with ChangeNotifier {
   File? get selectedFile => _selectedFile;
   String? get selectedFilePath => _selectedFile?.path;
   List<String> get forensicLogs => List<String>.unmodifiable(_forensicLogs);
-  List<Map<String, dynamic>> get historicalLogs => List<Map<String, dynamic>>.unmodifiable(_historicalLogs);
+  List<Map<String, dynamic>> get historicalLogs =>
+      List<Map<String, dynamic>>.unmodifiable(_historicalLogs);
 
   // ================================================================================================
   // INICIALIZACIÓN DE SUBSISTEMAS
@@ -161,9 +162,11 @@ class SecurityProvider with ChangeNotifier {
               ? event.packageName.trim()
               : 'Aplicación desconocida';
 
-      final bool isOfficialOrSystem = _isOfficialOrSystemApkPath(event.apkPath);
+      final bool isOfficialOrSystem =
+          _isOfficialOrSystemApkPath(event.apkPath);
       final double score = isOfficialOrSystem ? 5.0 : 40.0;
-      final String verdict = isOfficialOrSystem ? 'SEGURO (OFICIAL)' : 'ANALIZAR_ORIGEN';
+      final String verdict =
+          isOfficialOrSystem ? 'SEGURO (OFICIAL)' : 'ANALIZAR_ORIGEN';
 
       _agentReasoningText = "Centinela detectó la instalación de '$appName'.";
       _updateHudWithVerdict(score, verdict, notify: false);
@@ -230,13 +233,16 @@ class SecurityProvider with ChangeNotifier {
   Future<bool> pickLocalFile() async {
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles();
-      if (result == null || result.files.isEmpty || result.files.single.path == null) {
+      if (result == null ||
+          result.files.isEmpty ||
+          result.files.single.path == null) {
         return false;
       }
 
       _selectedFile = File(result.files.single.path!);
       _selectedFileName = result.files.single.name;
-      _agentReasoningText = 'Archivo seleccionado. Listo para análisis perimetral.';
+      _agentReasoningText =
+          'Archivo seleccionado. Listo para análisis perimetral.';
 
       notifyListeners();
       return true;
@@ -301,7 +307,8 @@ class SecurityProvider with ChangeNotifier {
   // ================================================================================================
 
   Future<void> processIncomingCall(String phoneNumber) async {
-    final String number = phoneNumber.trim().isEmpty ? 'Número Oculto' : phoneNumber.trim();
+    final String number =
+        phoneNumber.trim().isEmpty ? 'Número Oculto' : phoneNumber.trim();
 
     if (number == 'Número Oculto') {
       _appendLog('LLAMADA ENTRANTE SIN NÚMERO VÁLIDO.');
@@ -327,15 +334,18 @@ class SecurityProvider with ChangeNotifier {
   // VECTORES DE ANÁLISIS (LLAMADAS / URL / ARCHIVOS)
   // ================================================================================================
 
-  Future<void> _processCallScan(String target, {bool showOverlay = false}) async {
+  Future<void> _processCallScan(String target,
+      {bool showOverlay = false}) async {
     final String number = target.trim();
     if (number.isEmpty) return;
 
     try {
-      final Map<String, dynamic> result = await _coordinator.scanCall(phoneNumber: number);
+      final Map<String, dynamic> result =
+          await _coordinator.scanCall(phoneNumber: number);
       final double score = _extractScore(result);
       final String verdict = _extractString(result, 'verdict', 'DESCONOCIDO');
-      final String reasoning = _extractString(result, 'agentReasoning', 'Análisis de seguridad completado.');
+      final String reasoning = _extractString(
+          result, 'agentReasoning', 'Análisis de seguridad completado.');
 
       _callsChecked++;
       _agentReasoningText = reasoning;
@@ -360,16 +370,18 @@ class SecurityProvider with ChangeNotifier {
       _appendLog('ERROR ANALIZANDO LLAMADA: $e');
       debugPrint('[JOSH PHONE] Error analizando llamada: $e\n$stackTrace');
 
-      // Garantiza que la llamada siempre quede guardada en la base de datos aun si falla la auditoría
-      await _persistAudit(number, 0.0, 'DESCONOCIDO', 'PHONE', 'Error en análisis: $e');
+      await _persistAudit(
+          number, 0.0, 'DESCONOCIDO', 'PHONE', 'Error en análisis: $e');
 
       if (showOverlay) {
         try {
           await OverlayService.showWarningOverlay(
             phoneNumber: number,
             riskLevel: 'ADVERTENCIA',
-            message: 'Llamada entrante detectada. No fue posible completar el análisis.',
-            agentReasoning: 'El Centinela no pudo completar el análisis automático.',
+            message:
+                'Llamada entrante detectada. No fue posible completar el análisis.',
+            agentReasoning:
+                'El Centinela no pudo completar el análisis automático.',
           );
         } catch (overlayError, overlayStack) {
           _appendLog('ERROR MOSTRANDO OVERLAY DE ERROR: $overlayError');
@@ -386,7 +398,8 @@ class SecurityProvider with ChangeNotifier {
     final Map<String, dynamic> result = await _coordinator.scanUrl(url);
     final double score = _extractScore(result);
     final String verdict = _extractString(result, 'verdict', 'DESCONOCIDO');
-    final String reasoning = _extractString(result, 'agentReasoning', 'Sin razonamiento.');
+    final String reasoning =
+        _extractString(result, 'agentReasoning', 'Sin razonamiento.');
 
     _linksChecked++;
     _agentReasoningText = reasoning;
@@ -405,7 +418,8 @@ class SecurityProvider with ChangeNotifier {
     final FileScanVerdict verdict = await _fileScanner.scanLocalFile(file);
     final double score = _mapFileVerdictToScore(verdict);
 
-    _agentReasoningText = 'Análisis estático de firmas, extensión, integridad y reputación del archivo.';
+    _agentReasoningText =
+        'Análisis estático de firmas, extensión, integridad y reputación del archivo.';
     _updateHudWithVerdict(score, verdict.riskLevel, notify: false);
 
     if (verdict.isCritical) {
@@ -452,11 +466,14 @@ class SecurityProvider with ChangeNotifier {
     String vector,
     String rawDetails,
   ) async {
-    final String timestamp = DateTime.now().toIso8601String();
+    final DateTime now = DateTime.now();
+    final String timestamp = now.toIso8601String();
+    final String uniqueId =
+        '${now.millisecondsSinceEpoch}_${now.microsecondsSinceEpoch % 1000}';
 
     try {
       await _database.insertScanLog(<String, dynamic>{
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'id': uniqueId,
         'timestamp': timestamp,
         'target': target,
         'score': score,
@@ -484,16 +501,20 @@ class SecurityProvider with ChangeNotifier {
   }
 
   double _extractScore(Map<String, dynamic> result) {
-    final dynamic value = result['agentRiskScore'] ?? result['riskScore'] ?? result['score'] ?? 0.0;
+    final dynamic value =
+        result['agentRiskScore'] ?? result['riskScore'] ?? result['score'] ?? 0.0;
     if (value is num) {
       final double score = value.toDouble();
       return score.isFinite ? score.clamp(0.0, 100.0).toDouble() : 0.0;
     }
     final double? parsed = double.tryParse(value.toString());
-    return (parsed != null && parsed.isFinite) ? parsed.clamp(0.0, 100.0).toDouble() : 0.0;
+    return (parsed != null && parsed.isFinite)
+        ? parsed.clamp(0.0, 100.0).toDouble()
+        : 0.0;
   }
 
-  String _extractString(Map<String, dynamic> result, String key, String fallback) {
+  String _extractString(
+      Map<String, dynamic> result, String key, String fallback) {
     final dynamic value = result[key];
     if (value == null) return fallback;
     final String text = value.toString().trim();
@@ -501,13 +522,19 @@ class SecurityProvider with ChangeNotifier {
   }
 
   String buildOverlayMessage(double score, String verdict) {
-    if (score >= 70) return 'RIESGO ALTO: esta llamada requiere precaución inmediata.';
-    if (score >= 30) return 'RIESGO MODERADO: verifica la identidad del interlocutor.';
+    if (score >= 70) {
+      return 'RIESGO ALTO: esta llamada requiere precaución inmediata.';
+    }
+    if (score >= 30) {
+      return 'RIESGO MODERADO: verifica la identidad del interlocutor.';
+    }
     return 'El Centinela ha analizado esta llamada.';
   }
 
-  void _updateHudWithVerdict(double score, String verdict, {bool notify = true}) {
-    final double safeScore = score.isFinite ? score.clamp(0.0, 100.0).toDouble() : 0.0;
+  void _updateHudWithVerdict(double score, String verdict,
+      {bool notify = true}) {
+    final double safeScore =
+        score.isFinite ? score.clamp(0.0, 100.0).toDouble() : 0.0;
     _vulnerabilityScore = safeScore;
     final String cleanVerdict = verdict.trim();
     _verdictText = cleanVerdict.isEmpty ? 'DESCONOCIDO' : cleanVerdict;
@@ -574,6 +601,29 @@ class SecurityProvider with ChangeNotifier {
   Future<void> _loadHistoricalLogs() async {
     try {
       _historicalLogs = await _database.getScanHistory();
+
+      // Recalcular métricas acumuladas leyendo la base de datos
+      int links = 0;
+      int calls = 0;
+      int malware = 0;
+
+      for (final Map<String, dynamic> log in _historicalLogs) {
+        final String vector = log['vector']?.toString().toUpperCase() ?? '';
+        final double score = (log['score'] as num?)?.toDouble() ?? 0.0;
+
+        if (vector == 'URL') {
+          links++;
+        } else if (vector == 'PHONE') {
+          calls++;
+        } else if (vector == 'MALWARE') {
+          if (score >= 70) malware++;
+        }
+      }
+
+      _linksChecked = links;
+      _callsChecked = calls;
+      _malwarePrevented = malware;
+
       notifyListeners();
     } catch (e, stackTrace) {
       _appendLog('ERROR CARGANDO HISTORIAL: $e', notify: false);
@@ -595,7 +645,8 @@ class SecurityProvider with ChangeNotifier {
 
   void setStatus(String status) {
     final String cleanStatus = status.trim();
-    _statusCategory = cleanStatus.isEmpty ? 'CENTINELA OPERATIVO' : cleanStatus;
+    _statusCategory =
+        cleanStatus.isEmpty ? 'CENTINELA OPERATIVO' : cleanStatus;
     notifyListeners();
   }
 
