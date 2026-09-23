@@ -1,13 +1,12 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/phone_interceptor_service.dart
-// RECEPTOR Y PROCESADOR DE LLAMADAS - JOSH SECURITY v6.0
-// Registro Persistente en SQLite (call_history & forensic_logs) + Conectividad Cloud Render
+// RECEPTOR Y PROCESADOR DE LLAMADAS - JOSH SECURITY v6.1
+// Coordinador de Eventos Nativos y Sincronización de UI (Sin peticiones HTTP duplicadas)
 // ====================================================================================================
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import '../api_service.dart';
 import 'database_service.dart';
 
 class PhoneInterceptorService {
@@ -26,8 +25,6 @@ class PhoneInterceptorService {
 
   final StreamController<void> _callLogUpdateController =
       StreamController<void>.broadcast();
-
-  final ApiService _apiService = ApiService();
 
   /// Stream para que la interfaz gráfica escuche actualizaciones en vivo del historial
   Stream<void> get onCallLogUpdated => _callLogUpdateController.stream;
@@ -107,7 +104,7 @@ class PhoneInterceptorService {
   }
 
   // ================================================================================================
-  // LLAMADA ENTRANTE (CON CACHÉ SQLITE Y ANÁLISIS CLOUD RENDER)
+  // MANEJO DE LLAMADA ENTRANTE (SIN DUPLICACIÓN DE PETICIONES HTTP)
   // ================================================================================================
 
   Future<void> handleIncomingCall(dynamic phoneNumber) async {
@@ -115,69 +112,26 @@ class PhoneInterceptorService {
         ? 'Número Oculto'
         : phoneNumber.toString().trim();
 
-    final int currentTimestamp = DateTime.now().millisecondsSinceEpoch;
-
     debugPrint(
-      '[JOSH_PHONE_INTERCEPTOR] Registrando y evaluando llamada entrante: $number',
+      '[JOSH_PHONE_INTERCEPTOR] Notificación de llamada recibida desde Android: $number',
     );
 
-    double fraudScore = 0.0;
-    String carrier = 'Desconocido';
-    String verdict = 'SEGURO';
-    String details = 'Llamada interceptada en tiempo real por JOSH';
-    bool isVoip = false;
-    bool recentAbuse = false;
-
     try {
-      if (number != 'Número Oculto') {
-        // 1. Consultar en la caché local SQLite primero
-        final cachedData = await DatabaseService.instance.getIpqsCache(number);
-
-        if (cachedData != null) {
-          fraudScore = (cachedData['fraud_score'] as num?)?.toDouble() ?? 0.0;
-          carrier = cachedData['carrier']?.toString() ?? 'Desconocido';
-          isVoip = (cachedData['is_voip'] as int?) == 1;
-          recentAbuse = (cachedData['recent_abuse'] as int?) == 1;
-          verdict = (fraudScore >= 75.0 || recentAbuse) ? 'SPAM / RIESGO' : 'SEGURO';
-          details = 'Evaluación recuperada desde la caché local SQLite';
-        } else {
-          // 2. Si no existe en la caché, realizar escaneo directo contra el Backend en Render
-          final cloudScan = await _apiService.scanTarget('SPAM', number);
-          fraudScore = (cloudScan['riskScore'] as num?)?.toDouble() ?? 0.0;
-          verdict = cloudScan['classification']?.toString() ?? 'SEGURO';
-          details = cloudScan['logs']?.toString() ?? 'Evaluado en tiempo real con API Cloud Render';
-        }
-      }
-
-      // 3. Guardar en la tabla de historial de llamadas
-      await DatabaseService.instance.insertCallHistory(
-        phoneNumber: number,
-        riskScore: fraudScore,
-        ipqsScore: fraudScore,
-        confidence: 'ALTA',
-        verdict: verdict,
-        category: 'Entrante',
-        details: '$details (Operador: $carrier${isVoip ? ' | Línea VOIP' : ''})',
-        source: 'CallScreeningService',
-        timestamp: currentTimestamp,
-      );
-
-      // 4. Registrar en la bitácora forense unificada
+      // Registrar en la bitácora forense el evento de recepción sin duplicar la petición HTTP
       await DatabaseService.instance.insertForensicLog({
         'timestamp': DateTime.now().toIso8601String(),
         'service': 'PhoneInterceptorService',
-        'activity': 'Llamada Entrante: $number',
-        'verdict': verdict,
+        'activity': 'Llamada Entrante Detectada: $number',
+        'verdict': 'EVALUANDO',
         'matched_rule': 'INCOMING_CALL_SCREENING',
-        'extra_data':
-            '{"phoneNumber": "$number", "score": $fraudScore, "carrier": "$carrier", "isVoip": $isVoip, "recentAbuse": $recentAbuse}',
+        'extra_data': '{"phoneNumber": "$number", "source": "JoshCallScreeningService"}',
       });
 
-      // 5. Notificar a la interfaz de usuario de Flutter
+      // Emitir evento para refrescar UI en Flutter
       _callLogUpdateController.add(null);
     } catch (e, stackTrace) {
       debugPrint(
-        '[JOSH_PHONE_INTERCEPTOR] Error procesando la llamada: $e\n$stackTrace',
+        '[JOSH_PHONE_INTERCEPTOR] Error al registrar evento forense: $e\n$stackTrace',
       );
     }
   }
@@ -218,12 +172,12 @@ class PhoneInterceptorService {
 
         final dynamic rawRiskScore = raw['risk_score'] ?? raw['riskScore'];
 
-        double riskScore = 0.0;
+        double riskScore = -1.0;
 
         if (rawRiskScore is num) {
           riskScore = rawRiskScore.toDouble();
         } else if (rawRiskScore != null) {
-          riskScore = double.tryParse(rawRiskScore.toString()) ?? 0.0;
+          riskScore = double.tryParse(rawRiskScore.toString()) ?? -1.0;
         }
 
         return <String, dynamic>{
@@ -234,7 +188,7 @@ class PhoneInterceptorService {
           'timestamp':
               raw['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
           'type': raw['type'] ?? 'ENTRANTE',
-          'status': raw['status'] ?? 'SEGURO',
+          'status': raw['status'] ?? 'NO_VERIFICADO',
           'riskScore': riskScore,
           'verified':
               raw['verified'] == true || raw['isVerified'] == true,

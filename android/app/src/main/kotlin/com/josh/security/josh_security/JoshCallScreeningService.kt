@@ -49,7 +49,7 @@ class JoshCallScreeningService : CallScreeningService() {
                 name = "Desconocido",
                 type = "ENTRANTE",
                 status = "EVALUANDO",
-                riskScore = 0.0,
+                riskScore = -1.0,
                 isVerified = false
             )
             Log.d(TAG, "Llamada registrada temporalmente con ID: $insertedId")
@@ -60,10 +60,10 @@ class JoshCallScreeningService : CallScreeningService() {
             Log.e(TAG, "Error registrando llamada preliminar: ${e.message}", e)
         }
 
-        // 3. Lanzar overlay emergente de Caller ID
-        launchCallerIdOverlay(phoneNumber, "EVALUANDO", 0.0)
+        // 3. Lanzar overlay emergente de Caller ID en estado EVALUANDO
+        launchCallerIdOverlay(phoneNumber, "EVALUANDO", -1.0)
 
-        // 4. Evaluar la reputación enviando la petición a security_backend.py
+        // 4. Evaluar la reputación enviando la petición única al backend
         if (phoneNumber != "Desconocido" && insertedId != -1L) {
             CoroutineScope(Dispatchers.IO).launch {
                 fetchBackendAndResult(phoneNumber, insertedId)
@@ -97,25 +97,24 @@ class JoshCallScreeningService : CallScreeningService() {
         try {
             val cleanNum = phoneNumber.replace("+", "").replace(" ", "").trim()
 
-            // Petición a backend desplegado en Render (HTTPS)
             val url = URL("$BACKEND_URL?number=$cleanNum")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
 
             if (conn.responseCode == 200) {
                 val responseText = conn.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(responseText)
 
-                // Extraer respuesta del endpoint /api/v1/evaluate_phone
-                fraudScore = json.optDouble("score", 0.0)
-                val statusFromBackend = json.optString("status", "SEGURO").uppercase()
+                fraudScore = json.optDouble("score", -1.0)
+                val statusFromBackend = json.optString("status", "NO_VERIFICADO").uppercase()
 
-                finalStatus = if (statusFromBackend == "SOSPECHOSO" || fraudScore >= 50.0) {
-                    "SOSPECHOSO"
-                } else {
-                    "SEGURO"
+                finalStatus = when {
+                    statusFromBackend == "SOSPECHOSO" || fraudScore >= 50.0 -> "SOSPECHOSO"
+                    statusFromBackend == "CRITICO" || fraudScore >= 75.0 -> "CRÍTICO"
+                    statusFromBackend == "SEGURO" || (fraudScore in 0.0..29.9) -> "SEGURO"
+                    else -> "NO_VERIFICADO"
                 }
 
                 Log.d(TAG, "Backend evaluado con éxito: RiskScore=$fraudScore, Status=$finalStatus")
@@ -129,7 +128,7 @@ class JoshCallScreeningService : CallScreeningService() {
             finalStatus = "ERROR_EVALUACION"
             fraudScore = -1.0
         } finally {
-            // Actualizar la base de datos con el resultado devuelto
+            // Actualizar la base de datos local única con el resultado devuelto
             try {
                 val repository = JoshCallRepository(applicationContext)
                 repository.updateCallRisk(recordId, finalStatus, fraudScore)
@@ -137,10 +136,10 @@ class JoshCallScreeningService : CallScreeningService() {
                 Log.e(TAG, "Error actualizando la base de datos final: ${e.message}")
             }
 
-            // Actualizar el overlay
+            // Actualizar el overlay de Caller ID con el resultado real
             launchCallerIdOverlay(phoneNumber, finalStatus, fraudScore)
 
-            // Notificar a Flutter
+            // Notificar a Flutter para refrescar la lista en pantalla
             notifyFlutterRefresh()
         }
     }

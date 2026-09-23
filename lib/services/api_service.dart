@@ -1,6 +1,6 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/api_service.dart
-// PUENTE DE CONEXIÓN, CLIENTE SSL PINNING Y MOTOR HEURÍSTICO DE ANÁLISIS DE TELEMETRÍA v6.0
+// PUENTE DE CONEXIÓN, CLIENTE SSL PINNING Y MOTOR HEURÍSTICO DE ANÁLISIS DE TELEMETRÍA v6.1
 // ====================================================================================================
 
 import 'dart:convert';
@@ -177,7 +177,7 @@ class ApiService {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
 
           double score = double.tryParse(
-                  data['risk_score']?.toString() ?? '0') ??
+                data['risk_score']?.toString() ?? '0') ??
               0;
 
           if (score <= 1 && score > 0) {
@@ -185,7 +185,7 @@ class ApiService {
           }
 
           String classification =
-              data['classification']?.toString().toUpperCase() ?? 'SEGURO';
+              data['classification']?.toString().toUpperCase() ?? 'DESCONOCIDO';
 
           if (classification == 'SUSPICIOUS') {
             classification = 'ADVERTENCIA';
@@ -199,6 +199,8 @@ class ApiService {
             classification = 'CRÍTICO';
           } else if (score >= 30) {
             classification = 'ADVERTENCIA';
+          } else if (score >= 0 && classification == 'SAFE') {
+            classification = 'SEGURO';
           }
 
           return {
@@ -361,7 +363,7 @@ class ApiService {
   }
 
   // ===========================================================================================
-  // FALLBACK LOCAL
+  // FALLBACK LOCAL SEGURO (CERO FALSOS POSITIVOS)
   // ===========================================================================================
 
   Map<String, dynamic> _fallbackStaticResult(
@@ -369,15 +371,15 @@ class ApiService {
     String reason,
   ) {
     return {
-      'riskScore': 15.0,
-      'score': '15',
-      'classification': 'SEGURO',
-      'riskLevel': 'FALLBACK LOCAL',
+      'riskScore': -1.0,
+      'score': '-1',
+      'classification': 'NO_VERIFICADO',
+      'riskLevel': 'DESCONOCIDO',
       'metrics': {
         'entropy': 0.0,
         'fallback': 1.0,
       },
-      'logs': 'JOSH_SECURITY: $reason',
+      'logs': 'JOSH_SECURITY: $reason (Sin conectividad Cloud)',
     };
   }
 
