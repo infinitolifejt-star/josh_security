@@ -12,7 +12,8 @@ plugins {
 android {
     namespace = "com.josh.security.josh_security"
 
-    compileSdk = flutter.compileSdkVersion
+    // Se establece explicitamente la API 36 de Android
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -37,8 +38,8 @@ android {
         minSdk =
             flutter.minSdkVersion
 
-        targetSdk =
-            flutter.targetSdkVersion
+        // Se establece explicitamente el targetSdk en 36 para cumplir con Google Play
+        targetSdk = 36
 
         versionCode =
             flutter.versionCode
