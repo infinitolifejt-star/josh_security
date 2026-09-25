@@ -1,7 +1,7 @@
 // ====================================================================================================
 // ARCHIVO: lib/providers/security_provider.dart
 // JOSH SECURITY
-// PROVIDER ORQUESTADOR DE SEGURIDAD
+// PROVIDER ORQUESTADOR DE SEGURIDAD (REFACTORIZADO Y REACTIVO)
 // ====================================================================================================
 
 import 'dart:async';
@@ -32,6 +32,7 @@ class SecurityProvider with ChangeNotifier {
 
   late final SecurityCoordinator _coordinator;
   StreamSubscription<ApkInstallEvent>? _apkSubscription;
+  StreamSubscription<Map<String, dynamic>>? _scanSubscription;
 
   // ================================================================================================
   // ESTADO INTERNO
@@ -73,6 +74,24 @@ class SecurityProvider with ChangeNotifier {
       callSecurityEngine: const CallSecurityEngine(),
       telemetryService: TelemetryService(),
     );
+
+    // ESCUCHA REACTIVA: Se actualiza en tiempo real al concluir escaneos en segundo plano
+    _scanSubscription = _coordinator.onScanCompleted.listen((Map<String, dynamic> result) async {
+      final double score = _extractScore(result);
+      final String verdict = _extractString(result, 'verdict', 'DESCONOCIDO');
+      final String reasoning = _extractString(
+        result,
+        'agentReasoning',
+        'Análisis de seguridad completado.',
+      );
+
+      _agentReasoningText = reasoning;
+      _updateHudWithVerdict(score, verdict, notify: false);
+
+      await _loadHistoricalLogs();
+      _appendLog('Escaneo actualizado en tiempo real: ${result['target'] ?? result['phone']}');
+      notifyListeners();
+    });
   }
 
   // ================================================================================================
@@ -112,6 +131,7 @@ class SecurityProvider with ChangeNotifier {
 
     try {
       await _database.database;
+      await _coordinator.initialize();
 
       // Inicia la escucha interceptora enrutando eventos de llamadas entrantes hacia processIncomingCall
       _phoneService.startListening((dynamic eventData) {
@@ -347,11 +367,8 @@ class SecurityProvider with ChangeNotifier {
       final String reasoning = _extractString(
           result, 'agentReasoning', 'Análisis de seguridad completado.');
 
-      _callsChecked++;
       _agentReasoningText = reasoning;
       _updateHudWithVerdict(score, verdict, notify: false);
-
-      await _persistAudit(number, score, verdict, 'PHONE', result.toString());
 
       if (showOverlay) {
         try {
@@ -369,9 +386,6 @@ class SecurityProvider with ChangeNotifier {
     } catch (e, stackTrace) {
       _appendLog('ERROR ANALIZANDO LLAMADA: $e');
       debugPrint('[JOSH PHONE] Error analizando llamada: $e\n$stackTrace');
-
-      await _persistAudit(
-          number, 0.0, 'DESCONOCIDO', 'PHONE', 'Error en análisis: $e');
 
       if (showOverlay) {
         try {
@@ -401,11 +415,8 @@ class SecurityProvider with ChangeNotifier {
     final String reasoning =
         _extractString(result, 'agentReasoning', 'Sin razonamiento.');
 
-    _linksChecked++;
     _agentReasoningText = reasoning;
     _updateHudWithVerdict(score, verdict, notify: false);
-
-    await _persistAudit(url, score, verdict, 'URL', result.toString());
   }
 
   Future<void> _auditFile() async {
@@ -611,7 +622,7 @@ class SecurityProvider with ChangeNotifier {
         final String vector = log['vector']?.toString().toUpperCase() ?? '';
         final double score = (log['score'] as num?)?.toDouble() ?? 0.0;
 
-        if (vector == 'URL') {
+        if (vector == 'URL' || vector == 'PHISHING') {
           links++;
         } else if (vector == 'PHONE') {
           calls++;
@@ -652,9 +663,12 @@ class SecurityProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _scanSubscription?.cancel();
+    _scanSubscription = null;
     _apkSubscription?.cancel();
     _apkSubscription = null;
     _phoneService.dispose();
+    _coordinator.dispose();
     super.dispose();
   }
 }

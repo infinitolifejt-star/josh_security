@@ -23,7 +23,7 @@ class DatabaseService {
   Future<Database>? _initializationFuture;
 
   // ================================================================================================
-  // DATABASE
+  // DATABASE INICIALIZACIÓN
   // ================================================================================================
 
   Future<Database> get database async {
@@ -61,12 +61,12 @@ class DatabaseService {
   }
 
   // ================================================================================================
-  // CREACIÓN
+  // CREACIÓN DE TABLAS
   // ================================================================================================
 
   Future<void> _onCreate(Database db, int version) async {
     await db.transaction((Transaction txn) async {
-      // REGISTROS FORENSES
+      // REGISTROS FORENSES / BITÁCORA DE AUDITORÍA
       await txn.execute('''
         CREATE TABLE forensic_logs(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +129,7 @@ class DatabaseService {
         )
       ''');
 
-      // ÍNDICES
+      // ÍNDICES DE RENDIMIENTO
       await txn.execute(
         'CREATE INDEX idx_scan_time ON scan_history(timestamp);',
       );
@@ -242,7 +242,7 @@ class DatabaseService {
   }
 
   // ================================================================================================
-  // IPQS CACHE
+  // CACHÉ IPQS
   // ================================================================================================
 
   Future<int> saveIpqsCache(Map<String, dynamic> data) async {
@@ -297,17 +297,18 @@ class DatabaseService {
   }
 
   // ================================================================================================
-  // FORENSIC LOGS
+  // REGISTROS FORENSES / BITÁCORA
   // ================================================================================================
 
   Future<int> insertForensicLog(Map<String, dynamic> logEntry) async {
     try {
       final Database db = await database;
+      final DateTime now = DateTime.now();
 
       return await db.insert(
         'forensic_logs',
         <String, dynamic>{
-          'timestamp': logEntry['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+          'timestamp': logEntry['timestamp']?.toString() ?? now.toIso8601String(),
           'service': logEntry['service']?.toString() ?? 'JOSH',
           'activity': logEntry['activity']?.toString() ?? '',
           'verdict': logEntry['verdict']?.toString() ?? '',
@@ -348,7 +349,7 @@ class DatabaseService {
   }
 
   // ================================================================================================
-  // HISTORIAL GENERAL
+  // HISTORIAL GENERAL (ESCANEO)
   // ================================================================================================
 
   Future<int> insertScanLog(Map<String, dynamic> log) async {
@@ -447,7 +448,7 @@ class DatabaseService {
   }
 
   // ================================================================================================
-  // LIMPIEZA TOTAL
+  // LIMPIEZA
   // ================================================================================================
 
   Future<void> clearCallHistory() async {

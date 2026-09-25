@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
@@ -5,8 +6,9 @@ import 'package:flutter/foundation.dart';
 import '../learning/learning_engine.dart';
 import 'agent_engine.dart';
 import 'call_security_engine.dart';
-import 'security_models.dart';
+import 'database_service.dart';
 import 'phishing_engine.dart';
+import 'security_models.dart';
 import 'telemetry_service.dart';
 
 class SecurityCoordinator {
@@ -14,17 +16,29 @@ class SecurityCoordinator {
     required PhishingEngine phishingEngine,
     required CallSecurityEngine callSecurityEngine,
     required TelemetryService telemetryService,
+    DatabaseService? databaseService,
   })  : _phishingEngine = phishingEngine,
         _callSecurityEngine = callSecurityEngine,
-        _telemetryService = telemetryService;
+        _telemetryService = telemetryService,
+        _dbService = databaseService ?? DatabaseService.instance;
 
   final PhishingEngine _phishingEngine;
   final CallSecurityEngine _callSecurityEngine;
   final TelemetryService _telemetryService;
+  final DatabaseService _dbService;
 
   final LearningEngine _learningEngine = LearningEngine();
 
   bool _initialized = false;
+
+  // ==========================================================================
+  // STREAM DE EVENTOS REACTIVOS (Notifica actualizacioes a la UI en vivo)
+  // ==========================================================================
+  final StreamController<Map<String, dynamic>> _scanUpdatesController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Stream público para que SecurityProvider u otros listeners escuchen escaneos finalizados.
+  Stream<Map<String, dynamic>> get onScanCompleted => _scanUpdatesController.stream;
 
   // ==========================================================================
   // TRAZA
@@ -57,6 +71,7 @@ class SecurityCoordinator {
     );
 
     await _telemetryService.initialize();
+    await _dbService.database; // Asegura apertura de la base de datos SQLite
 
     _initialized = true;
 
@@ -94,10 +109,6 @@ class SecurityCoordinator {
 
   // ==========================================================================
   // COMBINACIÓN DE MOTORES
-  //
-  // Heurística local -> 50 %
-  // Aprendizaje      -> 20 %
-  // Agente           -> 30 %
   // ==========================================================================
 
   double _resolveFinalRiskScore({
@@ -200,6 +211,7 @@ class SecurityCoordinator {
     );
 
     final String finalRiskLevel = _resolveRiskLevel(finalRisk);
+    final DateTime now = DateTime.now();
 
     final Map<String, dynamic> result = <String, dynamic>{
       ...heuristic,
@@ -216,9 +228,26 @@ class SecurityCoordinator {
       'agentReasoning': agent.reasoning,
       'requiresExternalLookup': agent.requiresExternalLookup,
       'actionRecommendation': agent.actionRecommendation,
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp': now.toIso8601String(),
     };
 
+    // ------------------------------------------------------------------------
+    // PERSISTENCIA EN BASE DE DATOS LOCAL
+    // ------------------------------------------------------------------------
+    await _dbService.insertScanLog(result);
+
+    await _dbService.insertForensicLog(<String, dynamic>{
+      'timestamp': now.toIso8601String(),
+      'service': 'PHISHING_SHIELD',
+      'activity': 'Escaneo de URL ($target)',
+      'verdict': finalRiskLevel,
+      'matched_rule': agent.statusText,
+      'extra_data': agent.reasoning,
+    });
+
+    // ------------------------------------------------------------------------
+    // TELEMETRÍA
+    // ------------------------------------------------------------------------
     await _telemetryService.incrementLinksChecked();
 
     await _telemetryService.registerEvent(
@@ -234,6 +263,12 @@ class SecurityCoordinator {
       ),
       details: agent.reasoning,
     );
+
+    // ------------------------------------------------------------------------
+    // NOTIFICACIÓN EN TIEMPO REAL
+    // ------------------------------------------------------------------------
+    _trace('Emitiendo evento de escaneo finalizado a la UI...');
+    _scanUpdatesController.add(result);
 
     return result;
   }
@@ -260,7 +295,6 @@ class SecurityCoordinator {
     // ------------------------------------------------------------------------
     // MOTOR 1: HEURÍSTICA TELEFÓNICA
     // ------------------------------------------------------------------------
-
     final Map<String, dynamic> heuristic = Map<String, dynamic>.from(
       _callSecurityEngine.analyze(
         phoneNumber: target,
@@ -278,7 +312,6 @@ class SecurityCoordinator {
     // ------------------------------------------------------------------------
     // MOTOR 2: APRENDIZAJE ADAPTATIVO
     // ------------------------------------------------------------------------
-
     final CallVerdict learningVerdict = _callSecurityEngine.buildVerdict(
       phoneNumber: target,
       contactName: contactName,
@@ -296,7 +329,6 @@ class SecurityCoordinator {
     // ------------------------------------------------------------------------
     // MOTOR 3: AGENTE
     // ------------------------------------------------------------------------
-
     final AgentVerdict agent = await AgentEngine.evaluateThreat(
       target: target,
       vectorType: 'PHONE',
@@ -310,7 +342,6 @@ class SecurityCoordinator {
     // ------------------------------------------------------------------------
     // FUSIÓN FINAL
     // ------------------------------------------------------------------------
-
     final double finalRisk = _resolveFinalRiskScore(
       heuristicRisk: heuristicRisk,
       learningRisk: learningRisk,
@@ -318,6 +349,7 @@ class SecurityCoordinator {
     );
 
     final String finalRiskLevel = _resolveRiskLevel(finalRisk);
+    final DateTime now = DateTime.now();
 
     _trace(
       'Score final de llamada: $finalRisk',
@@ -330,7 +362,6 @@ class SecurityCoordinator {
     // ------------------------------------------------------------------------
     // RESULTADO NORMALIZADO
     // ------------------------------------------------------------------------
-
     final Map<String, dynamic> result = <String, dynamic>{
       ...heuristic,
       'phone': target,
@@ -348,13 +379,37 @@ class SecurityCoordinator {
       'agentReasoning': agent.reasoning,
       'requiresExternalLookup': agent.requiresExternalLookup,
       'actionRecommendation': agent.actionRecommendation,
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp': now.toIso8601String(),
     };
+
+    // ------------------------------------------------------------------------
+    // PERSISTENCIA EN BASE DE DATOS LOCAL (Llamadas y Bitácora Forense)
+    // ------------------------------------------------------------------------
+    await _dbService.insertCallHistory(
+      phoneNumber: target,
+      riskScore: finalRisk,
+      confidence: agent.statusText,
+      verdict: finalRiskLevel,
+      category: _safeString(heuristic['category'] ?? 'Llamada Entrante'),
+      details: agent.reasoning,
+      source: 'TELEPHONY_SHIELD',
+      timestamp: now.millisecondsSinceEpoch,
+    );
+
+    await _dbService.insertScanLog(result);
+
+    await _dbService.insertForensicLog(<String, dynamic>{
+      'timestamp': now.toIso8601String(),
+      'service': 'CALL_SHIELD',
+      'activity': 'Auditoría de número telefónico ($target)',
+      'verdict': finalRiskLevel,
+      'matched_rule': agent.statusText,
+      'extra_data': agent.reasoning,
+    });
 
     // ------------------------------------------------------------------------
     // TELEMETRÍA
     // ------------------------------------------------------------------------
-
     await _telemetryService.incrementCallsChecked();
 
     await _telemetryService.registerEvent(
@@ -370,6 +425,12 @@ class SecurityCoordinator {
       ),
       details: agent.reasoning,
     );
+
+    // ------------------------------------------------------------------------
+    // NOTIFICACIÓN EN TIEMPO REAL
+    // ------------------------------------------------------------------------
+    _trace('Emitiendo evento de llamada finalizada a la UI...');
+    _scanUpdatesController.add(result);
 
     return result;
   }
@@ -391,11 +452,24 @@ class SecurityCoordinator {
 
   Future<void> saveSecurityEvent(
     Map<String, dynamic> event,
-  ) {
+  ) async {
+    await _dbService.insertForensicLog(<String, dynamic>{
+      'timestamp': event['timestamp'] ?? DateTime.now().toIso8601String(),
+      'service': event['service'] ?? 'SECURITY_EVENT',
+      'activity': event['activity'] ?? event['message'] ?? 'Evento registrado',
+      'verdict': event['verdict'] ?? 'INFO',
+      'matched_rule': event['matched_rule'] ?? 'EVENT',
+      'extra_data': event['metadata']?.toString(),
+    });
+
     return _telemetryService.registerEvent(
       type: 'SECURITY_EVENT',
       message: 'Evento de seguridad registrado',
       metadata: event,
     );
+  }
+
+  void dispose() {
+    _scanUpdatesController.close();
   }
 }

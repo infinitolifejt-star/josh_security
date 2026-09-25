@@ -1,9 +1,9 @@
 // ====================================================================================================
 // ARCHIVO: lib/views/widgets/forensic_history_list.dart
-// COMPONENTE: Lista de Historial Forense Universal JOSH
-// OPERACIÓN: Renderizado unificado (Llamadas, Phishing, Archivos/APK) - Parche de Tipo Seguro
+// COMPONENTE: Lista de Historial Forense Universal JOSH (Blindado para Multi-Motor)
 // ====================================================================================================
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -25,30 +25,79 @@ class ForensicHistoryList extends StatefulWidget {
 
 class _ForensicHistoryListState extends State<ForensicHistoryList> {
   bool _isLoading = false;
+  late Future<List<Map<String, dynamic>>> _unifiedHistoryFuture;
+  StreamSubscription? _callLogSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshHistory();
+    _subscribeToLiveEvents();
+  }
+
+  @override
+  void dispose() {
+    _callLogSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Escucha cambios en tiempo real desde PhoneInterceptorService
+  void _subscribeToLiveEvents() {
+    _callLogSubscription = PhoneInterceptorService().onCallLogUpdated.listen((_) {
+      if (mounted) {
+        _refreshHistory();
+      }
+    });
+  }
+
+  void _refreshHistory() {
+    setState(() {
+      _unifiedHistoryFuture = _loadUnifiedHistory();
+    });
+  }
 
   double _extractRiskFromForensicLog(Map<String, dynamic> log) {
+    // 1. Intentar extraer directo de campos raíz
+    final dynamic rootScore = log['risk_score'] ?? log['score'] ?? log['fraud_score'] ?? log['threat_level'];
+    if (rootScore != null && rootScore is num) {
+      final double val = rootScore.toDouble();
+      return val > 1.0 ? val / 100.0 : val;
+    }
+
+    // 2. Extracción desde extra_data
     final String? extraDataStr = log['extra_data']?.toString();
     if (extraDataStr != null && extraDataStr.isNotEmpty) {
       try {
         final Map<String, dynamic> parsed = jsonDecode(extraDataStr);
-        if (parsed.containsKey('score') || parsed.containsKey('risk_score') || parsed.containsKey('fraud_score')) {
-          final dynamic val = parsed['score'] ?? parsed['risk_score'] ?? parsed['fraud_score'];
-          final double parsedScore = (val as num).toDouble();
+        final dynamic val = parsed['score'] ??
+                            parsed['risk_score'] ??
+                            parsed['fraud_score'] ??
+                            parsed['threat_level'] ??
+                            parsed['risk'];
+        if (val != null && val is num) {
+          final double parsedScore = val.toDouble();
           return parsedScore > 1.0 ? parsedScore / 100.0 : parsedScore;
         }
-      } catch (_) {
-        // Ignorar si extra_data no es JSON válido
-      }
+      } catch (_) {}
     }
 
-    final String verdict = (log['verdict'] ?? '').toString().toUpperCase();
-    if (verdict.contains('PELIGRO') || verdict.contains('MALICIOSO') || verdict.contains('MALWARE') || verdict.contains('CRÍTICO')) {
+    // 3. Fallback basado en veredicto
+    final String verdict = (log['verdict'] ?? log['status'] ?? log['action'] ?? '').toString().toUpperCase();
+    if (verdict.contains('PELIGRO') ||
+        verdict.contains('MALICIOSO') ||
+        verdict.contains('MALWARE') ||
+        verdict.contains('PHISHING') ||
+        verdict.contains('CRÍTICO')) {
       return 0.9;
     }
-    if (verdict.contains('SOSPECHOSO') || verdict.contains('ADVERTENCIA') || verdict.contains('ALERTA')) {
+    if (verdict.contains('SOSPECHOSO') ||
+        verdict.contains('ADVERTENCIA') ||
+        verdict.contains('ALERTA')) {
       return 0.5;
     }
-    if (verdict.contains('LIMPIO') || verdict.contains('SEGURO') || verdict.contains('PERMITIDO')) {
+    if (verdict.contains('LIMPIO') ||
+        verdict.contains('SEGURO') ||
+        verdict.contains('PERMITIDO')) {
       return 0.0;
     }
 
@@ -57,21 +106,45 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
 
   int _parseTimestampToMs(dynamic rawTimestamp) {
     if (rawTimestamp == null) return 0;
-    if (rawTimestamp is int) return rawTimestamp;
-    if (rawTimestamp is num) return rawTimestamp.toInt();
+
+    if (rawTimestamp is int) {
+      return rawTimestamp < 10000000000 ? rawTimestamp * 1000 : rawTimestamp;
+    }
+
+    if (rawTimestamp is num) {
+      final int val = rawTimestamp.toInt();
+      return val < 10000000000 ? val * 1000 : val;
+    }
 
     final String str = rawTimestamp.toString().trim();
     if (str.isEmpty) return 0;
 
-    // Si es una cadena numérica (ej: "1725000000000")
     final int? parsedInt = int.tryParse(str);
-    if (parsedInt != null) return parsedInt;
+    if (parsedInt != null) {
+      return parsedInt < 10000000000 ? parsedInt * 1000 : parsedInt;
+    }
 
-    // Si es fecha ISO-8601 (ej: "2026-09-02T10:00:00.000Z")
     final DateTime? parsedDate = DateTime.tryParse(str);
     if (parsedDate != null) return parsedDate.millisecondsSinceEpoch;
 
     return 0;
+  }
+
+  String _formatDateTime(dynamic rawTimestamp) {
+    final int ms = _parseTimestampToMs(rawTimestamp);
+    if (ms == 0) return 'Fecha no registrada';
+
+    final DateTime dt = DateTime.fromMillisecondsSinceEpoch(ms);
+    final String day = dt.day.toString().padLeft(2, '0');
+    final String month = dt.month.toString().padLeft(2, '0');
+    final String year = dt.year.toString();
+
+    final int hourInt = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+    final String hour = hourInt.toString().padLeft(2, '0');
+    final String minute = dt.minute.toString().padLeft(2, '0');
+    final String period = dt.hour >= 12 ? 'PM' : 'AM';
+
+    return '$day/$month/$year - $hour:$minute $period';
   }
 
   Future<List<Map<String, dynamic>>> _loadUnifiedHistory() async {
@@ -79,17 +152,19 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
 
     // 1. Obtener llamadas de SQLite local
     try {
-      final List<Map<String, dynamic>> dbCalls = await DatabaseService.instance.getCallHistory();
+      final List<Map<String, dynamic>> dbCalls =
+          await DatabaseService.instance.getCallHistory();
       for (final c in dbCalls) {
         final double score = (c['risk_score'] as num?)?.toDouble() ?? 0.0;
         final double normalizedScore = score > 1.0 ? score / 100.0 : score;
 
         formattedCalls.add(<String, dynamic>{
-          'title': c['phone_number'] ?? 'Desconocido',
-          'subtitle': 'Riesgo: ${(normalizedScore * 100).toInt()}% | Estado: ${c['verdict'] ?? 'ANALIZADO'}',
+          'title': c['phone_number'] ?? c['number'] ?? 'Desconocido',
+          'subtitle':
+              'Riesgo: ${(normalizedScore * 100).toInt()}% | Veredicto: ${c['verdict'] ?? 'ANALIZADO'}',
           'type': 'LLAMADA',
           'rawScore': normalizedScore,
-          'timestamp': c['timestamp'],
+          'timestamp': c['timestamp'] ?? c['created_at'] ?? c['date'],
         });
       }
     } catch (_) {}
@@ -97,51 +172,73 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
     // 2. Fallback a llamadas nativas si SQLite local no arrojó llamadas
     if (formattedCalls.isEmpty) {
       try {
-        final List<Map<String, dynamic>> nativeCalls = await PhoneInterceptorService.getNativeCallHistory();
+        final List<Map<String, dynamic>> nativeCalls =
+            await PhoneInterceptorService.getNativeCallHistory();
         for (final c in nativeCalls) {
           final double score = (c['riskScore'] as num?)?.toDouble() ?? 0.0;
           final double normalizedScore = score > 1.0 ? score / 100.0 : score;
 
           formattedCalls.add(<String, dynamic>{
-            'title': c['phoneNumber'] ?? 'Desconocido',
-            'subtitle': 'Riesgo: ${(normalizedScore * 100).toInt()}% | Estado: ${c['status'] ?? 'ANALIZADO'}',
+            'title': c['phoneNumber'] ?? c['number'] ?? 'Desconocido',
+            'subtitle':
+                'Riesgo: ${(normalizedScore * 100).toInt()}% | Estado: ${c['status'] ?? 'ANALIZADO'}',
             'type': 'LLAMADA',
             'rawScore': normalizedScore,
-            'timestamp': c['timestamp'],
+            'timestamp': c['timestamp'] ?? c['date'],
           });
         }
       } catch (_) {}
     }
 
-    // 3. Cargar Logs Forenses (Phishing, Escaneo de Archivos)
-    final List<Map<String, dynamic>> forensicLogs = await DatabaseService.instance.getForensicLogs();
-    final List<Map<String, dynamic>> formattedLogs = forensicLogs.map((l) {
-      final double normalizedScore = _extractRiskFromForensicLog(l);
-      final int riskPercentage = (normalizedScore * 100).toInt();
+    // 3. Cargar Logs Forenses (Phishing, Escaneo de Archivos, APKs, etc.)
+    try {
+      final List<Map<String, dynamic>> forensicLogs =
+          await DatabaseService.instance.getForensicLogs();
 
-      final String service = l['service']?.toString() ?? '';
-      String typeLabel = 'ANÁLISIS';
-      if (service.contains('Phishing')) typeLabel = 'PHISHING';
-      if (service.contains('FileScanner') || service.contains('Apk')) typeLabel = 'MALWARE';
+      final List<Map<String, dynamic>> formattedLogs = forensicLogs.map((l) {
+        final double normalizedScore = _extractRiskFromForensicLog(l);
+        final int riskPercentage = (normalizedScore * 100).toInt();
 
-      return <String, dynamic>{
-        'title': l['activity'] ?? 'Auditoría perimetral',
-        'subtitle': 'Riesgo: $riskPercentage% | Veredicto: ${l['verdict'] ?? 'INSPECCIONADO'}',
-        'type': typeLabel,
-        'rawScore': normalizedScore,
-        'timestamp': l['timestamp'],
-      };
-    }).toList();
+        final String service = (l['service'] ?? l['type'] ?? l['source'] ?? '').toString();
+        final String activity = (l['activity'] ?? l['action'] ?? l['url'] ?? l['file_name'] ?? 'Auditoría perimetral').toString();
 
-    // 4. Fusionar y ordenar con conversión blindada de fechas
-    final List<Map<String, dynamic>> combined = [...formattedCalls, ...formattedLogs];
-    combined.sort((a, b) {
-      final int timeA = _parseTimestampToMs(a['timestamp']);
-      final int timeB = _parseTimestampToMs(b['timestamp']);
-      return timeB.compareTo(timeA); // Más recientes primero
-    });
+        String typeLabel = 'ANÁLISIS';
+        if (service.toUpperCase().contains('PHISHING') || activity.toUpperCase().contains('HTTP')) {
+          typeLabel = 'PHISHING';
+        } else if (service.toUpperCase().contains('FILE') ||
+                   service.toUpperCase().contains('APK') ||
+                   activity.toLowerCase().endsWith('.apk')) {
+          typeLabel = 'MALWARE';
+        } else if (service.isNotEmpty) {
+          typeLabel = service.toUpperCase();
+        }
 
-    return combined;
+        return <String, dynamic>{
+          'title': activity,
+          'subtitle':
+              'Riesgo: $riskPercentage% | Veredicto: ${l['verdict'] ?? l['status'] ?? 'INSPECCIONADO'}',
+          'type': typeLabel,
+          'rawScore': normalizedScore,
+          'timestamp': l['timestamp'] ?? l['created_at'] ?? l['date'],
+        };
+      }).toList();
+
+      // 4. Fusionar y ordenar
+      final List<Map<String, dynamic>> combined = [
+        ...formattedCalls,
+        ...formattedLogs
+      ];
+
+      combined.sort((a, b) {
+        final int timeA = _parseTimestampToMs(a['timestamp']);
+        final int timeB = _parseTimestampToMs(b['timestamp']);
+        return timeB.compareTo(timeA);
+      });
+
+      return combined;
+    } catch (_) {
+      return formattedCalls;
+    }
   }
 
   Future<void> _handleClearAll(SecurityProvider provider) async {
@@ -186,6 +283,8 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
       },
     );
 
+    if (!mounted) return;
+
     if (confirm == true) {
       setState(() {
         _isLoading = true;
@@ -194,11 +293,13 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
       widget.onClear?.call();
       await PhoneInterceptorService.clearNativeCallHistory();
       await DatabaseService.instance.clearAllLogs();
+      await DatabaseService.instance.clearForensicLogs();
 
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
+        _refreshHistory();
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -226,7 +327,8 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
 
   @override
   Widget build(BuildContext context) {
-    final securityProvider = Provider.of<SecurityProvider>(context);
+    final securityProvider =
+        Provider.of<SecurityProvider>(context, listen: false);
 
     return Container(
       decoration: BoxDecoration(
@@ -292,7 +394,7 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
           ),
           const SizedBox(height: 12),
           FutureBuilder<List<Map<String, dynamic>>>(
-            future: _loadUnifiedHistory(),
+            future: _unifiedHistoryFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Padding(
@@ -302,6 +404,30 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
                       strokeWidth: 2,
                       color: Color(0xFF5BC0BE),
                     ),
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: Color(0xFFE63946),
+                        size: 36,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Error al cargar la bitácora forense',
+                        style: TextStyle(
+                          color: Colors.blueGrey[400],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 );
               }
@@ -342,10 +468,13 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
                 ),
                 itemBuilder: (context, index) {
                   final record = records[index];
-                  final double rawScore = (record['rawScore'] as num).toDouble();
+                  final double rawScore =
+                      (record['rawScore'] as num?)?.toDouble() ?? 0.0;
                   final String title = record['title'] ?? 'Evento Forense';
                   final String subtitle = record['subtitle'] ?? '';
                   final String type = record['type'] ?? 'AUDITORÍA';
+                  final String formattedDate =
+                      _formatDateTime(record['timestamp']);
                   final Color riskColor = _getRiskColor(rawScore);
 
                   return ListTile(
@@ -376,12 +505,27 @@ class _ForensicHistoryListState extends State<ForensicHistoryList> {
                         fontFamily: 'monospace',
                       ),
                     ),
-                    subtitle: Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: Colors.blueGrey[300],
-                        fontSize: 11,
-                      ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: Colors.blueGrey[300],
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '📅 $formattedDate',
+                          style: const TextStyle(
+                            color: Color(0xFF5BC0BE),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                     trailing: Text(
                       type,
