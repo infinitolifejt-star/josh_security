@@ -368,7 +368,7 @@ class SecurityProvider with ChangeNotifier {
           result, 'agentReasoning', 'Análisis de seguridad completado.');
 
       _agentReasoningText = reasoning;
-      _updateHudWithVerdict(score, verdict, notify: false);
+      _updateHudWithVerdict(score, verdict, notify: true);
 
       if (showOverlay) {
         try {
@@ -416,7 +416,16 @@ class SecurityProvider with ChangeNotifier {
         _extractString(result, 'agentReasoning', 'Sin razonamiento.');
 
     _agentReasoningText = reasoning;
-    _updateHudWithVerdict(score, verdict, notify: false);
+    _updateHudWithVerdict(score, verdict, notify: true);
+
+    await _persistAudit(
+      url,
+      score,
+      verdict,
+      'URL',
+      result.toString(),
+    );
+    _appendLog('Análisis Phishing completado: $url');
   }
 
   Future<void> _auditFile() async {
@@ -431,11 +440,7 @@ class SecurityProvider with ChangeNotifier {
 
     _agentReasoningText =
         'Análisis estático de firmas, extensión, integridad y reputación del archivo.';
-    _updateHudWithVerdict(score, verdict.riskLevel, notify: false);
-
-    if (verdict.isCritical) {
-      _malwarePrevented++;
-    }
+    _updateHudWithVerdict(score, verdict.riskLevel, notify: true);
 
     await _persistAudit(
       _selectedFileName ?? file.path.split(Platform.pathSeparator).last,
@@ -444,6 +449,7 @@ class SecurityProvider with ChangeNotifier {
       'MALWARE',
       _serializeFileVerdict(verdict),
     );
+    _appendLog('Análisis Malware completado: ${_selectedFileName ?? file.path}');
   }
 
   // ================================================================================================

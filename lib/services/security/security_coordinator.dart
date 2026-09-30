@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -32,7 +33,7 @@ class SecurityCoordinator {
   bool _initialized = false;
 
   // ==========================================================================
-  // STREAM DE EVENTOS REACTIVOS (Notifica actualizacioes a la UI en vivo)
+  // STREAM DE EVENTOS REACTIVOS (Notifica actualizaciones a la UI en vivo)
   // ==========================================================================
   final StreamController<Map<String, dynamic>> _scanUpdatesController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -231,9 +232,7 @@ class SecurityCoordinator {
       'timestamp': now.toIso8601String(),
     };
 
-    // ------------------------------------------------------------------------
     // PERSISTENCIA EN BASE DE DATOS LOCAL
-    // ------------------------------------------------------------------------
     await _dbService.insertScanLog(result);
 
     await _dbService.insertForensicLog(<String, dynamic>{
@@ -245,9 +244,7 @@ class SecurityCoordinator {
       'extra_data': agent.reasoning,
     });
 
-    // ------------------------------------------------------------------------
     // TELEMETRÍA
-    // ------------------------------------------------------------------------
     await _telemetryService.incrementLinksChecked();
 
     await _telemetryService.registerEvent(
@@ -258,16 +255,96 @@ class SecurityCoordinator {
 
     await _telemetryService.addForensicLog(
       event: 'PHISHING_SCAN',
-      severity: _safeString(
-        result['verdict'],
-      ),
+      severity: _safeString(result['verdict']),
       details: agent.reasoning,
     );
 
-    // ------------------------------------------------------------------------
-    // NOTIFICACIÓN EN TIEMPO REAL
-    // ------------------------------------------------------------------------
+    // NOTIFICACIÓN EN TIEMPO REAL A LA UI
     _trace('Emitiendo evento de escaneo finalizado a la UI...');
+    _scanUpdatesController.add(result);
+
+    return result;
+  }
+
+  // ==========================================================================
+  // VECTOR 2 - MALWARE / ARCHIVOS
+  // ==========================================================================
+
+  Future<Map<String, dynamic>> scanFile(
+    String filePath,
+  ) async {
+    await initialize();
+
+    final String target = filePath.trim();
+    final String fileName = target.split(Platform.pathSeparator).last;
+
+    _trace(
+      'Iniciando escaneo de Archivo: $fileName',
+    );
+
+    // Evaluación agéntica / heurística
+    const double heuristicRisk = 0.0;
+
+    final AgentVerdict agent = await AgentEngine.evaluateThreat(
+      target: fileName,
+      vectorType: 'MALWARE',
+      heuristicRiskScore: heuristicRisk,
+    );
+
+    final double finalRisk = _resolveFinalRiskScore(
+      heuristicRisk: heuristicRisk,
+      learningRisk: heuristicRisk,
+      agentRisk: agent.finalRiskScore,
+    );
+
+    final String finalRiskLevel = _resolveRiskLevel(finalRisk);
+    final DateTime now = DateTime.now();
+
+    final Map<String, dynamic> result = <String, dynamic>{
+      'target': fileName,
+      'filePath': target,
+      'vector': 'MALWARE',
+      'score': finalRisk,
+      'riskScore': finalRisk,
+      'riskLevel': finalRiskLevel,
+      'heuristicRiskScore': heuristicRisk,
+      'learningRiskScore': heuristicRisk,
+      'agentRiskScore': agent.finalRiskScore,
+      'verdict': finalRiskLevel,
+      'agentStatus': agent.statusText,
+      'agentReasoning': agent.reasoning,
+      'requiresExternalLookup': agent.requiresExternalLookup,
+      'actionRecommendation': agent.actionRecommendation,
+      'timestamp': now.toIso8601String(),
+    };
+
+    // PERSISTENCIA EN BASE DE DATOS LOCAL
+    await _dbService.insertScanLog(result);
+
+    await _dbService.insertForensicLog(<String, dynamic>{
+      'timestamp': now.toIso8601String(),
+      'service': 'MALWARE_SHIELD',
+      'activity': 'Escaneo de Archivo ($fileName)',
+      'verdict': finalRiskLevel,
+      'matched_rule': agent.statusText,
+      'extra_data': agent.reasoning,
+    });
+
+    // TELEMETRÍA
+    await _telemetryService.registerEvent(
+      type: 'FILE_SCAN',
+      message: 'Análisis de archivo ejecutado',
+      metadata: result,
+    );
+
+    await _telemetryService.addForensicLog(
+      event: 'MALWARE_SCAN',
+      severity: _safeString(result['verdict']),
+      details: agent.reasoning,
+    );
+
+    // NOTIFICACIÓN EN TIEMPO REAL A LA UI
+    _trace('Emitiendo evento de escaneo de archivo finalizado a la UI...');
     _scanUpdatesController.add(result);
 
     return result;
@@ -292,9 +369,7 @@ class SecurityCoordinator {
       'Contacto: ${contactName ?? "N/A"}',
     );
 
-    // ------------------------------------------------------------------------
     // MOTOR 1: HEURÍSTICA TELEFÓNICA
-    // ------------------------------------------------------------------------
     final Map<String, dynamic> heuristic = Map<String, dynamic>.from(
       _callSecurityEngine.analyze(
         phoneNumber: target,
@@ -309,9 +384,7 @@ class SecurityCoordinator {
       'Score heurístico: $heuristicRisk',
     );
 
-    // ------------------------------------------------------------------------
     // MOTOR 2: APRENDIZAJE ADAPTATIVO
-    // ------------------------------------------------------------------------
     final CallVerdict learningVerdict = _callSecurityEngine.buildVerdict(
       phoneNumber: target,
       contactName: contactName,
@@ -326,9 +399,7 @@ class SecurityCoordinator {
       'Score de aprendizaje: $learningRisk',
     );
 
-    // ------------------------------------------------------------------------
     // MOTOR 3: AGENTE
-    // ------------------------------------------------------------------------
     final AgentVerdict agent = await AgentEngine.evaluateThreat(
       target: target,
       vectorType: 'PHONE',
@@ -339,9 +410,7 @@ class SecurityCoordinator {
       'Score del agente: ${agent.finalRiskScore}',
     );
 
-    // ------------------------------------------------------------------------
     // FUSIÓN FINAL
-    // ------------------------------------------------------------------------
     final double finalRisk = _resolveFinalRiskScore(
       heuristicRisk: heuristicRisk,
       learningRisk: learningRisk,
@@ -359,9 +428,7 @@ class SecurityCoordinator {
       'Nivel final de llamada: $finalRiskLevel',
     );
 
-    // ------------------------------------------------------------------------
     // RESULTADO NORMALIZADO
-    // ------------------------------------------------------------------------
     final Map<String, dynamic> result = <String, dynamic>{
       ...heuristic,
       'phone': target,
@@ -382,9 +449,7 @@ class SecurityCoordinator {
       'timestamp': now.toIso8601String(),
     };
 
-    // ------------------------------------------------------------------------
-    // PERSISTENCIA EN BASE DE DATOS LOCAL (Llamadas y Bitácora Forense)
-    // ------------------------------------------------------------------------
+    // PERSISTENCIA EN BASE DE DATOS LOCAL
     await _dbService.insertCallHistory(
       phoneNumber: target,
       riskScore: finalRisk,
@@ -407,9 +472,7 @@ class SecurityCoordinator {
       'extra_data': agent.reasoning,
     });
 
-    // ------------------------------------------------------------------------
     // TELEMETRÍA
-    // ------------------------------------------------------------------------
     await _telemetryService.incrementCallsChecked();
 
     await _telemetryService.registerEvent(
@@ -420,15 +483,11 @@ class SecurityCoordinator {
 
     await _telemetryService.addForensicLog(
       event: 'CALL_SECURITY',
-      severity: _safeString(
-        result['verdict'],
-      ),
+      severity: _safeString(result['verdict']),
       details: agent.reasoning,
     );
 
-    // ------------------------------------------------------------------------
-    // NOTIFICACIÓN EN TIEMPO REAL
-    // ------------------------------------------------------------------------
+    // NOTIFICACIÓN EN TIEMPO REAL A LA UI
     _trace('Emitiendo evento de llamada finalizada a la UI...');
     _scanUpdatesController.add(result);
 
@@ -436,7 +495,7 @@ class SecurityCoordinator {
   }
 
   // ==========================================================================
-  // ESTADÍSTICAS
+  // ESTADÍSTICAS Y BITÁCORA
   // ==========================================================================
 
   Map<String, dynamic> get statistics => _telemetryService.statistics;

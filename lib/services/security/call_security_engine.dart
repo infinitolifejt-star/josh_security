@@ -20,6 +20,8 @@ enum PhoneValidationStatus {
 class CallSecurityEngine {
   const CallSecurityEngine();
 
+  static final RegExp _nonDigitsRegex = RegExp(r'[^0-9]');
+
   static const List<String> suspiciousPatterns = <String>[
     'banco',
     'seguridad',
@@ -65,10 +67,7 @@ class CallSecurityEngine {
       return PhoneValidationStatus.hiddenOrUnknown;
     }
 
-    final String digitsOnly = normalized.replaceAll(
-      RegExp(r'[^0-9]'),
-      '',
-    );
+    final String digitsOnly = normalized.replaceAll(_nonDigitsRegex, '');
 
     if (digitsOnly.isEmpty || digitsOnly.length < 3) {
       return PhoneValidationStatus.invalidFormat;
@@ -89,6 +88,7 @@ class CallSecurityEngine {
       contactName ?? '',
       callText ?? '',
     ].join(' ').toLowerCase();
+
     if (combined.trim().isEmpty) {
       return <String>[];
     }
@@ -110,9 +110,7 @@ class CallSecurityEngine {
     String? callText,
   }) {
     final String normalized = phoneNumber.trim();
-    final PhoneValidationStatus validation = _validatePhone(
-      normalized,
-    );
+    final PhoneValidationStatus validation = _validatePhone(normalized);
 
     final List<String> reasons = <String>[];
 
@@ -126,23 +124,17 @@ class CallSecurityEngine {
     switch (validation) {
       case PhoneValidationStatus.hiddenOrUnknown:
         score = 45.0;
-        reasons.add(
-          'Número oculto o no disponible.',
-        );
+        reasons.add('Número oculto o no disponible.');
         break;
 
       case PhoneValidationStatus.invalidFormat:
         score = 35.0;
-        reasons.add(
-          'Formato telefónico no válido.',
-        );
+        reasons.add('Formato telefónico no válido.');
         break;
 
       case PhoneValidationStatus.shortCode:
         score = 30.0;
-        reasons.add(
-          'Código corto no verificado.',
-        );
+        reasons.add('Código corto no verificado.');
         break;
 
       case PhoneValidationStatus.valid:
@@ -150,14 +142,10 @@ class CallSecurityEngine {
     }
 
     if (patternMatches.isNotEmpty) {
-      score += min(
-        patternMatches.length * 10.0,
-        45.0,
-      );
+      score += min(patternMatches.length * 10.0, 45.0);
 
       reasons.add(
-        'Se detectaron patrones lingüísticos '
-        'asociados con solicitudes sensibles.',
+        'Se detectaron patrones lingüísticos asociados con solicitudes sensibles.',
       );
     }
 

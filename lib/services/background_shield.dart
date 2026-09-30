@@ -23,7 +23,7 @@ class BackgroundShield {
       return;
     }
 
-    final service = FlutterBackgroundService();
+    final FlutterBackgroundService service = FlutterBackgroundService();
 
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
         FlutterLocalNotificationsPlugin();
@@ -62,7 +62,8 @@ class BackgroundShield {
 
     await service.startService();
     _isInitialized = true;
-    debugPrint('🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.');
+    debugPrint(
+        '🛡️ [JOSH SHIELD] Servicio de fondo inicializado correctamente.');
   }
 
   @pragma('vm:entry-point')
@@ -80,28 +81,28 @@ class BackgroundShield {
       WidgetsFlutterBinding.ensureInitialized();
 
       if (service is AndroidServiceInstance) {
-        service.on('setAsForeground').listen((event) {
+        service.on('setAsForeground').listen((_) {
           service.setAsForegroundService();
         });
 
-        service.on('setAsBackground').listen((event) {
+        service.on('setAsBackground').listen((_) {
           service.setAsBackgroundService();
         });
       }
 
       // Escucha limpia para detención de servicio
-      service.on('stopService').listen((event) {
+      service.on('stopService').listen((_) {
         service.stopSelf();
       });
 
       // Monitoreo pasivo periódico de bajo consumo de energía (Cada 5 minutos)
-      Timer.periodic(const Duration(minutes: 5), (timer) {
+      Timer.periodic(const Duration(minutes: 5), (_) {
         debugPrint(
             '🛡️ [JOSH SHIELD] Verificación periódica de integridad ejecutada.');
       });
 
       debugPrint('🛡️ [JOSH SHIELD] Escudo de fondo activo y listo.');
-    }, (error, stack) {
+    }, (Object error, StackTrace stack) {
       // Captura y silencia errores no críticos de bindings entre isolates
       debugPrint('🛡️ [JOSH SHIELD] Captura preventiva de isolate: $error');
     });

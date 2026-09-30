@@ -1,9 +1,10 @@
 // ====================================================================================================
 // ARCHIVO: lib/services/security/database_service.dart
-// MOTOR DE PERSISTENCIA LOCAL - JOSH SECURITY v6.0
-// Soporte de Caché IPQS, Historial Unificado y Migración v4
+// MOTOR DE PERSISTENCIA LOCAL Y REACTIVIDAD - JOSH SECURITY v6.0
+// Soporte de Caché IPQS, Historial Unificado, Migración v4 y Stream Controller en Tiempo Real
 // ====================================================================================================
 
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:path/path.dart';
@@ -21,6 +22,21 @@ class DatabaseService {
 
   Database? _database;
   Future<Database>? _initializationFuture;
+
+  // ================================================================================================
+  // STREAM REACTIVO EN TIEMPO REAL
+  // ================================================================================================
+  final StreamController<void> _historyStreamController =
+      StreamController<void>.broadcast();
+
+  /// Escuchador global para notificar a la UI en milisegundos cuando cambie el historial
+  Stream<void> get onHistoryChanged => _historyStreamController.stream;
+
+  void _notifyHistoryChanged() {
+    if (!_historyStreamController.isClosed) {
+      _historyStreamController.add(null);
+    }
+  }
 
   // ================================================================================================
   // DATABASE INICIALIZACIÓN
@@ -79,7 +95,7 @@ class DatabaseService {
         )
       ''');
 
-      // HISTORIAL GENERAL DEL MOTOR
+      // HISTORIAL GENERAL DEL MOTOR (Phishing & Malware / APKs)
       await txn.execute('''
         CREATE TABLE scan_history(
           id TEXT PRIMARY KEY,
@@ -305,7 +321,7 @@ class DatabaseService {
       final Database db = await database;
       final DateTime now = DateTime.now();
 
-      return await db.insert(
+      final int id = await db.insert(
         'forensic_logs',
         <String, dynamic>{
           'timestamp': logEntry['timestamp']?.toString() ?? now.toIso8601String(),
@@ -317,6 +333,9 @@ class DatabaseService {
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+
+      _notifyHistoryChanged();
+      return id;
     } catch (e, stackTrace) {
       _logError('insertForensicLog', e, stackTrace);
       return -1;
@@ -341,7 +360,9 @@ class DatabaseService {
   Future<int> clearForensicLogs() async {
     try {
       final Database db = await database;
-      return await db.delete('forensic_logs');
+      final int count = await db.delete('forensic_logs');
+      _notifyHistoryChanged();
+      return count;
     } catch (e, stackTrace) {
       _logError('clearForensicLogs', e, stackTrace);
       return -1;
@@ -349,19 +370,20 @@ class DatabaseService {
   }
 
   // ================================================================================================
-  // HISTORIAL GENERAL (ESCANEO)
+  // HISTORIAL GENERAL (ESCANEO DE PHISHING Y MALWARE)
   // ================================================================================================
 
   Future<int> insertScanLog(Map<String, dynamic> log) async {
     try {
       final Database db = await database;
       final String id = log['id']?.toString() ?? '${DateTime.now().microsecondsSinceEpoch}';
+      final String timestamp = log['timestamp']?.toString() ?? DateTime.now().toIso8601String();
 
-      return await db.insert(
+      final int insertedId = await db.insert(
         'scan_history',
         <String, dynamic>{
           'id': id,
-          'timestamp': log['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+          'timestamp': timestamp,
           'target': log['target']?.toString(),
           'score': _readDouble(log['score'] ?? log['risk_score'] ?? log['riskScore']),
           'verdict': log['verdict']?.toString(),
@@ -369,6 +391,9 @@ class DatabaseService {
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+
+      _notifyHistoryChanged();
+      return insertedId;
     } catch (e, stackTrace) {
       _logError('insertScanLog', e, stackTrace);
       return -1;
@@ -411,7 +436,10 @@ class DatabaseService {
 
       if (phone.isEmpty) return -1;
 
-      return await db.insert(
+      final int validTimestamp = timestamp > 0 ? timestamp : DateTime.now().millisecondsSinceEpoch;
+      final String isoDate = DateTime.fromMillisecondsSinceEpoch(validTimestamp).toIso8601String();
+
+      final int id = await db.insert(
         'call_history',
         <String, dynamic>{
           'phone_number': phone,
@@ -422,10 +450,27 @@ class DatabaseService {
           'category': category.trim(),
           'details': details.trim(),
           'source': source.trim(),
-          'timestamp': timestamp > 0 ? timestamp : DateTime.now().millisecondsSinceEpoch,
+          'timestamp': validTimestamp,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+
+      // Sincronizar simultáneamente con el historial general de auditoría
+      await db.insert(
+        'scan_history',
+        <String, dynamic>{
+          'id': 'CALL_$id',
+          'timestamp': isoDate,
+          'target': phone,
+          'score': _clampScore(riskScore),
+          'verdict': verdict.trim(),
+          'vector': 'LLAMADA',
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      _notifyHistoryChanged();
+      return id;
     } catch (e, stackTrace) {
       _logError('insertCallHistory', e, stackTrace);
       return -1;
@@ -448,6 +493,26 @@ class DatabaseService {
   }
 
   // ================================================================================================
+  // CONSULTA UNIFICADA PARA UI
+  // ================================================================================================
+
+  /// Retorna todo el historial unificado (Llamadas, URLs y APKs) ordenado cronológicamente
+  Future<List<Map<String, dynamic>>> getUnifiedHistory() async {
+    try {
+      final Database db = await database;
+      final List<Map<String, dynamic>> scanRows = await db.query(
+        'scan_history',
+        orderBy: 'timestamp DESC',
+      );
+
+      return scanRows.map((Map<String, dynamic> row) => Map<String, dynamic>.from(row)).toList();
+    } catch (e, stackTrace) {
+      _logError('getUnifiedHistory', e, stackTrace);
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  // ================================================================================================
   // LIMPIEZA
   // ================================================================================================
 
@@ -455,6 +520,7 @@ class DatabaseService {
     try {
       final Database db = await database;
       await db.delete('call_history');
+      _notifyHistoryChanged();
     } catch (e, stackTrace) {
       _logError('clearCallHistory', e, stackTrace);
     }
@@ -464,6 +530,7 @@ class DatabaseService {
     try {
       final Database db = await database;
       await db.delete('scan_history');
+      _notifyHistoryChanged();
     } catch (e, stackTrace) {
       _logError('clearScanHistory', e, stackTrace);
     }
@@ -472,12 +539,15 @@ class DatabaseService {
   Future<int> clearAllLogs() async {
     try {
       final Database db = await database;
-      return await db.transaction((Transaction txn) async {
+      final int result = await db.transaction((Transaction txn) async {
         await txn.delete('scan_history');
         await txn.delete('call_history');
         await txn.delete('ipqs_cache');
         return await txn.delete('forensic_logs');
       });
+
+      _notifyHistoryChanged();
+      return result;
     } catch (e, stackTrace) {
       _logError('clearAllLogs', e, stackTrace);
       return -1;
@@ -502,6 +572,7 @@ class DatabaseService {
     } finally {
       _database = null;
       _initializationFuture = null;
+      _historyStreamController.close();
     }
   }
 

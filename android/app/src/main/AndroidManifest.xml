@@ -25,7 +25,6 @@
         android:label="JOSH Security"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:persistent="true"
         android:usesCleartextTraffic="true">
 
         <activity

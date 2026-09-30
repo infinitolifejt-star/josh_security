@@ -11,12 +11,6 @@ enum DiagnosticSource {
 }
 
 /// Veredicto normalizado para análisis telefónico.
-///
-/// Este es el único modelo CallVerdict compartido por:
-/// - CallSecurityEngine
-/// - LearningEngine
-/// - ForensicReportService
-/// - futuras capas de persistencia y auditoría
 class CallVerdict {
   final String phoneNumber;
   final double riskScore;
@@ -36,14 +30,43 @@ class CallVerdict {
     required this.timestamp,
   });
 
-  bool get isCritical =>
-      riskLevel == 'CRÍTICO' || riskScore >= 80.0;
+  bool get isCritical => riskLevel == 'CRÍTICO' || riskScore >= 80.0;
 
   bool get isWarning =>
-      riskLevel == 'ADVERTENCIA' ||
-      (riskScore >= 40.0 && riskScore < 80.0);
+      riskLevel == 'ADVERTENCIA' || (riskScore >= 40.0 && riskScore < 80.0);
 
   bool get isSafe => !isCritical && !isWarning;
+
+  factory CallVerdict.fromMap(Map<String, dynamic> map) {
+    final String rawSource = map['source']?.toString() ?? 'local';
+    final DiagnosticSource parsedSource = DiagnosticSource.values.firstWhere(
+      (DiagnosticSource e) => e.name == rawSource,
+      orElse: () => DiagnosticSource.local,
+    );
+
+    List<String> parsedReasons = <String>[];
+    if (map['reasons'] is List) {
+      parsedReasons = (map['reasons'] as List)
+          .map((dynamic e) => e.toString())
+          .toList();
+    }
+
+    return CallVerdict(
+      phoneNumber: map['phoneNumber']?.toString() ?? map['phone']?.toString() ?? '',
+      riskScore: (map['riskScore'] as num?)?.toDouble() ??
+          (map['risk_score'] as num?)?.toDouble() ??
+          0.0,
+      riskLevel: map['riskLevel']?.toString() ??
+          map['verdict']?.toString() ??
+          'SIN_AMENAZAS',
+      analysisMessage: map['analysisMessage']?.toString() ??
+          map['status_label']?.toString() ??
+          'Análisis completado.',
+      source: parsedSource,
+      reasons: parsedReasons,
+      timestamp: map['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{

@@ -17,11 +17,13 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val METHOD_CHANNEL = "josh_security/phone_calls"
         private const val EVENT_CHANNEL = "com.josh.security/call_refresh"
+        private const val APK_EVENT_CHANNEL = "com.josh.security/apk_events"
         private const val REQUEST_CODE_SET_DEFAULT_CALL_SCREENING = 1002
     }
 
     private var pendingResult: MethodChannel.Result? = null
     private var callRefreshReceiver: BroadcastReceiver? = null
+    private var apkInstallReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -86,7 +88,6 @@ class MainActivity : FlutterActivity() {
 
                     val filter = IntentFilter("com.josh.security.REFRESH_CALL_LOG")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        // Se utiliza RECEIVER_EXPORTED para permitir la transmisión desde el servicio nativo
                         registerReceiver(callRefreshReceiver, filter, Context.RECEIVER_EXPORTED)
                     } else {
                         registerReceiver(callRefreshReceiver, filter)
@@ -98,9 +99,72 @@ class MainActivity : FlutterActivity() {
                         try {
                             unregisterReceiver(it)
                         } catch (e: Exception) {
-                            Log.e("JOSH_MAIN", "Error desregistrando BroadcastReceiver: ${e.message}")
+                            Log.e("JOSH_MAIN", "Error desregistrando BroadcastReceiver de llamadas: ${e.message}")
                         }
                         callRefreshReceiver = null
+                    }
+                }
+            }
+        )
+
+        // 3. Configuración del EventChannel para detección de instalación de APKs
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, APK_EVENT_CHANNEL).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    apkInstallReceiver = object : BroadcastReceiver() {
+                        override fun onReceive(context: Context?, intent: Intent?) {
+                            if (intent?.action == Intent.ACTION_PACKAGE_ADDED) {
+                                val packageName = intent.data?.schemeSpecificPart ?: ""
+                                val isReplacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+
+                                if (!isReplacing && packageName.isNotEmpty()) {
+                                    Log.d("JOSH_APK", "Nueva app instalada detectada: $packageName")
+
+                                    val pm = context?.packageManager
+                                    val appName = try {
+                                        val appInfo = pm?.getApplicationInfo(packageName, 0)
+                                        appInfo?.let { pm.getApplicationLabel(it).toString() } ?: packageName
+                                    } catch (e: Exception) {
+                                        packageName
+                                    }
+
+                                    val apkPath = try {
+                                        pm?.getApplicationInfo(packageName, 0)?.publicSourceDir ?: ""
+                                    } catch (e: Exception) {
+                                        ""
+                                    }
+
+                                    val payload = mapOf(
+                                        "packageName" to packageName,
+                                        "appName" to appName,
+                                        "apkPath" to apkPath
+                                    )
+
+                                    events?.success(payload)
+                                }
+                            }
+                        }
+                    }
+
+                    val filter = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply {
+                        addDataScheme("package")
+                    }
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        registerReceiver(apkInstallReceiver, filter, Context.RECEIVER_EXPORTED)
+                    } else {
+                        registerReceiver(apkInstallReceiver, filter)
+                    }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    apkInstallReceiver?.let {
+                        try {
+                            unregisterReceiver(it)
+                        } catch (e: Exception) {
+                            Log.e("JOSH_MAIN", "Error desregistrando BroadcastReceiver de APKs: ${e.message}")
+                        }
+                        apkInstallReceiver = null
                     }
                 }
             }
@@ -149,6 +213,12 @@ class MainActivity : FlutterActivity() {
                 unregisterReceiver(it)
             } catch (_: Exception) {}
             callRefreshReceiver = null
+        }
+        apkInstallReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+            apkInstallReceiver = null
         }
     }
 }

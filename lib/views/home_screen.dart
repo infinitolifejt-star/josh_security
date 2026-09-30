@@ -176,26 +176,27 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _scrollToBottomLogs() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_logsScrollController.hasClients) {
-        _logsScrollController.animateTo(
-          _logsScrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+  void _checkAndScrollLogs(int currentCount) {
+    if (currentCount != _lastLogCount) {
+      _lastLogCount = currentCount;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_logsScrollController.hasClients) {
+          _logsScrollController.animateTo(
+            _logsScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final securityProvider = Provider.of<SecurityProvider>(context);
 
-    if (securityProvider.forensicLogs.length != _lastLogCount) {
-      _lastLogCount = securityProvider.forensicLogs.length;
-      _scrollToBottomLogs();
-    }
+    // Verificación segura fuera del flujo directo de renderizado
+    _checkAndScrollLogs(securityProvider.forensicLogs.length);
 
     if (securityProvider.isLoading) {
       if (!_rotationController.isAnimating) {
@@ -535,6 +536,7 @@ class _HomeScreenState extends State<HomeScreen>
           Expanded(
             child: ListView.builder(
               controller: _logsScrollController,
+              physics: const ClampingScrollPhysics(),
               itemCount: securityProvider.forensicLogs.length,
               itemBuilder: (context, index) {
                 return Padding(

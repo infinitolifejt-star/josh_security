@@ -111,6 +111,7 @@ class PhishingEngine {
     return normalized;
   }
 
+  /// Algoritmo de Distancia de Levenshtein optimizado sin asignaciones masivas de RAM
   int levenshtein(String a, String b) {
     if (a == b) return 0;
     if (a.isEmpty) return b.length;
@@ -159,7 +160,8 @@ class PhishingEngine {
         return _result(
           score: 90.0,
           verdict: 'CRÍTICO',
-          reason: 'Anomalía estructural: patrón numérico sintético con dígitos repetidos.',
+          reason:
+              'Anomalía estructural: patrón numérico sintético con dígitos repetidos.',
         );
       }
 
@@ -167,7 +169,8 @@ class PhishingEngine {
         return _result(
           score: 75.0,
           verdict: 'SOSPECHOSO',
-          reason: 'Longitud anómala: numeración fuera del estándar telefónico (${digitsOnly.length} dígitos).',
+          reason:
+              'Longitud anómala: numeración fuera del estándar telefónico (${digitsOnly.length} dígitos).',
         );
       }
     }
@@ -205,7 +208,9 @@ class PhishingEngine {
       return _result(
         score: badProtocol ? 35.0 : 2.0,
         verdict: badProtocol ? 'SOSPECHOSO' : 'SEGURO',
-        reason: badProtocol ? 'Dominio oficial con protocolo alterado.' : 'Dominio oficial verificado.',
+        reason: badProtocol
+            ? 'Dominio oficial con protocolo alterado.'
+            : 'Dominio oficial verificado.',
       );
     }
 
@@ -218,7 +223,8 @@ class PhishingEngine {
       return _result(
         score: 92.0,
         verdict: 'CRÍTICO',
-        reason: 'Dominio de alto riesgo: extensión o TLD alterado (posible typosquatting).',
+        reason:
+            'Dominio de alto riesgo: extensión o TLD alterado (posible typosquatting).',
       );
     }
 
@@ -226,8 +232,7 @@ class PhishingEngine {
     for (final String brand in _brandKeywords) {
       if (!host.contains(brand) && !normalizedHost.contains(brand)) continue;
 
-      final bool isOfficialBrandDomain =
-          host == '$brand.com' ||
+      final bool isOfficialBrandDomain = host == '$brand.com' ||
           host == '$brand.co' ||
           host == '$brand.com.co' ||
           host.endsWith('.$brand.com') ||
@@ -258,7 +263,8 @@ class PhishingEngine {
           return _result(
             score: 98.0,
             verdict: 'CRÍTICO',
-            reason: 'Typosquatting detectado: el dominio guarda gran similitud visual/estructural con ($base).',
+            reason:
+                'Typosquatting detectado: el dominio guarda gran similitud visual/estructural con ($base).',
           );
         }
       }
@@ -269,7 +275,8 @@ class PhishingEngine {
       return _result(
         score: 90.0,
         verdict: 'CRÍTICO',
-        reason: 'Estructura sospechosa: uso del carácter @ para ocultar el dominio real.',
+        reason:
+            'Estructura sospechosa: uso del carácter @ para ocultar el dominio real.',
       );
     }
 
@@ -277,7 +284,8 @@ class PhishingEngine {
       return _result(
         score: 80.0,
         verdict: 'CRÍTICO',
-        reason: 'Ofuscación de dominio: segmento con múltiples guiones consecutivos.',
+        reason:
+            'Ofuscación de dominio: segmento con múltiples guiones consecutivos.',
       );
     }
 
@@ -297,7 +305,9 @@ class PhishingEngine {
   }
 
   bool _hasBadProtocol(String value) {
-    return value.startsWith('hht') || value.startsWith('htps') || value.startsWith('http//');
+    return value.startsWith('hht') ||
+        value.startsWith('htps') ||
+        value.startsWith('http//');
   }
 
   Map<String, dynamic> _result({
@@ -312,7 +322,10 @@ class PhishingEngine {
     };
   }
 
-  Future<void> _persistPhishingLog(String url, Map<String, dynamic> result) async {
+  Future<void> _persistPhishingLog(
+    String url,
+    Map<String, dynamic> result,
+  ) async {
     try {
       await _database.insertForensicLog(<String, dynamic>{
         'timestamp': DateTime.now().toIso8601String(),
